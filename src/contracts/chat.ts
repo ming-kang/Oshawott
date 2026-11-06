@@ -1,8 +1,8 @@
 // What a panel uses: the workspace (chats, models, keys) and one chat. Served by the Engine.
 //
 // A chat's state is Durable's conversation view itself (`Conversation.watch`'s value: a window of entries plus the
-// documents, `pi.live` streaming included). The panel renders it with `ConversationTranscript`, and `entries` pages in
-// what lies before the window. Nothing is mirrored into a second store, and nothing is broadcast per event.
+// documents, `pi.live` streaming included), rendered by `src/panel/render.ts`; `entries` pages in what lies before the
+// window (the panel does not page yet). Nothing is mirrored into a second store, and nothing is broadcast per event.
 import type { ConversationView } from "@earendil-works/pi-durable";
 import { arr, bool, int, method, num, obj, oneOf, opt, remote, str, typed, unknown } from "../lib/chord.ts";
 import { EngineHost } from "./hosts.ts";
