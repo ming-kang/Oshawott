@@ -1,50 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html data-theme="system">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Oshawatt</title>
-<style>
-  :root { color-scheme: light dark; --line: color-mix(in srgb, currentColor 18%, transparent); --soft: color-mix(in srgb, currentColor 6%, transparent); }
-  * { box-sizing: border-box; }
-  body { margin: 0; height: 100vh; display: flex; flex-direction: column; font: 13px/1.5 system-ui, sans-serif; }
-  header, details, footer { padding: 8px; border-bottom: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  details { display: block; }
-  details > div { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  select, input, textarea, button { font: inherit; }
-  select { flex: 1; min-width: 0; }
-  #transcript { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-  .msg { white-space: pre-wrap; word-break: break-word; padding: 6px 8px; border-radius: 6px; }
-  .user { background: var(--soft); align-self: flex-end; max-width: 90%; }
-  .tool { font-family: ui-monospace, monospace; font-size: 11px; opacity: .75; }
-  .error { color: #c0392b; }
-  .streaming, .running, .note { opacity: .7; }
-  footer { border-top: 1px solid var(--line); border-bottom: 0; }
-  textarea { flex: 1; min-height: 3.5em; resize: vertical; }
-  #stop { display: none; }
-  body.busy #stop { display: inline-block; }
-  #status { opacity: .7; }
-</style>
-<header>
-  <select id="chats" aria-label="Chat"></select>
-  <button id="new">New chat</button>
-</header>
-<details>
-  <summary>Model</summary>
-  <div>
-    <select id="provider" aria-label="Provider"></select>
-    <select id="model" aria-label="Model"></select>
-  </div>
-  <div>
-    <input id="key" type="password" placeholder="API key" autocomplete="off" style="flex:1">
-    <button id="save-key">Save key</button>
-    <span id="status"></span>
-  </div>
-</details>
-<main id="transcript"></main>
-<footer>
-  <textarea id="prompt" placeholder="Ask about this tab…"></textarea>
-  <button id="send">Send</button>
-  <button id="stop">Stop</button>
-</footer>
+<link rel="icon" href="icons/icon-32.png">
+<link rel="stylesheet" href="panel.css">
+<body>
 <script type="module" src="panel.js"></script>
 </html>

@@ -22,6 +22,13 @@ const ProviderList = obj({
 });
 const Providers = defineState("providers", { schema: ProviderList, version: 1, initial: () => ({ list: [] }) });
 
+/** A chat title from a message: its first line, whitespace folded, at most 48 characters. */
+export function titleOf(text: string): string {
+	const line = text.trim().split("\n")[0]!.replace(/\s+/g, " ");
+	const chars = [...line];
+	return chars.length > 48 ? `${chars.slice(0, 47).join("")}…` : line;
+}
+
 function forbidden(): never {
 	throw new ChordError({ code: "forbidden", message: "Only a panel may use the workspace." });
 }
@@ -70,14 +77,27 @@ export function panelFacet(services: EngineServices) {
 						await harness.commit(async (tx) => {
 							(await tx.doc(WorkspaceDoc)).chats.push({
 								id: conversation.id,
-								title: title ?? "New chat",
+								title: title?.trim() ?? "",
 								createdAt: services.now(),
 							});
 						}, ctx);
 						return conversation.id;
 					},
+					deleteChat: async ({ id }, ctx) => {
+						await (await harness.conversation(id as ConversationId, ctx))?.abort(ctx);
+						await harness.commit(async (tx) => {
+							const doc = await tx.doc(WorkspaceDoc);
+							doc.chats = doc.chats.filter((chat) => chat.id !== id);
+						}, ctx);
+						return null;
+					},
 					setApiKey: async ({ provider, key }, ctx) => {
-						await services.credentials.modify(provider, async () => ({ type: "api_key", key }));
+						await services.credentials.modify(provider, async () => ({ type: "api_key", key: key.trim() }));
+						await refreshProviders(ctx);
+						return null;
+					},
+					clearApiKey: async ({ provider }, ctx) => {
+						await services.credentials.delete(provider);
 						await refreshProviders(ctx);
 						return null;
 					},
@@ -109,6 +129,9 @@ export function panelFacet(services: EngineServices) {
 						await target.commit(async (tx) => {
 							await target.submit(tx, { type: "input", content: text, requestId, ...(whenBusy ? { whenBusy } : {}) });
 							if (tabId !== undefined) (await tx.doc(TargetDoc, target.id)).tabId = tabId;
+							// An untitled chat is named after its first message.
+							const summary = (await tx.doc(WorkspaceDoc)).chats.find((chat) => chat.id === id);
+							if (summary && !summary.title) summary.title = titleOf(text);
 						}, ctx);
 						return null;
 					},

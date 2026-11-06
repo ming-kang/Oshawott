@@ -37,6 +37,10 @@ export interface TabInfo {
 	readonly title?: string;
 	readonly active?: boolean;
 	readonly status?: string;
+	/** With the `tabs` permission. */
+	readonly favIconUrl?: string;
+	/** Milliseconds since the epoch: Chromium 121+, Firefox. */
+	readonly lastAccessed?: number;
 }
 
 export interface InjectionResult {
@@ -51,7 +55,7 @@ export interface WebExt {
 		readonly id: string;
 		readonly lastError?: { readonly message?: string };
 		getURL(path: string): string;
-		getManifest(): { readonly version: string; readonly manifest_version: number };
+		getManifest(): { readonly version: string; readonly manifest_version: number; readonly name: string };
 		connect(info: { name: string }): RuntimePort;
 		sendMessage(message: unknown): Promise<unknown>;
 		getContexts?(filter: { contextTypes: string[]; documentUrls?: string[] }): Promise<readonly unknown[]>;
@@ -63,10 +67,12 @@ export interface WebExt {
 		readonly onInstalled: WebExtEvent<(details: { reason: string }) => void>;
 	};
 	readonly tabs: {
-		query(query: { active?: boolean; currentWindow?: boolean; lastFocusedWindow?: boolean; windowId?: number }): Promise<TabInfo[]>;
+		query(query: { active?: boolean; currentWindow?: boolean; lastFocusedWindow?: boolean; windowId?: number; url?: string }): Promise<TabInfo[]>;
 		get(tabId: number): Promise<TabInfo>;
 		create(properties: { url: string; active?: boolean; windowId?: number }): Promise<TabInfo>;
 		readonly onRemoved: WebExtEvent<(tabId: number) => void>;
+		readonly onActivated: WebExtEvent<(info: { tabId: number; windowId: number }) => void>;
+		readonly onUpdated: WebExtEvent<(tabId: number, change: { status?: string; url?: string; title?: string; favIconUrl?: string }, tab: TabInfo) => void>;
 	};
 	readonly scripting: {
 		executeScript(injection: {
@@ -86,6 +92,8 @@ export interface WebExt {
 	readonly permissions: {
 		contains(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
 		request(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
+		readonly onAdded: WebExtEvent<(permissions: { origins?: string[] }) => void>;
+		readonly onRemoved: WebExtEvent<(permissions: { origins?: string[] }) => void>;
 	};
 	readonly action: {
 		readonly onClicked: WebExtEvent<(tab: TabInfo) => void>;

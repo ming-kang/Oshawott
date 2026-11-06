@@ -28,9 +28,10 @@ const bundles = {
 		"codemode-worker.js": ["src/engine/codemode-worker.ts", "esm"],
 	},
 };
+const ICONS = [16, 32, 48, 96, 128].map((size) => `static/icons/icon-${size}.png`);
 const statics = {
-	chromium: ["static/engine.html", "static/panel.html", "node_modules/quickjs-wasi/quickjs.wasm"],
-	firefox: ["static/panel.html", "node_modules/quickjs-wasi/quickjs.wasm"],
+	chromium: ["static/engine.html", "static/panel.html", "static/panel.css", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
+	firefox: ["static/panel.html", "static/panel.css", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
 };
 
 for (const target of targets.length ? targets : Object.keys(bundles)) {
@@ -55,7 +56,11 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			logLevel: "warning",
 		});
 	}
-	for (const file of statics[target]) await copyFile(join(root, file), join(out, file.split("/").at(-1)));
+	await mkdir(join(out, "icons"), { recursive: true });
+	for (const file of statics[target]) {
+		const name = file.startsWith("static/icons/") ? `icons/${file.split("/").at(-1)}` : file.split("/").at(-1);
+		await copyFile(join(root, file), join(out, name));
+	}
 	await writeFile(join(out, "manifest.json"), `${JSON.stringify(manifestFor(target, version, { dev }), null, 2)}\n`);
 
 	const sizes = [];

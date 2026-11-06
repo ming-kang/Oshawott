@@ -68,7 +68,7 @@ Port 的发起方和 chord 的调用方不一定是同一端：
 
 | 对象 | 所在宿主 | 调用方 | 内容 |
 |---|---|---|---|
-| `Workspace` | Engine | 面板 | state：`chats`、`defaultModel`、`providers`；方法：`createChat`、`setApiKey`、`setDefaultModel` |
+| `Workspace` | Engine | 面板 | state：`chats`、`defaultModel`、`providers`；方法：`createChat`、`deleteChat`、`setApiKey`、`clearApiKey`、`setDefaultModel` |
 | `Chat({id})` | Engine | 面板 | state：`view`（Durable 的 `ConversationView`）；方法：`send`、`abort`、`reset`、`configure`、`entries` |
 | `Browser` | Broker | Engine | `listTabs`、`activeTab`、`openTab`、`attach`、`armWake` |
 | `Page({tabId})` | Tab | Engine | `page_snapshot`、`page_click`、`page_type`、`page_scroll` |
@@ -114,14 +114,26 @@ Port 的发起方和 chord 的调用方不一定是同一端：
 - 元素引用（`ref`）只存在内容脚本内存里的 `WeakRef` 表中，不写进页面 DOM，页面脚本读不到也伪造不了；下次快照或页面导航后失效。
 - 浏览器工具：`tabs_list`；`tab_open` 打开标签页并把它设为对话的目标标签页。
 - **Code Mode**：`RemoteCodemodeSandbox` 留在 Engine 里管理工具和调用记录，QuickJS 在专用 Worker 里运行，每次执行新建 Worker，结束即 terminate。不需要 SharedArrayBuffer，所以两端都能用；扩展 CSP 只额外放开 `wasm-unsafe-eval`。
+- **演示模型**（仅开发构建，`src/engine/demo.ts`）：基于 pi-ai 的 faux provider，收到问题后真实调用 `page_snapshot`，再根据快照生成 Markdown 回答。用于没有 API key 时试用界面，以及冒烟测试跑完整一轮。正式构建不包含它。
+
+## 面板
+
+面板（`src/panel/`）是 Engine 的 chord 客户端，只持有 `Workspace` 和当前打开的 `Chat`，界面全部由这两份状态推导，不监听任何消息。
+
+- **对话渲染**（`render.ts`）是增量的：已提交的条目不会再变，按条目 ID 只构建一次；工具结果条目会填进对应调用的卡片。每次变化只重建 `pi.live` 的部分：流式中的回答、运行中的工具、重试提示、上次运行的失败原因。
+- **Markdown**（`markdown.ts`）先解析成树，再由 `markdown-dom.ts` 逐个创建元素，从不拼接 HTML。链接只保留 `http(s):` 和 `mailto:`。流式输出时会补全被截断的行内代码或加粗标记，避免露出半截符号。
+- **当前标签页**（`tab.ts`）：面板在侧边栏里时取本窗口的活动标签页；面板作为普通标签页打开时，取最近使用过的其他标签页。同时检查该站点的 host 权限：未授权的 http(s) 站点显示「允许访问此站点」，点击后直接在点击事件里调用 `permissions.request`（Firefox 要求在用户手势内同步发起）。
+- **对话标题**：新对话在第一条消息发出时，由 Engine 在同一个提交里把消息的第一行（最多 48 个字符）写成标题。
+- **模型选择**：没有选过模型时，显示并使用第一个已连接服务的第一个模型；选择后同时写入默认模型和当前对话的配置。
+- 主题跟随系统，也可在设置里固定为浅色或深色（只存在面板的 `localStorage`）；界面文字按浏览器语言选择中文或英文（`i18n.ts`）。
 
 ## 安全边界
 
 - 身份由连接接收方标记，各对象按身份拒绝访问（见[契约](#契约)）；`onConnect` 校验 Port 发送方。
 - API key 从面板经 `setApiKey` 写入，此后只在 Engine 文档里使用，面板只能看到“是否已配置”。key 以明文保存在扩展自己的 IndexedDB 中。
-- 面板只用 `textContent` 渲染，不会把模型或网页返回的 HTML 插进界面。
+- 面板不会把模型或网页返回的 HTML 插进界面：普通文本用文本节点，Markdown 由解析树逐个生成元素，链接只允许 `http(s):` 和 `mailto:`，并以 `noopener noreferrer` 在新标签页打开。
 - 内容脚本运行在隔离世界（isolated world），只在 Engine 需要时注入，不在清单里声明任何站点。
-- 权限：`tabs`、`scripting`、`activeTab`、`alarms`，Chromium 另加 `offscreen`、`sidePanel`。host 权限只包括五个模型 API 的域名；`<all_urls>` 只出现在 `optional_host_permissions` 中，需要运行时申请。开发构建为方便自动测试会直接带上 `<all_urls>`。
+- 权限：`tabs`、`scripting`、`activeTab`、`alarms`，Chromium 另加 `offscreen`、`sidePanel`。host 权限只包括五个模型 API 的域名；`<all_urls>` 只出现在 `optional_host_permissions` 中，由用户在面板里按站点授权。开发构建为方便自动测试会直接带上 `<all_urls>`。
 
 ## 构建期区分
 
@@ -133,10 +145,12 @@ Port 的发起方和 chord 的调用方不一定是同一端：
 ## 已知限制
 
 - **还没有用真实模型做端到端验证**：真实的流式请求、跨域请求、带页面工具的多轮对话都待验证。
-- **正式构建没有申请站点权限的界面**，在未授权的站点上注入页面工具会失败。
+- **站点授权流程没有自动化测试**：自动测试无法点击浏览器的权限弹窗，冒烟测试用的是带全站权限的开发构建。正式构建的授权需要手动验证。
 - 没有 OAuth 登录，只支持 API key。
 - 面板不分页加载更早的历史，只显示 Durable view 窗口内的记录。
+- 移除对话只是从列表中去掉（并停止运行），Durable 里的记录仍保留，因为 pi-durable 1.5 没有删除对话的接口。
 - Chromium 上 offscreen 文档空闲时不会自动关闭。
 - 未验证：Firefox 侧边栏关闭后长时间运行的任务；chord 的心跳是否会让 SW 一直不休眠。
 - 没有 Linux 沙箱：Firefox 扩展页没有跨源隔离，计算类任务交给 Code Mode。
-- Firefox 附加组件 ID `oshawatt@example.org` 是占位值；AMO 要求的 `data_collection_permissions` 未填写；没有图标和多语言。
+- Firefox 附加组件 ID `oshawatt@example.org` 是占位值；AMO 要求的 `data_collection_permissions` 未填写。
+- 界面只支持中文和英文；还不支持图片输入和附件。

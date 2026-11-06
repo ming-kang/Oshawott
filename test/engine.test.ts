@@ -160,6 +160,18 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	assert.ok(kinds.includes("pi.tool-result"), `a tool result in ${kinds.join(", ")}`);
 	assert.ok(wakes.some((wake) => wake.active), "the Broker was asked for a recovery wakeup while the run was active");
 
+	// An untitled chat is named after its first message; removing a chat takes it off the list.
+	faux.appendResponses([fauxAssistantMessage("Hello.")]);
+	const second = await workspace.createChat({}, context);
+	const secondChat = await panel.get(Chat, { id: second }, context);
+	await secondChat.send({ text: "  Say hello\nto the   whole page, please  ", requestId: "r2" }, context);
+	const title = await until(() => workspace.chats.value.find((c) => c.id === second)?.title || undefined, "the second chat's title");
+	assert.equal(title, "Say hello");
+	await until(() => (secondChat.view.value?.docs["pi.live"] as { run?: unknown } | undefined)?.run === undefined || undefined, "the second run's end");
+	await workspace.deleteChat({ id: second }, context);
+	await until(() => (workspace.chats.value.length === 1 ? true : undefined), "the second chat removed");
+	secondChat.release();
+
 	// A panel cannot reach the Broker or a page: those routes admit the Engine's own work only.
 	await assert.rejects(panel.get(Page, { tabId: 7 }, context, { readyTimeout: 500 }), /forbidden|refus|not/i);
 

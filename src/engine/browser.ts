@@ -115,6 +115,7 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	for (const provider of [anthropicProvider(), openaiProvider(), googleProvider(), openrouterProvider(), deepseekProvider()]) {
 		models.setProvider(provider);
 	}
+	if (__OSHAWATT_DEV__) models.setProvider((await import("./demo.ts")).demoProvider());
 
 	const sandbox = workerCodemodeSandbox(new URL("codemode-worker.js", location.href));
 	engine = await startEngine(

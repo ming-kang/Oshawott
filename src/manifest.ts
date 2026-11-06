@@ -11,6 +11,8 @@ export const MODEL_ORIGINS = [
 	"https://api.deepseek.com/*",
 ];
 
+const ICONS = { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 96: "icons/icon-96.png", 128: "icons/icon-128.png" };
+
 /** `dev`: page tools on every site without asking (automated tests cannot answer a permission prompt). */
 export function manifestFor(target: Target, version: string, { dev = false } = {}): Record<string, unknown> {
 	const common = {
@@ -18,7 +20,8 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 		name: "Oshawatt",
 		version,
 		description: "A durable AI agent for your browser, built on Pi Durable.",
-		action: { default_title: "Oshawatt" },
+		icons: ICONS,
+		action: { default_title: "Oshawatt", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
 		// `tabs` for titles and URLs in tabs_list; `scripting` + `activeTab` / granted origins to inject page tools on
 		// demand (nothing is declared for every site); `alarms` for the Engine's wakeups.
 		permissions: ["tabs", "scripting", "activeTab", "alarms"],
@@ -41,7 +44,12 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 	return {
 		...common,
 		background: { scripts: ["background.js"], type: "module" },
-		sidebar_action: { default_panel: "panel.html", default_title: "Oshawatt", open_at_install: false },
+		sidebar_action: {
+			default_panel: "panel.html",
+			default_title: "Oshawatt",
+			default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" },
+			open_at_install: false,
+		},
 		browser_specific_settings: {
 			// Replace with the add-on's AMO id before signing.
 			gecko: { id: "oshawatt@example.org", strict_min_version: "128.0" },

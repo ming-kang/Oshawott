@@ -30,8 +30,12 @@ export const Workspace = remote("oshawatt.workspace", {
 				providers: arr(ProviderSummary),
 			},
 			methods: {
+				/** `title` empty or absent: the chat takes its first message's beginning when it is sent. */
 				createChat: method(obj({ title: opt(str()) }), int()),
-				setApiKey: method(obj({ provider: str(), key: str() })),
+				/** Removes the chat from the list (stopping its run); its record stays in storage. */
+				deleteChat: method(obj({ id: int() })),
+				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
+				clearApiKey: method(obj({ provider: str() })),
 				setDefaultModel: method(ModelRef),
 			},
 		},
