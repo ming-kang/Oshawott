@@ -1,0 +1,151 @@
+// The Engine in a browser document: the Chromium offscreen document, or the Firefox event page. It is the only
+// context with a `runtime.onConnect` listener, so every port of the extension reaches it, and only it:
+// - Firefox closes a port when *any* context that received it unloads; one receiver avoids that.
+// - An offscreen document cannot call `tabs.connect`; pages and the Broker connect to it instead.
+import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
+import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
+import { googleProvider } from "@earendil-works/pi-ai/providers/google";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { createModels } from "@earendil-works/pi-ai";
+import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
+import { IndexedDbStorage } from "@earendil-works/pi-durable/storage/indexeddb";
+import { Browser } from "../contracts/browser.ts";
+import { Page } from "../contracts/page.ts";
+import { PORTS } from "../contracts/hosts.ts";
+import { BACKGROUND_CONTEXT, type Context, type Link } from "../lib/chord.ts";
+import { type PortLink, portLink } from "../link/port-link.ts";
+import { ext, type RuntimePort } from "../platform/webext.ts";
+import type { PageToolName } from "../tools/page-tools.ts";
+
+import { workerCodemodeSandbox } from "./codemode.ts";
+import { IndexedDbCredentialStore } from "./credentials.ts";
+import { type Engine, startEngine } from "./engine.ts";
+import { using } from "./tools.ts";
+
+const ATTACH_TIMEOUT_MS = 10_000;
+
+/**
+ * Links that arrived before anyone asked for them, and askers waiting for one. A port becomes a link the moment it
+ * arrives: Port events are not buffered, and the peer's Chord sends its handshake at once.
+ */
+export class Arrivals<K> {
+	#links = new Map<K, PortLink>();
+	#waiters = new Map<K, (link: PortLink) => void>();
+
+	arrive(key: K, link: PortLink) {
+		const waiter = this.#waiters.get(key);
+		this.#waiters.delete(key);
+		if (waiter) return waiter(link);
+		this.#links.get(key)?.close();
+		this.#links.set(key, link);
+		void link.done.then(() => {
+			if (this.#links.get(key) === link) this.#links.delete(key);
+		});
+	}
+
+	take(key: K): PortLink | undefined {
+		const link = this.#links.get(key);
+		this.#links.delete(key);
+		return link;
+	}
+
+	wait(key: K, ms: number, context: Context): Promise<PortLink> {
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.#waiters.delete(key);
+				reject(new Error(`No port for ${String(key)} within ${ms} ms`));
+			}, ms);
+			context.abortSignal?.addEventListener("abort", () => clearTimeout(timer), { once: true });
+			this.#waiters.set(key, (link) => {
+				clearTimeout(timer);
+				resolve(link);
+			});
+		});
+	}
+}
+
+const lastError = () => ext.runtime.lastError?.message;
+
+export interface BrowserEngineOptions {
+	/** How the Engine reaches the Broker: a port from the service worker, or a memory link in the same page. */
+	readonly broker: (context: Context, brokerPorts: Arrivals<"broker">) => Promise<Link>;
+}
+
+export async function runEngine(options: BrowserEngineOptions): Promise<Engine> {
+	const context = BACKGROUND_CONTEXT;
+	const tabs = new Arrivals<number>();
+	const brokers = new Arrivals<"broker">();
+	let engine: Engine | undefined;
+	const panels: { link: PortLink; instance: string }[] = [];
+	const extensionPage = (port: RuntimePort, path: string) =>
+		port.sender?.id === ext.runtime.id && port.sender.url?.startsWith(ext.runtime.getURL(path)) === true;
+
+	// Registered synchronously, before anything awaits: a port that wakes this document must find its listener.
+	ext.runtime.onConnect.addListener((port) => {
+		if (port.name === PORTS.tab) {
+			const tabId = port.sender?.tab?.id;
+			if (tabId === undefined || port.sender?.frameId !== 0) return port.disconnect();
+			tabs.arrive(tabId, portLink(port, lastError));
+		} else if (port.name === PORTS.panel) {
+			if (!extensionPage(port, "panel.html")) return port.disconnect();
+			const panel = { link: portLink(port, lastError), instance: port.sender?.documentId ?? crypto.randomUUID() };
+			if (engine) engine.acceptPanel(panel.link, panel.instance);
+			else panels.push(panel);
+		} else if (port.name === PORTS.broker) {
+			if (port.sender?.id !== ext.runtime.id || port.sender.tab !== undefined) return port.disconnect();
+			brokers.arrive("broker", portLink(port, lastError));
+		} else port.disconnect();
+	});
+
+	// One Engine per profile: a second document (a restart overlapping the old one) waits for the first to let go.
+	await new Promise<void>((acquired) => {
+		void navigator.locks.request("oshawatt:engine", () => {
+			acquired();
+			return new Promise(() => {});
+		});
+	});
+	void navigator.storage?.persist?.();
+
+	const credentials = new IndexedDbCredentialStore();
+	const models = createModels({
+		credentials,
+		authContext: { env: async () => undefined, fileExists: async () => false },
+	});
+	for (const provider of [anthropicProvider(), openaiProvider(), googleProvider(), openrouterProvider(), deepseekProvider()]) {
+		models.setProvider(provider);
+	}
+
+	const sandbox = workerCodemodeSandbox(new URL("codemode-worker.js", location.href));
+	engine = await startEngine(
+		{
+			storage: await IndexedDbStorage.open("oshawatt"),
+			models,
+			credentials,
+			broker: (ctx) => options.broker(ctx, brokers),
+			tab: async (tabId, ctx) => {
+				const ready = tabs.take(tabId);
+				if (ready && !ready.closed) return ready;
+				const arriving = tabs.wait(tabId, ATTACH_TIMEOUT_MS, ctx);
+				await using(engine!.host, Browser, {}, ctx, (browser) => browser.attach({ tabId }, ctx));
+				return await arriving;
+			},
+			extensions: [createCodemodeExtension({ sandbox })],
+		},
+		context,
+	);
+	for (const panel of panels.splice(0)) engine.acceptPanel(panel.link, panel.instance);
+
+	// A handle for the document's devtools (and the smoke tests): `await oshawatt.page(tabId, "page_snapshot", {})`,
+	// `await oshawatt.codemode("return 1 + 1")`.
+	const started = engine;
+	(globalThis as { oshawatt?: unknown }).oshawatt = {
+		engine: started,
+		codemode: (code: string) => sandbox.execute(code),
+		page: (tabId: number, tool: PageToolName, args: Record<string, unknown>) =>
+			using(started.host, Page, { tabId }, context, (page) =>
+				(page[tool] as unknown as (args: unknown, context: Context) => Promise<unknown>).call(page, args, context),
+			),
+	};
+	return engine;
+}

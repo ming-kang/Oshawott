@@ -1,0 +1,33 @@
+{
+  "name": "oshawatt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Pi Durable agent as a Chromium and Firefox browser extension",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:chromium": "node scripts/build.mjs chromium",
+    "build:firefox": "node scripts/build.mjs firefox",
+    "check": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types \"test/**/*.test.ts\"",
+    "smoke:chromium": "node scripts/build.mjs chromium --dev && node scripts/smoke-chromium.mjs",
+    "smoke:firefox": "node scripts/build.mjs firefox --dev && node scripts/smoke-firefox.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-codemode": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "esbuild": "0.28.2",
+    "puppeteer-core": "25.3.0",
+    "typescript": "7.0.2"
+  }
+}
