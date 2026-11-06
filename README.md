@@ -60,4 +60,4 @@ test/          单元测试
 
 ## 许可
 
-Apache-2.0
+ [MIT LICENSE](LICENSE)
