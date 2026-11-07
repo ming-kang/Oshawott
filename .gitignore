@@ -1,2 +1,27 @@
-node_modules/
+node_modules
 dist/
+.artifacts/
+*.log
+.DS_Store
+*.tsbuildinfo
+*.cpuprofile
+
+# Environment
+.env
+
+# Plans
+todo.md
+plans/
+
+# Editor files
+.vscode/
+.zed/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# Package specific
+.npm/
+.nyc_output/
