@@ -25,6 +25,7 @@ const SVG = "http://www.w3.org/2000/svg";
 /** 24×24 stroke icons: path data, or a circle / rect as `c:cx,cy,r` / `r:x,y,w,h,rx`. */
 const ICONS = {
 	plus: ["M12 5v14", "M5 12h14"],
+	paperclip: ["m8 12 6.5-6.5a3 3 0 0 1 4.2 4.2l-8.4 8.4a5 5 0 0 1-7.1-7.1l8.5-8.5", "m6 14.5 8.5-8.5"],
 	compose: ["M12 20h8", "M15.5 4.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"],
 	menu: ["M4 6.5h16", "M4 12h16", "M4 17.5h10"],
 	sliders: ["M4 7h9", "M19 7h1", "M4 17h3", "M13 17h7", "c:16,7,2.5", "c:10,17,2.5"],

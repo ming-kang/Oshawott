@@ -11,6 +11,11 @@ export function shownModel(providers: readonly ProviderSummary[], chosen: ModelR
 
 export const sameModel = (a: ModelRef | undefined, b: ModelRef | undefined) => a?.provider === b?.provider && a?.modelId === b?.modelId;
 
+export function supportsVision(providers: readonly ProviderSummary[], model: ModelRef | undefined): boolean {
+	if (!model) return false;
+	return providers.find((provider) => provider.id === model.provider)?.models.find((item) => item.id === model.modelId)?.vision ?? false;
+}
+
 export function modelName(providers: readonly ProviderSummary[], model: ModelRef): string {
 	return providers.find((provider) => provider.id === model.provider)?.models.find((item) => item.id === model.modelId)?.name ?? model.modelId;
 }

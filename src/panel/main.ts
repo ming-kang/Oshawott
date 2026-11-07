@@ -1,14 +1,17 @@
 import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
-import { Chat, DEFAULT_BUSY_MODE, type BusyMode, type ModelRef, type ProviderSummary, Workspace } from "../contracts/chat.ts";
+import { Chat, DEFAULT_BUSY_MODE, PANEL_LINK_LIMITS, type BusyMode, type ModelRef, type ProviderSummary, Workspace } from "../contracts/chat.ts";
 import { MESSAGES, PORTS, type Principal } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, type Reference } from "../lib/chord.ts";
 import { portLink } from "../link/port-link.ts";
 import { ext } from "../platform/webext.ts";
+import { testAttachmentComposer } from "./attachment-selftest.ts";
+import { AttachmentPicker, pendingInput } from "./attachments.ts";
 import { ChatDrawer } from "./chats.ts";
+import { DraftStore, type ComposerDraft } from "./drafts.ts";
 import { FilesSheet } from "./files.ts";
 import { LANG, t } from "./i18n.ts";
 import { ModelMenu } from "./model-menu.ts";
-import { configuredProviders, modelName, sameModel, shownModel as resolveModel } from "./models.ts";
+import { configuredProviders, modelName, sameModel, shownModel as resolveModel, supportsVision } from "./models.ts";
 import { OverlayController } from "./overlays.ts";
 import { testPanel } from "./panel-selftest.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
@@ -32,6 +35,12 @@ let chat: ChatRef | undefined;
 let chatId: number | undefined;
 let loaded = false;
 let whenBusy: BusyMode = DEFAULT_BUSY_MODE;
+const draftStorePromise = DraftStore.open();
+let draftReady = false;
+let draftLoad = 0;
+let draftTimer: ReturnType<typeof setTimeout> | undefined;
+let draftWrites: Promise<void> = Promise.resolve();
+let composerRevision = 0;
 const queue = new MessageQueue({
 	update: async (id, change) => {
 		if (!chat) throw new Error("The chat is not open.");
@@ -59,21 +68,34 @@ const $ = {
 	scroller: h("div", { class: "scroller", id: "scroller" }),
 	jump: h("button", { class: "jump", type: "button", hidden: true }, icon("down", 14), t("jump")),
 	context: h("div", { class: "context-row", id: "context" }),
+	vision: h("div", { class: "composer-notice", id: "vision-warning", role: "alert", hidden: true }),
 	prompt: h("textarea", { id: "prompt", rows: 1, placeholder: t("composer.placeholder"), "aria-label": t("composer.placeholder") }),
 	model: h("button", { class: "model-btn", id: "model", type: "button", "aria-haspopup": "listbox" }),
 	stop: h("button", { class: "send-btn stop-btn", id: "stop", type: "button", title: t("composer.stop"), "aria-label": t("composer.stop"), hidden: true }, icon("stop", 16)),
 	sendMode: h("button", { class: "send-mode-btn", id: "send-mode", type: "button", "aria-haspopup": "menu", hidden: true }),
 	send: h("button", { class: "send-btn", id: "send", type: "button" }),
 };
+const attachments = new AttachmentPicker(() => {
+	composerRevision++;
+	renderComposer();
+	scheduleDraftSave();
+});
+const composerElement = h("div", { class: "composer", id: "composer", "data-drop-label": t("attachments.drop") },
+	$.context, $.vision, attachments.tray, $.prompt, attachments.input,
+	h("div", { class: "composer-bar" }, $.model, attachments.button, $.stop, $.sendMode, $.send));
 document.body.append(
 	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.files, $.settings),
 	h("main", { class: "main" }, $.banner, $.scroller, $.jump),
-	h("footer", { class: "composer-wrap" }, queue.element,
-		h("div", { class: "composer", id: "composer" }, $.context, $.prompt,
-			h("div", { class: "composer-bar" }, $.model, $.stop, $.sendMode, $.send))),
+	h("footer", { class: "composer-wrap" }, queue.element, composerElement),
 );
 const tabs = new TabTracker();
-const transcript = new Transcript({ suggest: (text) => void send(text), openSettings, chooseModel: openModelMenu });
+const transcript = new Transcript({
+	suggest: (text) => void send(text), openSettings, chooseModel: openModelMenu,
+	readFile: async (path) => {
+		if (!chat) throw new Error("The chat is not open.");
+		return chat.readFile({ path }, context);
+	},
+});
 $.scroller.append(transcript.element);
 const providers = (): readonly ProviderSummary[] => workspace?.providers.value ?? [];
 const connected = () => configuredProviders(providers());
@@ -83,6 +105,50 @@ const chatModel = () => (view()?.docs["pi.agent"] as AgentState | undefined)?.mo
 const currentModel = (): ModelRef | undefined => chatModel() ?? workspace?.defaultModel.value ?? undefined;
 const shownModel = () => resolveModel(providers(), currentModel());
 
+function draftSnapshot(): ComposerDraft {
+	return { text: $.prompt.value, attachments: attachments.items.map(pendingInput), updatedAt: Date.now() };
+}
+
+function writeDraft(id: number | undefined, snapshot: ComposerDraft) {
+	draftWrites = draftWrites.then(async () => (await draftStorePromise).save(id, snapshot)).catch((error) => console.debug("[oshawott draft]", error));
+	return draftWrites;
+}
+
+function saveDraftNow(id: number | undefined = chatId) {
+	if (draftTimer !== undefined) clearTimeout(draftTimer);
+	draftTimer = undefined;
+	return writeDraft(id, draftSnapshot());
+}
+
+function scheduleDraftSave() {
+	if (!draftReady) return;
+	if (draftTimer !== undefined) clearTimeout(draftTimer);
+	const id = chatId;
+	const snapshot = draftSnapshot();
+	draftTimer = setTimeout(() => {
+		draftTimer = undefined;
+		void writeDraft(id, snapshot);
+	}, 180);
+}
+
+async function restoreDraft(id: number | undefined, load: number) {
+	const revision = composerRevision;
+	const store = await draftStorePromise;
+	const draft = await store.load(id).catch(() => undefined);
+	if (load !== draftLoad || chatId !== id) return;
+	if (revision !== composerRevision) {
+		// A slow database read must never overwrite text or imports that arrived meanwhile.
+		draftReady = true;
+		scheduleDraftSave();
+		return;
+	}
+	$.prompt.value = draft?.text ?? "";
+	attachments.restore(draft?.attachments ?? []);
+	draftReady = true;
+	autosize();
+	renderComposer();
+}
+
 let backoff = 250;
 async function connect() {
 	try {
@@ -90,7 +156,7 @@ async function connect() {
 	} catch {
 	}
 	const link = portLink(ext.runtime.connect({ name: PORTS.panel }), () => ext.runtime.lastError?.message);
-	host.connect(link, { principal: { kind: "engine" } }, context);
+	host.connect(link, { principal: { kind: "engine" }, limits: PANEL_LINK_LIMITS }, context);
 	const healthy = setTimeout(() => {
 		backoff = 250;
 		$.banner.hidden = true;
@@ -140,14 +206,15 @@ function renderView() {
 function renderComposer() {
 	const busy = transcript.busy;
 	const text = $.prompt.value.trim();
-	const stop = busy && !text;
+	const hasContent = Boolean(text || attachments.items.length);
+	const stop = busy && !hasContent;
 	const ref = shownModel();
 	const ready = connected().length > 0;
 	document.body.dataset.busy = String(busy);
 	$.prompt.placeholder = busy ? t("composer.placeholderBusy") : t("composer.placeholder");
-	$.stop.hidden = !busy || !text;
-	$.sendMode.hidden = !busy || !text;
-	if ((!busy || !text) && overlays.current instanceof SendModeMenu) overlays.close();
+	$.stop.hidden = !busy || !hasContent;
+	$.sendMode.hidden = !busy || !hasContent;
+	if ((!busy || !hasContent) && overlays.current instanceof SendModeMenu) overlays.close();
 	if (overlays.current instanceof StopConfirmMenu && stopConfirm?.menu === overlays.current) {
 		// The confirmation names this run's queue size; it is stale once the run ends, the chat or count changes, or its Stop control goes away.
 		const anchorShown = stopConfirm.anchor === $.send ? stop : !$.stop.hidden;
@@ -170,9 +237,15 @@ function renderComposer() {
 		$.send.dataset.mode = mode;
 		$.send.replaceChildren(icon(stop ? "stop" : "send", 16));
 	}
-	$.send.disabled = !stop && !text;
+	$.send.disabled = sending || (!stop && !hasContent);
 	$.send.title = stop ? t("composer.stop") : busy ? t("composer.sendBusy", deliveryLabel) : `${t("composer.send")} (Enter)`;
 	$.send.setAttribute("aria-label", stop ? t("composer.stop") : busy ? deliveryLabel : t("composer.send"));
+	const visionBlocked = attachments.hasImages && !supportsVision(providers(), ref);
+	$.vision.hidden = !visionBlocked;
+	if (visionBlocked) {
+		$.vision.replaceChildren(icon("alert", 15), h("span", null, t("composer.vision", ref ? modelName(providers(), ref) : t("model.choose"))),
+			h("button", { class: "btn small", type: "button", onclick: openModelMenu }, t("failure.chooseModel")));
+	}
 	const label = !ready ? t("model.connect") : ref ? modelName(providers(), ref) : t("model.choose");
 	if ($.model.dataset.attention !== String(!ready) || $.model.querySelector(".model-name")?.textContent !== label) {
 		$.model.dataset.attention = String(!ready);
@@ -201,15 +274,42 @@ function grant() {
 	void tabs.grant().then((granted) => toast(granted ? t("tab.granted") : t("tab.denied"), granted ? "info" : "error"));
 }
 
-async function open(id: number | undefined) {
-	if (id === chatId && loaded && (id === undefined || chat)) return;
-	overlays.close();
+async function open(id: number | undefined, options: { preserveComposer?: boolean; discardPrevious?: boolean; keepOverlays?: boolean } = {}) {
+	if (id === chatId && loaded && (id === undefined ? draftReady : chat)) return;
+	const previous = chatId;
+	const previousDraft = draftSnapshot();
+	const previousReady = draftReady;
+	if (draftTimer !== undefined) clearTimeout(draftTimer);
+	draftTimer = undefined;
+	const load = ++draftLoad;
+	draftReady = false;
+	if (!options.preserveComposer) {
+		// Invalidate imports and remove A's visible bytes synchronously, before B's asynchronous draft read starts.
+		composerRevision++;
+		$.prompt.value = "";
+		attachments.clear();
+	}
+	if (!options.keepOverlays) overlays.close();
+	if (options.discardPrevious) {
+		const writes = draftWrites;
+		void (async () => {
+			await writes;
+			await (await draftStorePromise).remove(previous).catch(() => undefined);
+		})();
+	} else if ((previousReady || previousDraft.text || previousDraft.attachments.length) && !options.preserveComposer) {
+		void writeDraft(previous, previousDraft);
+	}
 	chat?.release();
 	chat = undefined;
 	chatId = id;
 	transcript.clear();
 	renderHeader();
 	renderView();
+	if (options.preserveComposer) {
+		await writeDraft(id, draftSnapshot());
+		if (previous !== id) await (await draftStorePromise).remove(previous).catch(() => undefined);
+		if (load === draftLoad) draftReady = true;
+	} else await restoreDraft(id, load);
 	if (id === undefined) return;
 	const next = await host.get(Chat, { id }, context);
 	if (chatId !== id || next.variant !== "owner") return next.release();
@@ -228,10 +328,25 @@ async function ensureModel(): Promise<ModelRef | undefined> {
 	return ref;
 }
 
+async function persistSubmittedDraft(id: number, raw: string, submitted: ReturnType<typeof pendingInput>[], visible: boolean) {
+	if (visible) return saveDraftNow(id);
+	await draftWrites;
+	const store = await draftStorePromise;
+	const draft = await store.load(id).catch(() => undefined);
+	if (!draft) return;
+	const ids = new Set(submitted.map((item) => item.id));
+	await writeDraft(id, {
+		text: draft.text === raw ? "" : draft.text,
+		attachments: draft.attachments.filter((item) => !ids.has(item.id)), updatedAt: Date.now(),
+	});
+}
+
 let sending = false;
 async function send(given?: string) {
-	const text = (given ?? $.prompt.value).trim();
-	if (!text || sending || !workspace) return;
+	const raw = given ?? $.prompt.value;
+	const text = raw.trim();
+	const submitted = attachments.items.map(pendingInput);
+	if ((!text && !submitted.length) || sending || !workspace) return;
 	const delivery = whenBusy;
 	if (!connected().length) {
 		if (given) $.prompt.value = given;
@@ -239,24 +354,61 @@ async function send(given?: string) {
 		return;
 	}
 	sending = true;
-	$.prompt.value = "";
-	autosize();
+	const originRevision = composerRevision;
+	let originLoad = draftLoad;
+	let admittedId = chatId;
+	let ownedTarget: ChatRef | undefined;
+	renderComposer();
 	try {
 		const model = await ensureModel();
-		if (chatId === undefined) await open(await workspace.createChat({}, context));
-		const target = chat;
-		if (!target) throw new Error("The chat did not open.");
-		if (model && !sameModel(chatModel(), model)) await target.configure(model, context);
+		if (submitted.some((item) => item.mimeType.startsWith("image/")) && !supportsVision(providers(), model)) {
+			renderComposer();
+			return;
+		}
+		if (admittedId === undefined) {
+			const created = await workspace.createChat({}, context);
+			if (chatId === undefined && draftLoad === originLoad) {
+				await open(created, { preserveComposer: true });
+				originLoad = draftLoad;
+			} else {
+				await draftWrites;
+				const store = await draftStorePromise;
+				const pending = await store.load(undefined).catch(() => undefined);
+				await writeDraft(created, pending ?? { text: raw, attachments: submitted, updatedAt: Date.now() });
+				if (chatId !== undefined) await store.remove(undefined).catch(() => undefined);
+			}
+			admittedId = created;
+		}
+		let target = chatId === admittedId ? chat : undefined;
+		if (!target) {
+			const held = await host.get(Chat, { id: admittedId }, context);
+			if (held.variant !== "owner") {
+				held.release();
+				throw new Error("The Engine refused the chat.");
+			}
+			ownedTarget = held;
+			target = held;
+		}
+		const visibleTarget = target === chat && chatId === admittedId;
+		if (model && (!visibleTarget || !sameModel(chatModel(), model))) await target.configure(model, context);
 		const tab = tabs.current;
 		await target.send({
-			text, requestId: crypto.randomUUID(), whenBusy: delivery,
+			text, requestId: crypto.randomUUID(), whenBusy: delivery, attachments: submitted,
 			...(tab && tab.access !== "unavailable" ? { tabId: tab.id } : {}),
 		}, context);
-		toBottom();
+		const visible = chatId === admittedId && draftLoad === originLoad;
+		// A completion belongs to its originating chat and composer generation, never to whichever chat is visible now.
+		if (visible && given === undefined && composerRevision === originRevision && $.prompt.value === raw) {
+			$.prompt.value = "";
+			composerRevision++;
+		}
+		if (visible) attachments.removeSubmitted(submitted.map((item) => item.id));
+		await persistSubmittedDraft(admittedId, raw, submitted, visible);
+		if (visible) toBottom();
 	} catch (error) {
-		if (!$.prompt.value) $.prompt.value = text;
 		toast(String((error as Error)?.message ?? error), "error");
 	} finally {
+		ownedTarget?.release();
 		sending = false;
 		autosize();
 		renderComposer();
@@ -267,12 +419,34 @@ function autosize() {
 	$.prompt.style.height = "auto";
 	$.prompt.style.height = `${Math.min($.prompt.scrollHeight, Math.round(innerHeight * 0.4))}px`;
 }
-$.prompt.addEventListener("input", () => { autosize(); renderComposer(); });
+$.prompt.addEventListener("input", () => { composerRevision++; autosize(); renderComposer(); scheduleDraftSave(); });
 $.prompt.addEventListener("keydown", (event) => {
 	if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
 	event.preventDefault();
 	void send();
 });
+$.prompt.addEventListener("paste", (event) => {
+	const files = [...event.clipboardData?.files ?? []];
+	if (!files.length) return;
+	event.preventDefault();
+	void attachments.addFiles(files);
+});
+composerElement.addEventListener("dragover", (event) => {
+	if (!event.dataTransfer?.types.includes("Files")) return;
+	event.preventDefault();
+	event.dataTransfer.dropEffect = "copy";
+	composerElement.dataset.dragging = "true";
+});
+composerElement.addEventListener("dragleave", (event) => {
+	if (!(event.relatedTarget instanceof Node) || !composerElement.contains(event.relatedTarget)) delete composerElement.dataset.dragging;
+});
+composerElement.addEventListener("drop", (event) => {
+	if (!event.dataTransfer?.files.length) return;
+	event.preventDefault();
+	delete composerElement.dataset.dragging;
+	void attachments.addFiles([...event.dataTransfer.files]);
+});
+window.addEventListener("pagehide", () => { if (draftReady) void saveDraftNow(); });
 let stopConfirm: { menu: StopConfirmMenu; chat: ChatRef; anchor: HTMLElement; count: number } | undefined;
 function abort(target: ChatRef) {
 	void target.abort(context).catch((error) => toast(String((error as Error)?.message ?? error), "error"));
@@ -370,7 +544,8 @@ async function main() {
 			if (member === held.busyMode) whenBusy = held.busyMode.value;
 			if (member === held.chats) {
 				const current = new Set(chats().map((chat) => chat.id));
-				if (chatId !== undefined && knownChats.has(chatId) && !current.has(chatId)) await open(undefined);
+				for (const id of knownChats) if (!current.has(id)) await (await draftStorePromise).remove(id).catch(() => undefined);
+				if (chatId !== undefined && knownChats.has(chatId) && !current.has(chatId)) await open(undefined, { discardPrevious: true });
 				knownChats = current;
 			}
 			renderHeader();
@@ -378,16 +553,17 @@ async function main() {
 			renderView();
 		});
 	}
+	await draftStorePromise;
 	loaded = true;
 	const newest = [...chats()].sort((a, b) => b.createdAt - a.createdAt)[0];
-	await open(newest?.id);
+	await open(newest?.id, { keepOverlays: true });
 	renderHeader();
 	renderView();
-	$.prompt.focus();
+	if (!overlays.current) $.prompt.focus();
 
 	if (__OSHAWOTT_DEV__) {
 		const panelTests = () => testPanel(held);
-		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests };
+		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests, attachments: testAttachmentComposer };
 		const origin = new URLSearchParams(location.search).get("selftest");
 		if (origin) void selftest(origin, panelTests);
 	}

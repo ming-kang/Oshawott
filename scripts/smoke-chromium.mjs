@@ -98,6 +98,30 @@ try {
 	step("file removal refreshes the sheet", remaining === "items.json", remaining);
 	await panel.click("#files-back");
 	await until("the file sheet closed", async () => !(await panel.$("#files")) || undefined);
+	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.attachments())) step(name, ok, detail);
+	await panel.evaluate(() => {
+		const transfer = new DataTransfer();
+		transfer.items.add(new File(["reload me"], "reload.txt", { type: "text/plain" }));
+		const input = document.querySelector("#attachment-input");
+		input.files = transfer.files;
+		input.dispatchEvent(new Event("change", { bubbles: true }));
+	});
+	await panel.type("#prompt", "Reload draft");
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	await panel.reload();
+	const restored = await until("draft and history after a Panel reload", () => panel.evaluate(() => {
+		const prompt = document.querySelector("#prompt");
+		const attachment = document.querySelector("#attachment-tray .attachment-name")?.textContent;
+		return prompt?.value === "Reload draft" && attachment === "reload.txt" && document.querySelectorAll(".msg.user .user-attachment").length === 3 || undefined;
+	}));
+	step("Panel reload restores per-chat drafts and attachment history", Boolean(restored));
+	await panel.evaluate(() => {
+		const prompt = document.querySelector("#prompt");
+		prompt.value = "";
+		prompt.dispatchEvent(new Event("input", { bubbles: true }));
+		document.querySelector("#attachment-tray .attachment-remove")?.click();
+	});
+	await new Promise((resolve) => setTimeout(resolve, 250));
 	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.toolCards())) step(name, ok, detail);
 	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.panel())) step(name, ok, detail);
 	await panel.click("#new-chat");

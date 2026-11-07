@@ -1,7 +1,10 @@
 // Committed entries never change and are built once by ID; a tool result fills its call's card.
 // Only `pi.live` (streaming answer, running tools, retry, last failure) is rebuilt on every change.
-import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureReason } from "@earendil-works/pi-durable";
+import { attachmentRefs, editableText, isImageAttachment, type AttachmentRef } from "../lib/attachments.ts";
+import { fromBase64 } from "../lib/base64.ts";
+import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
@@ -16,6 +19,7 @@ export interface TranscriptActions {
 	suggest(text: string): void;
 	openSettings(): void;
 	chooseModel(): void;
+	readFile(path: string): Promise<Uint8Array>;
 }
 
 export type TranscriptState =
@@ -57,6 +61,8 @@ export class Transcript {
 	readonly #live: HTMLElement;
 	#thinkingOpen = false;
 	#busy = false;
+	#objectUrls = new Map<string, Set<string>>();
+	#revision = 0;
 
 	constructor(actions: TranscriptActions) {
 		this.#actions = actions;
@@ -69,6 +75,9 @@ export class Transcript {
 	}
 
 	clear() {
+		this.#revision++;
+		for (const urls of this.#objectUrls.values()) for (const url of urls) URL.revokeObjectURL(url);
+		this.#objectUrls.clear();
 		for (const node of this.#nodes.values()) node.remove();
 		this.#nodes.clear();
 		this.#cards.clear();
@@ -109,6 +118,8 @@ export class Transcript {
 			if (keep.has(key)) continue;
 			node.remove();
 			this.#nodes.delete(key);
+			for (const url of this.#objectUrls.get(key) ?? []) URL.revokeObjectURL(url);
+			this.#objectUrls.delete(key);
 		}
 		for (const [id, card] of this.#cards) if (!card.element.isConnected) this.#cards.delete(id);
 
@@ -121,7 +132,7 @@ export class Transcript {
 		const message = entry.model?.[0];
 		switch (entry.kind) {
 			case "pi.user":
-				return h("div", { class: "msg user" }, h("div", { class: "bubble" }, message?.role === "user" ? textOf(message.content) : ""));
+				return message?.role === "user" ? this.#user(message, String(entry.id)) : h("div", { hidden: true });
 			case "pi.assistant":
 				return message?.role === "assistant" ? this.#assistant(message, false) : h("div", { hidden: true });
 			case "pi.tool-result": {
@@ -144,6 +155,72 @@ export class Transcript {
 			default:
 				return h("div", { hidden: true });
 		}
+	}
+
+	#user(message: UserMessage, key: string): HTMLElement {
+		const refs = attachmentRefs(message.content);
+		const text = editableText(message.content);
+		const bubble = h("div", { class: "bubble" }, text ? h("div", { class: "user-text" }, text) : null);
+		const images = typeof message.content === "string" ? [] : message.content.filter((block) => block.type === "image");
+		const referencedImages = refs.filter(isImageAttachment).length;
+		let imageIndex = 0;
+		if (refs.length) bubble.append(h("div", { class: "user-attachments" }, refs.map((ref) =>
+			this.#attachment(ref, key, isImageAttachment(ref) ? images[imageIndex++] : undefined))));
+		// Legacy image-only messages have no attachment metadata.
+		for (const image of images.slice(referencedImages)) {
+			bubble.append(h("img", { class: "user-image", src: `data:${image.mimeType};base64,${image.data}`, alt: t("attachments.title") }));
+		}
+		return h("div", { class: "msg user" }, bubble);
+	}
+
+	#attachment(ref: AttachmentRef, key: string, native?: ImageContent): HTMLElement {
+		const revision = this.#revision;
+		let bytes: Promise<Uint8Array> | undefined;
+		const load = () => {
+			bytes ??= native ? Promise.resolve(fromBase64(native.data)) : this.#actions.readFile(ref.path);
+			return bytes.catch((error) => { bytes = undefined; throw error; });
+		};
+		const card = h("button", {
+			class: `user-attachment${isImageAttachment(ref) ? " image" : ""}`, type: "button", "data-path": ref.path,
+			title: `${t("files.download")}: ${ref.name}`,
+		},
+			native ? h("img", { class: "user-attachment-preview", src: `data:${native.mimeType};base64,${native.data}`, alt: "" })
+				: isImageAttachment(ref) ? h("span", { class: "attachment-loading" }, h("span", { class: "spinner" })) : icon("file", 18),
+			h("span", { class: "user-attachment-copy" }, h("span", { class: "attachment-name" }, ref.name),
+				h("span", { class: "attachment-size" }, `${formatBytes(ref.size)}${ref.lines !== undefined ? ` · ${ref.lines} lines` : ""}`)),
+			icon("download", 14),
+		);
+		card.addEventListener("click", async () => {
+			card.setAttribute("disabled", "");
+			try {
+				const data = await load();
+				const url = URL.createObjectURL(new Blob([new Uint8Array(data)], { type: ref.mimeType }));
+				const link = h("a", { href: url, download: ref.name, hidden: true });
+				document.body.append(link);
+				link.click();
+				link.remove();
+				setTimeout(() => URL.revokeObjectURL(url), 30_000);
+			} catch (error) {
+				card.classList.add("failed");
+				card.append(h("span", { class: "sr-only" }, String((error as Error)?.message ?? error)));
+			} finally {
+				card.removeAttribute("disabled");
+			}
+		});
+		if (isImageAttachment(ref) && !native) {
+			void load().then((data) => {
+				if (revision !== this.#revision || !this.#nodes.has(key)) return;
+				const url = URL.createObjectURL(new Blob([new Uint8Array(data)], { type: ref.mimeType }));
+				const urls = this.#objectUrls.get(key) ?? new Set<string>();
+				urls.add(url);
+				this.#objectUrls.set(key, urls);
+				card.querySelector(".attachment-loading")?.replaceWith(h("img", { class: "user-attachment-preview", src: url, alt: "" }));
+			}).catch(() => {
+				card.classList.add("failed");
+				card.querySelector(".attachment-loading")?.replaceWith(icon("alert", 17));
+			});
+		}
+		return card;
 	}
 
 	#assistant(message: AssistantMessage, live: boolean): HTMLElement {

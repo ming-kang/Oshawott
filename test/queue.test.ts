@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type Message } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type Message, type UserMessage } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool, type InboxItem, type InboxState, MemoryStorage, type Storage, type SubmissionId } from "@earendil-works/pi-durable";
 import { Browser } from "../src/contracts/browser.ts";
+import { attachmentRefs, editableText } from "../src/lib/attachments.ts";
+import { fromBase64, toBase64 } from "../src/lib/base64.ts";
 import { Chat, Workspace } from "../src/contracts/chat.ts";
 import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
+import { resumeAttachmentDeletes } from "../src/engine/attachments.ts";
 import { startEngine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
+import { type FileBackend, type FileTx, MemoryFileBackend } from "../src/engine/files.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet, obj, type Reference } from "../src/lib/chord.ts";
 import { portLink } from "../src/link/port-link.ts";
 import { fakePortPair } from "./fake-port.ts";
@@ -49,7 +52,7 @@ function visibleUsers(chat: ChatRef): string[] {
 	);
 }
 
-async function fixture(responses: FauxResponseStep[], options: { storage?: Storage; chatId?: number } = {}) {
+async function fixture(responses: FauxResponseStep[], options: { storage?: Storage; chatId?: number; modelInput?: ("text" | "image")[]; files?: FileBackend } = {}) {
 	const started = deferred();
 	const release = deferred();
 	const hold = defineTool({
@@ -79,12 +82,12 @@ async function fixture(responses: FauxResponseStep[], options: { storage?: Stora
 			}));
 		}),
 	}], context);
-	const faux = fauxProvider({ models: [{ id: "faux-1" }] });
+	const faux = fauxProvider({ models: [{ id: "faux-1", ...(options.modelInput ? { input: options.modelInput } : {}) }] });
 	faux.setResponses(responses);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
 	const engine = await startEngine({
-		storage: options.storage ?? new MemoryStorage(), models, credentials: new InMemoryCredentialStore(), files: new MemoryFileBackend(),
+		storage: options.storage ?? new MemoryStorage(), models, credentials: new InMemoryCredentialStore(), files: options.files ?? new MemoryFileBackend(),
 		broker: async () => {
 			const [engineEnd, brokerEnd] = fakePortPair();
 			broker.accept(portLink(brokerEnd), { principal: { kind: "engine" } }, context);
@@ -297,6 +300,155 @@ test("queued submissions and their IDs survive an Engine restart", async () => {
 	}
 });
 
+const PNG = fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+const utf8 = new TextEncoder();
+
+test("image and text attachments reach the model and the same bytes are downloadable", async () => {
+	let content: UserMessage["content"] | undefined;
+	const f = await fixture([(request) => {
+		content = ([...request.messages].reverse().find((message) => message.role === "user") as UserMessage | undefined)?.content;
+		return fauxAssistantMessage("Seen");
+	}]);
+	try {
+		const submission = await f.chat.send({ text: "", requestId: "attachments", attachments: [
+			{ id: "pixel", name: "pixel.png", mimeType: "image/png", data: PNG },
+			{ id: "notes", name: "notes.txt", mimeType: "text/plain", data: utf8.encode("full private file body") },
+		] }, context);
+		await until(() => content, "the attachment model request");
+		assert.ok(Array.isArray(content));
+		const blocks = content as Exclude<UserMessage["content"], string>;
+		const image = blocks.find((block) => block.type === "image");
+		assert.equal(image?.type === "image" && image.data, toBase64(PNG));
+		assert.equal(editableText(content), "");
+		assert.equal(attachmentRefs(content).length, 2);
+		assert.ok(!JSON.stringify(content).includes("full private file body"), "text files are not inlined");
+		const files = await f.chat.files(context);
+		assert.equal(files.length, 2);
+		const imageFile = files.find((file) => file.path.endsWith("pixel.png"));
+		assert.deepEqual(await f.chat.readFile({ path: imageFile!.path }, context), PNG);
+		assert.equal(f.workspace.chats.value.find((chat) => chat.id === f.id)?.title, "pixel.png, notes.txt");
+		const duplicate = await f.chat.send({ text: "Not admitted twice", requestId: "attachments", attachments: [
+			{ id: "new-id", name: "orphan.txt", mimeType: "text/plain", data: utf8.encode("must not persist") },
+		] }, context);
+		assert.equal(duplicate, submission);
+		assert.equal((await f.chat.files(context)).length, 2, "a repeated request ID writes no new attachment files");
+	} finally {
+		await f.close();
+	}
+});
+
+test("queued attachment edits preserve images, honor removals and clean cancelled files", async () => {
+	const f = await fixture([
+		fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }),
+		fauxAssistantMessage("unused"),
+	]);
+	try {
+		await f.chat.send({ text: "Start", requestId: "start" }, context);
+		await f.started.promise;
+		const id = await f.chat.send({ text: "Original", requestId: "queued-image", whenBusy: "followUp", attachments: [
+			{ id: "pixel", name: "pixel.png", mimeType: "image/png", data: PNG },
+		] }, context);
+		await until(() => queued(f.chat).length === 1 || undefined, "the queued image");
+		assert.equal(await f.chat.updateQueued({ id, text: "Edited" }, context), "updated");
+		let content = queued(f.chat)[0]!.content;
+		assert.equal(editableText(content), "Edited");
+		assert.equal(attachmentRefs(content).length, 1);
+		assert.equal(typeof content === "string" ? 0 : content.filter((block) => block.type === "image").length, 1);
+		await assert.rejects(f.chat.updateQueued({ id, removeAttachments: ["/workspace/attachments/../escape.txt"] }, context), /Not an attachment/);
+		assert.equal(await f.chat.updateQueued({
+			id, text: "Text only", requestId: "edit-attachments", removeAttachments: [attachmentRefs(content)[0]!.path],
+			attachments: [{ id: "replacement", name: "replacement.txt", mimeType: "text/plain", data: utf8.encode("replacement") }],
+		}, context), "updated");
+		content = queued(f.chat)[0]!.content;
+		assert.deepEqual(attachmentRefs(content).map((item) => item.name), ["replacement.txt"]);
+		assert.equal(typeof content === "string" ? 0 : content.filter((block) => block.type === "image").length, 0);
+		assert.equal((await f.chat.files(context)).some((file) => file.path.endsWith("pixel.png")), false);
+		assert.equal(await f.chat.cancelQueued({ id }, context), "aborted");
+		assert.deepEqual(await f.chat.files(context), []);
+	} finally {
+		await f.close();
+	}
+});
+
+class DeleteFailureBackend implements FileBackend {
+	readonly inner = new MemoryFileBackend();
+	readonly failures = new Set<string>();
+	transact<T>(chat: number, mode: "readonly" | "readwrite", fn: (tx: FileTx) => Promise<T>): Promise<T> {
+		return this.inner.transact(chat, mode, (tx) => fn({
+			...tx,
+			delete: (path) => {
+				if (this.failures.has(path)) throw new Error("injected delete failure");
+				tx.delete(path);
+			},
+		}));
+	}
+	clear(chat: number) { return this.inner.clear(chat); }
+}
+
+test("post-commit cleanup failure preserves new files and retries only the removed paths", async () => {
+	const files = new DeleteFailureBackend();
+	const f = await fixture([
+		fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }),
+		fauxAssistantMessage("unused"),
+	], { files });
+	try {
+		await f.chat.send({ text: "Start", requestId: "start" }, context);
+		await f.started.promise;
+		const id = await f.chat.send({ text: "Original", requestId: "queued", whenBusy: "followUp", attachments: [
+			{ id: "old", name: "old.txt", mimeType: "text/plain", data: utf8.encode("old") },
+		] }, context);
+		await until(() => attachmentRefs(queued(f.chat)[0]?.content ?? "")[0], "the old attachment");
+		const oldPath = attachmentRefs(queued(f.chat)[0]!.content)[0]!.path;
+		files.failures.add(oldPath);
+		assert.equal(await f.chat.updateQueued({
+			id, requestId: "replacement-edit", removeAttachments: [oldPath],
+			attachments: [{ id: "new", name: "new.txt", mimeType: "text/plain", data: utf8.encode("new") }],
+		}, context), "updated");
+		const paths = (await f.chat.files(context)).map((file) => file.path);
+		assert.ok(paths.some((path) => path.endsWith("new.txt")), "the committed attachment is never rolled back by cleanup");
+		files.failures.delete(oldPath);
+		await resumeAttachmentDeletes(f.engine.harness, files, context, (error) => { throw error; });
+		const remaining = await f.chat.files(context);
+		assert.ok(!remaining.some((file) => file.path === oldPath.slice("/workspace/".length)));
+		assert.ok(remaining.some((file) => file.path.endsWith("new.txt")));
+	} finally {
+		await f.close();
+	}
+});
+
+test("a text-only model rejects an image before admission and leaves no file", async () => {
+	const f = await fixture([fauxAssistantMessage("unused")], { modelInput: ["text"] });
+	try {
+		await assert.rejects(f.chat.send({ text: "Look", requestId: "no-vision", attachments: [
+			{ id: "pixel", name: "pixel.png", mimeType: "image/png", data: PNG },
+		] }, context), /cannot process images/);
+		assert.deepEqual(await f.chat.files(context), []);
+	} finally {
+		await f.close();
+	}
+});
+
+test("edits and model changes re-check every queued image, not only newly added files", async () => {
+	const f = await fixture([
+		fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }),
+		fauxAssistantMessage("unused"),
+	]);
+	try {
+		await f.chat.send({ text: "Start", requestId: "start" }, context);
+		await f.started.promise;
+		const id = await f.chat.send({ text: "Image", requestId: "image", whenBusy: "followUp", attachments: [
+			{ id: "pixel", name: "pixel.png", mimeType: "image/png", data: PNG },
+		] }, context);
+		await until(() => queued(f.chat).length === 1 || undefined, "the queued image");
+		const model = f.faux.getModel() as unknown as { provider: string; id: string; input: ("text" | "image")[] };
+		model.input = ["text"];
+		await assert.rejects(f.chat.updateQueued({ id, text: "Still an image" }, context), /cannot process images/);
+		await assert.rejects(f.chat.configure({ provider: model.provider, modelId: model.id }, context), /cannot process images/);
+	} finally {
+		await f.close();
+	}
+});
+
 test("abort withdraws every queued input and records it unanswered", async () => {
 	const f = await fixture([
 		fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }),
@@ -306,7 +458,9 @@ test("abort withdraws every queued input and records it unanswered", async () =>
 		await f.chat.send({ text: "Start", requestId: "start" }, context);
 		await f.started.promise;
 		const steer = await f.chat.send({ text: "Steer", requestId: "steer", whenBusy: "steer" }, context);
-		const followUp = await f.chat.send({ text: "Follow-up", requestId: "follow", whenBusy: "followUp" }, context);
+		const followUp = await f.chat.send({ text: "Follow-up", requestId: "follow", whenBusy: "followUp", attachments: [
+			{ id: "abort-image", name: "abort.png", mimeType: "image/png", data: PNG },
+		] }, context);
 		await until(() => queued(f.chat).length === 2 || undefined, "the queued inputs");
 		const aborting = f.chat.abort(context);
 		await until(() => queued(f.chat).length === 0 || undefined, "abort to withdraw the inbox before the tool ends");
@@ -317,6 +471,7 @@ test("abort withdraws every queued input and records it unanswered", async () =>
 		f.release.resolve();
 		await aborting;
 		assert.deepEqual(visibleUsers(f.chat), ["Start"]);
+		assert.deepEqual(await f.chat.files(context), [], "withdrawing the queue also removes its unreferenced attachments");
 	} finally {
 		await f.close();
 	}

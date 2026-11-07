@@ -152,7 +152,7 @@ export async function testPanel(source: Source) {
 		document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 		step("popover outside dismissal excludes its trigger", kept && !controller.current && third.closes() === 1);
 
-		const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {} });
+		const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array() });
 		fixture.append(transcript.element);
 		transcript.update({ kind: "loading" });
 		const loading = Boolean(transcript.element.querySelector(".connecting"));

@@ -4,10 +4,10 @@ import type { ProviderSummary } from "../src/contracts/chat.ts";
 import { configuredProviders, modelName, sameModel, shownModel } from "../src/panel/models.ts";
 
 const providers: ProviderSummary[] = [
-	{ id: "offline", name: "Offline", configured: false, models: [{ id: "unavailable", name: "Unavailable" }] },
+	{ id: "offline", name: "Offline", configured: false, models: [{ id: "unavailable", name: "Unavailable", vision: false }] },
 	{ id: "empty", name: "Empty", configured: true, models: [] },
-	{ id: "first", name: "First", configured: true, models: [{ id: "one", name: "Model One" }, { id: "two", name: "Model Two" }] },
-	{ id: "second", name: "Second", configured: true, models: [{ id: "three", name: "Model Three" }] },
+	{ id: "first", name: "First", configured: true, models: [{ id: "one", name: "Model One", vision: true }, { id: "two", name: "Model Two", vision: false }] },
+	{ id: "second", name: "Second", configured: true, models: [{ id: "three", name: "Model Three", vision: true }] },
 ];
 
 test("model fallback skips disconnected and empty providers, preserving a connected choice", () => {
@@ -16,7 +16,7 @@ test("model fallback skips disconnected and empty providers, preserving a connec
 	assert.deepEqual(shownModel(providers, { provider: "offline", modelId: "unavailable" }), { provider: "first", modelId: "one" });
 	const choice = { provider: "second", modelId: "three" };
 	assert.equal(shownModel(providers, choice), choice);
-	assert.deepEqual(providers[0]?.models, [{ id: "unavailable", name: "Unavailable" }], "policy does not mutate provider state");
+	assert.deepEqual(providers[0]?.models, [{ id: "unavailable", name: "Unavailable", vision: false }], "policy does not mutate provider state");
 });
 
 test("no fallback keeps a configured model reference for error feedback, or leaves an empty choice empty", () => {

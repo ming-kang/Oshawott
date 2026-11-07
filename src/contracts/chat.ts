@@ -1,6 +1,10 @@
 import type { ConversationView, ModelRef as DurableModelRef } from "@earendil-works/pi-durable";
 import { arr, bool, bytes, int, method, nul, num, obj, oneOf, opt, remote, type Static, str, typed, union, unknown } from "../lib/chord.ts";
+import { MAX_ATTACHMENTS, MAX_TEXT_ATTACHMENT_BYTES } from "../lib/attachments.ts";
 import { EngineHost } from "./hosts.ts";
+
+/** A whole conversation's images may appear base64-encoded in one conversation-view part. */
+export const PANEL_LINK_LIMITS = { part: 256 * 1024 * 1024, decoded: 512 * 1024 * 1024 } as const;
 
 export const ModelRef = obj({ provider: str(), modelId: str() });
 export type ModelRef = DurableModelRef;
@@ -17,6 +21,15 @@ export type QueueCancelResult = Static<typeof QueueCancelResult>;
 
 export const ChatFile = obj({ path: str(), size: int(), mtimeMs: num() });
 
+export const AttachmentInput = obj({
+	id: str({ min: 1, max: 100 }),
+	name: str({ min: 1, max: 500 }),
+	mimeType: str({ max: 200 }),
+	data: bytes({ max: MAX_TEXT_ATTACHMENT_BYTES }),
+});
+export type AttachmentInput = Static<typeof AttachmentInput>;
+const AttachmentInputs = arr(AttachmentInput, { max: MAX_ATTACHMENTS });
+
 export const ChatSummary = obj({ id: int(), title: str(), createdAt: num() });
 export type ChatSummary = Static<typeof ChatSummary>;
 
@@ -24,12 +37,12 @@ export const ProviderSummary = obj({
 	id: str(),
 	name: str(),
 	configured: bool(),
-	models: arr(obj({ id: str(), name: str() })),
+	models: arr(obj({ id: str(), name: str(), vision: bool() })),
 });
 export type ProviderSummary = Static<typeof ProviderSummary>;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 2,
+	version: 3,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -55,7 +68,7 @@ export const Workspace = remote("oshawott.workspace", {
 });
 
 export const Chat = remote("oshawott.chat", {
-	version: 2,
+	version: 3,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -71,16 +84,21 @@ export const Chat = remote("oshawott.chat", {
 				 */
 				send: method(
 					obj({
-						text: str({ min: 1, max: 1_000_000 }),
+						text: str({ max: 1_000_000 }),
 						requestId: str({ min: 1, max: 200 }),
 						tabId: opt(int()),
 						whenBusy: opt(BusyMode),
+						attachments: opt(AttachmentInputs),
 					}),
 					int(),
 				),
-				/** Edit text and/or change delivery while the submission is still in `pi.inbox`. */
+				/** Edit content and/or delivery while queued. Removed attachment paths must belong to that queued message. */
 				updateQueued: method(
-					obj({ id: int(), text: opt(str({ min: 1, max: 1_000_000 })), whenBusy: opt(BusyMode) }),
+					obj({
+						id: int(), text: opt(str({ max: 1_000_000 })), whenBusy: opt(BusyMode),
+						requestId: opt(str({ min: 1, max: 200 })),
+						attachments: opt(AttachmentInputs), removeAttachments: opt(arr(str(), { max: MAX_ATTACHMENTS })),
+					}),
 					QueueUpdateResult,
 				),
 				cancelQueued: method(obj({ id: int() }), QueueCancelResult),

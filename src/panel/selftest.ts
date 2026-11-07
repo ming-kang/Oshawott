@@ -1,4 +1,5 @@
 import { ext } from "../platform/webext.ts";
+import { testAttachmentComposer } from "./attachment-selftest.ts";
 import { testToolCards } from "./tool-selftest.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
@@ -110,6 +111,22 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 		await until(() => all(".file-row").length === 1);
 		step("file removal refreshes the sheet and deletes the stored bytes", all(".file-row")[0]?.dataset.path === "items.json" && await storedFile("/workspace/items.json.stats.json") === undefined);
 		click("#files-back");
+		steps.push(...await testAttachmentComposer());
+		const reopened = window.open(ext.runtime.getURL("panel.html"), "_blank");
+		try {
+			await until(() => {
+				try {
+					return reopened?.document.querySelectorAll(".msg.user .user-attachment").length === 3 || undefined;
+				} catch {
+					return undefined;
+				}
+			});
+			step("a reopened Firefox Panel restores attachment history", true);
+		} catch (error) {
+			step("a reopened Firefox Panel restores attachment history", false, String(error));
+		} finally {
+			reopened?.close();
+		}
 		steps.push(...await testToolCards(), ...await panelTests());
 
 		const fresh = async (text: string) => {

@@ -2,8 +2,10 @@ import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
 import { FileError } from "@earendil-works/pi-durable/env";
 import { createRegistry, type Extension, Harness, type Storage, type Wake } from "@earendil-works/pi-durable";
 import { Browser } from "../contracts/browser.ts";
+import { PANEL_LINK_LIMITS } from "../contracts/chat.ts";
 import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/hosts.ts";
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
+import { resumeAttachmentDeletes } from "./attachments.ts";
 import { WorkspaceDoc } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
@@ -101,11 +103,12 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	}, context);
 
 	await resumeFileDeletes(harness, options.files, context, onError);
+	await resumeAttachmentDeletes(harness, options.files, context, onError);
 	await host.load(
 		[
 			{
 				name: "oshawott.panel",
-				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, files: options.files, now }),
+				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, files: options.files, now, onError }),
 			},
 		],
 		context,
@@ -116,7 +119,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		host,
 		harness,
 		acceptPanel(link, instance) {
-			host.accept(link, { principal: { kind: "panel", instance } }, context);
+			host.accept(link, { principal: { kind: "panel", instance }, limits: PANEL_LINK_LIMITS }, context);
 		},
 		async close() {
 			// Links first: holders go `loading` and re-hold on the next Engine, instead of seeing their objects fail.

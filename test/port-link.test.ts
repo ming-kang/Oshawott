@@ -61,6 +61,23 @@ test("a frame that is no string closes the link", async () => {
 	assert.equal(right.reason, "unexpected message");
 });
 
+test("large frames are fragmented and reassembled before the next message", async () => {
+	const [a, b] = fakePortPair();
+	const left = portLink(a);
+	const right = portLink(b);
+	const bytes = new Uint8Array(8 * 1024 * 1024 + 17).map((_, index) => (index * 31) & 255);
+	const got: Uint8Array[] = [];
+	right.onMessage((message) => got.push(message));
+	left.send(bytes);
+	left.send(new Uint8Array([9]));
+	for (let i = 0; i < 100 && got.length < 2; i++) await tick();
+	assert.equal(got.length, 2);
+	assert.equal(got[0]?.length, bytes.length);
+	assert.ok(got[0]?.every((byte, index) => byte === bytes[index]));
+	assert.deepEqual(got[1], new Uint8Array([9]));
+	assert.ok(a.sent >= 3, "the large payload and its successor use separate Port messages");
+});
+
 test("base64 round trip, larger than one chunk", () => {
 	const bytes = new Uint8Array(100_000).map((_, i) => (i * 31) & 255);
 	assert.deepEqual(fromBase64(toBase64(bytes)), bytes);

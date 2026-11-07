@@ -229,7 +229,8 @@ export function filesExtension(options: FilesToolsOptions): Extension {
 					"read, write, edit and ls on files, and fetch for the web (saveTo keeps a whole download as a file). To " +
 					"search, parse, transform or compute, write a codemode script; it calls the same tools, as in " +
 					"`await tools.read({ path })`. For complete text, including huge single-line JSON, use " +
-					"`tools.read_text({ path, offset })` and concatenate its text chunks until eof.",
+					"`tools.read_text({ path, offset })` and concatenate its text chunks until eof. User attachments are under " +
+					"/workspace/attachments/ and arrive with <attachment> metadata; read their bytes from the given path instead of asking for their contents.",
 				{ tag: false },
 			),
 		],

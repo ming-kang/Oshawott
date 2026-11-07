@@ -1,11 +1,14 @@
 import type { ConversationView, InboxItem, InboxState, LiveState } from "@earendil-works/pi-durable";
 import type { BusyMode, QueueCancelResult, QueueUpdateResult } from "../contracts/chat.ts";
+import { attachmentRefs, editableText, type AttachmentRef } from "../lib/attachments.ts";
+import type { AttachmentInput } from "../lib/attachments.ts";
+import { AttachmentPicker, pendingInput } from "./attachments.ts";
 import { t } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon, toast } from "./ui.ts";
 
 type UserItem = Extract<InboxItem, { mode: BusyMode }>;
-type QueueChange = { text?: string; whenBusy?: BusyMode };
+type QueueChange = { text?: string; whenBusy?: BusyMode; requestId?: string; attachments?: AttachmentInput[]; removeAttachments?: string[] };
 
 export interface MessageQueueActions {
 	update(id: number, change: QueueChange): Promise<QueueUpdateResult>;
@@ -13,8 +16,7 @@ export interface MessageQueueActions {
 	continue(): Promise<unknown>;
 }
 
-const textOf = (content: UserItem["content"]) =>
-	typeof content === "string" ? content : content.map((block) => block.type === "text" ? block.text : "").join("");
+const textOf = (content: UserItem["content"]) => editableText(content);
 const modeLabel = (mode: BusyMode) => t(mode === "steer" ? "queue.steer" : "queue.followUp");
 
 /** A projection of `pi.inbox`; editing never becomes a second durable queue. */
@@ -25,7 +27,9 @@ export class MessageQueue {
 	#signature: string | undefined;
 	#failed = false;
 	#pending = false;
-	#editing: { id: number; text: string; mode: BusyMode } | undefined;
+	#editing: {
+		id: number; text: string; mode: BusyMode; requestId: string; existing: AttachmentRef[]; removed: Set<string>; picker: AttachmentPicker;
+	} | undefined;
 
 	constructor(actions: MessageQueueActions) {
 		this.#actions = actions;
@@ -43,7 +47,10 @@ export class MessageQueue {
 		const signature = JSON.stringify({ items, failed });
 		if (signature === this.#signature) return;
 		const lostEdit = this.#editing !== undefined && view !== null && !items.some((item) => item.id === this.#editing!.id);
-		if (this.#editing && !items.some((item) => item.id === this.#editing!.id)) this.#editing = undefined;
+		if (this.#editing && !items.some((item) => item.id === this.#editing!.id)) {
+			this.#editing.picker.dispose();
+			this.#editing = undefined;
+		}
 		this.#items = items;
 		this.#failed = failed;
 		this.#signature = signature;
@@ -57,6 +64,7 @@ export class MessageQueue {
 			? { start: previous.selectionStart, end: previous.selectionEnd, direction: previous.selectionDirection } : undefined;
 		this.element.hidden = this.#items.length === 0;
 		if (!this.#items.length) {
+			this.#editing?.picker.dispose();
 			this.#editing = undefined;
 			this.element.replaceChildren();
 			return;
@@ -93,31 +101,44 @@ export class MessageQueue {
 			mode.value = editing.mode;
 			const save = h("button", { class: "btn primary small queue-save", type: "button" }, t("queue.save"));
 			const cancel = h("button", { class: "btn small queue-edit-cancel", type: "button" }, t("queue.cancelEdit"));
-			editor.addEventListener("input", () => {
-				editing.text = editor.value;
-				save.disabled = this.#pending || !editor.value.trim();
-			});
+			editor.addEventListener("input", () => { editing.text = editor.value; });
 			editor.addEventListener("keydown", (event) => {
 				if (event.key === "Escape") {
 					event.preventDefault();
+					editing.picker.dispose();
 					this.#editing = undefined;
 					this.#render();
-				} else if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && editor.value.trim()) {
+				} else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
 					event.preventDefault();
 					save.click();
 				}
 			});
 			mode.addEventListener("change", () => { editing.mode = mode.value as BusyMode; });
-			save.disabled = !editor.value.trim();
-			save.addEventListener("click", () => void this.#perform(async () => {
-				const result = await this.#actions.update(item.id, { text: editor.value.trim(), whenBusy: mode.value as BusyMode });
-				if (this.#editing?.id === item.id) {
-					if (result === "not_found") toast(t("queue.unavailable"), "error");
-					this.#editing = undefined;
-				}
-			}));
-			cancel.addEventListener("click", () => { this.#editing = undefined; this.#render(); });
-			root.append(editor, h("div", { class: "queue-edit-bar" }, mode, cancel, save));
+			save.addEventListener("click", () => {
+				const kept = editing.existing.some((attachment) => !editing.removed.has(attachment.path));
+				if (!editor.value.trim() && !kept && !editing.picker.items.length) return;
+				void this.#perform(async () => {
+					const result = await this.#actions.update(item.id, {
+						text: editor.value.trim(), whenBusy: mode.value as BusyMode, requestId: editing.requestId,
+						attachments: editing.picker.items.map(pendingInput), removeAttachments: [...editing.removed],
+					});
+					if (this.#editing?.id === item.id) {
+						if (result === "not_found") toast(t("queue.unavailable"), "error");
+						editing.picker.dispose();
+						this.#editing = undefined;
+					}
+				});
+			});
+			cancel.addEventListener("click", () => { editing.picker.dispose(); this.#editing = undefined; this.#render(); });
+			const existing = editing.existing.filter((attachment) => !editing.removed.has(attachment.path)).map((attachment) =>
+				h("span", { class: "queue-attachment", "data-path": attachment.path }, icon(attachment.mimeType.startsWith("image/") ? "eye" : "file", 12),
+					h("span", null, attachment.name), h("button", {
+						class: "icon-btn small queue-attachment-remove", type: "button", title: t("attachments.remove"), "aria-label": `${t("attachments.remove")}: ${attachment.name}`,
+						onclick: () => { editing.removed.add(attachment.path); this.#render(); },
+					}, icon("x", 11))),
+			);
+			root.append(editor, h("div", { class: "queue-existing-attachments" }, existing), editing.picker.tray,
+				h("div", { class: "queue-edit-bar" }, editing.picker.button, editing.picker.input, mode, cancel, save));
 			return root;
 		}
 
@@ -131,11 +152,17 @@ export class MessageQueue {
 					if (result !== "updated") toast(t("queue.unavailable"), "error");
 				}),
 			}, modeLabel(item.mode), icon("chevron", 11)),
-			h("div", { class: "queue-text" }, textOf(item.content)),
+			h("div", { class: "queue-copy" }, h("div", { class: "queue-text" }, textOf(item.content)),
+				h("div", { class: "queue-attachments" }, attachmentRefs(item.content).map((attachment) =>
+					h("span", { class: "queue-attachment" }, icon(attachment.mimeType.startsWith("image/") ? "eye" : "file", 11), attachment.name)))),
 			h("button", {
 				class: "icon-btn small queue-edit", type: "button", title: t("queue.edit"), "aria-label": t("queue.edit"),
 				onclick: () => {
-					this.#editing = { id: item.id, text: textOf(item.content), mode: item.mode };
+					this.#editing?.picker.dispose();
+					this.#editing = {
+						id: item.id, text: textOf(item.content), mode: item.mode, requestId: crypto.randomUUID(),
+						existing: attachmentRefs(item.content), removed: new Set(), picker: new AttachmentPicker(),
+					};
 					this.#render();
 					const editor = this.element.querySelector<HTMLTextAreaElement>(`[data-submission-id="${item.id}"] .queue-editor`);
 					editor?.focus({ preventScroll: true });

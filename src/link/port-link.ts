@@ -1,6 +1,7 @@
 // Chromium JSON-serializes Port messages, so bytes travel as base64. `disconnect()` emits no local
 // `onDisconnect`, hence the explicit close notification below.
 
+import { fromBase64, toBase64 } from "../lib/base64.ts";
 import type { Link } from "../lib/chord.ts";
 import type { RuntimePort } from "../platform/webext.ts";
 
@@ -15,12 +16,21 @@ export interface PortLink extends Link {
 	readonly done: Promise<string | undefined>;
 }
 
+const FRAGMENT = "oshawott:fragment:v1:";
+/** Chromium rejects whole Port messages around 64 MiB; fragments stay far below it, including base64 overhead. */
+const FRAGMENT_BYTES = 8 * 1024 * 1024;
+const MAX_MESSAGE_BYTES = 512 * 1024 * 1024;
+
+type Fragments = { chunks: (Uint8Array | undefined)[]; received: number; bytes: number };
+
 export function portLink(port: RuntimePort, lastError: () => string | undefined = () => undefined): PortLink {
 	let closed = false;
 	let reason: string | undefined;
 	let listener: ((message: Uint8Array) => void) | undefined;
 	let queued: Uint8Array[] = [];
 	let closeListener: (() => void) | undefined;
+	let fragmentId = 0;
+	const fragments = new Map<string, Fragments>();
 	let settle: (reason: string | undefined) => void = () => {};
 	const done = new Promise<string | undefined>((resolve) => (settle = resolve));
 
@@ -32,21 +42,61 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 		port.onDisconnect.removeListener(disconnected);
 		listener = undefined;
 		queued = [];
+		fragments.clear();
 		const notify = closeListener;
 		closeListener = undefined;
 		notify?.();
 		settle(why);
 	};
 	const disconnected = () => end(port.error?.message ?? lastError() ?? "disconnected");
+	const deliver = (message: Uint8Array) => {
+		if (listener === undefined) queued.push(message);
+		else listener(message);
+	};
 	const receive = (data: unknown) => {
 		if (closed) return;
 		if (typeof data !== "string") {
 			close("unexpected message");
 			return;
 		}
-		const message = fromBase64(data);
-		if (listener === undefined) queued.push(message);
-		else listener(message);
+		if (!data.startsWith(FRAGMENT)) {
+			deliver(fromBase64(data));
+			return;
+		}
+		const rest = data.slice(FRAGMENT.length);
+		const header = /^([^:]+):(\d+):(\d+):/.exec(rest);
+		const id = header?.[1];
+		const index = Number(header?.[2]);
+		const count = Number(header?.[3]);
+		if (!header || !id || !Number.isSafeInteger(index) || !Number.isSafeInteger(count) || index < 0 || count < 1 || index >= count || count > Math.ceil(MAX_MESSAGE_BYTES / FRAGMENT_BYTES)) {
+			close("invalid fragment");
+			return;
+		}
+		let payload: Uint8Array;
+		try {
+			payload = fromBase64(rest.slice(header[0].length));
+		} catch {
+			close("invalid fragment bytes");
+			return;
+		}
+		const state = fragments.get(id) ?? { chunks: Array.from({ length: count }, () => undefined), received: 0, bytes: 0 };
+		if (state.chunks.length !== count || state.chunks[index] !== undefined || payload.length > FRAGMENT_BYTES || state.bytes + payload.length > MAX_MESSAGE_BYTES) {
+			close("invalid fragment sequence");
+			return;
+		}
+		state.chunks[index] = payload;
+		state.received++;
+		state.bytes += payload.length;
+		fragments.set(id, state);
+		if (state.received !== count) return;
+		fragments.delete(id);
+		const message = new Uint8Array(state.bytes);
+		let offset = 0;
+		for (const chunk of state.chunks) {
+			message.set(chunk!, offset);
+			offset += chunk!.length;
+		}
+		deliver(message);
 	};
 	const close = (why: string) => {
 		if (closed) return;
@@ -70,7 +120,17 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 		send(message) {
 			if (closed) return;
 			try {
-				port.postMessage(toBase64(message));
+				if (message.length <= FRAGMENT_BYTES) {
+					port.postMessage(toBase64(message));
+					return;
+				}
+				if (message.length > MAX_MESSAGE_BYTES) throw new Error("The extension message exceeds 512 MiB");
+				const id = String(++fragmentId);
+				const count = Math.ceil(message.length / FRAGMENT_BYTES);
+				for (let index = 0; index < count; index++) {
+					const payload = toBase64(message.subarray(index * FRAGMENT_BYTES, (index + 1) * FRAGMENT_BYTES));
+					port.postMessage(`${FRAGMENT}${id}:${index}:${count}:${payload}`);
+				}
 			} catch (error) {
 				// Firefox throws on a port its peer closed; Chromium throws on a disconnected one.
 				end(error instanceof Error ? error.message : String(error));
@@ -94,21 +154,4 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 	};
 }
 
-const CHUNK = 0x8000;
-
-export function toBase64(bytes: Uint8Array): string {
-	const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
-	if (native) return native.call(bytes);
-	let binary = "";
-	for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-	return btoa(binary);
-}
-
-export function fromBase64(text: string): Uint8Array {
-	const native = (Uint8Array as unknown as { fromBase64?: (text: string) => Uint8Array }).fromBase64;
-	if (native) return native(text);
-	const binary = atob(text);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-	return bytes;
-}
+export { fromBase64, toBase64 } from "../lib/base64.ts";
