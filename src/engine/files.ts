@@ -236,13 +236,20 @@ export class ChatFiles implements ExecutionEnv {
 		return read.ok ? ok(new TextDecoder("utf-8", { ignoreBOM: true }).decode(read.value)) : err(read.error);
 	}
 
-	async openTextLineReader(path: string, context: Context): Promise<Result<TextLineReader, FileError>> {
+	async #lines(path: string, context: Context): Promise<Result<{ lines: string[]; terminated: number }, FileError>> {
 		const read = await this.readBinaryFile(path, context);
 		if (!read.ok) return err(read.error);
 		const decoder = new StreamDecoder();
 		const lines = (decoder.decode(read.value) + decoder.decode()).split("\n");
 		const terminated = lines.length - 1;
 		if (lines.at(-1) === "") lines.pop();
+		return ok({ lines, terminated });
+	}
+
+	async openTextLineReader(path: string, context: Context): Promise<Result<TextLineReader, FileError>> {
+		const read = await this.#lines(path, context);
+		if (!read.ok) return err(read.error);
+		const { lines, terminated } = read.value;
 		let next = 0;
 		let closed = false;
 		const target = this.#resolve(path);
@@ -263,11 +270,9 @@ export class ChatFiles implements ExecutionEnv {
 
 	async readTextLines(path: string, options: { maxLines?: number } | undefined, context: Context): Promise<Result<string[], FileError>> {
 		if (options?.maxLines !== undefined && options.maxLines <= 0) return ok([]);
-		const text = await this.readBinaryFile(path, context);
-		if (!text.ok) return err(text.error);
-		const decoder = new StreamDecoder();
-		const lines = (decoder.decode(text.value) + decoder.decode()).split("\n");
-		if (lines.at(-1) === "") lines.pop();
+		const read = await this.#lines(path, context);
+		if (!read.ok) return err(read.error);
+		const { lines } = read.value;
 		return ok(options?.maxLines === undefined ? lines : lines.slice(0, options.maxLines));
 	}
 

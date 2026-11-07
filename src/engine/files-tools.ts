@@ -8,8 +8,7 @@ import type { Host } from "../lib/chord.ts";
 import { ChatFiles, MAX_FILE_BYTES } from "./files.ts";
 import { using } from "./tools.ts";
 
-export { NO_ACCESS };
-export const FETCH_TIMEOUT_MS = 60_000;
+const FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CHARS = 20_000;
 const MAX_LISTED = 1_000;
 export const MAX_READ_CHARS = 1_000_000;

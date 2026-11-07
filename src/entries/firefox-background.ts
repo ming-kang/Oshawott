@@ -2,7 +2,6 @@ import { MESSAGES } from "../contracts/hosts.ts";
 import { startBroker } from "../broker/broker.ts";
 import { runEngine } from "../engine/browser.ts";
 import { BACKGROUND_CONTEXT, memoryLinkPair } from "../lib/chord.ts";
-import "../platform/target.ts";
 import { ext } from "../platform/webext.ts";
 
 const context = BACKGROUND_CONTEXT;

@@ -11,7 +11,7 @@ import { Chat, Workspace } from "../src/contracts/chat.ts";
 import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
 import { startEngine } from "../src/engine/engine.ts";
 import { ChatFiles, type FileTx, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
-import { NO_ACCESS } from "../src/engine/files-tools.ts";
+import { NO_ACCESS } from "../src/contracts/browser.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet, withAbortSignal } from "../src/lib/chord.ts";
 import { portLink } from "../src/link/port-link.ts";
 import { fakePortPair } from "./fake-port.ts";

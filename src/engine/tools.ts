@@ -23,6 +23,11 @@ export async function using<C extends Contract, T>(
 	}
 }
 
+export function callPage(host: EngineHost, tabId: number, tool: PageToolName, args: unknown, context: Context): Promise<unknown> {
+	return using(host, Page, { tabId }, context, (page) =>
+		(page[tool] as unknown as (args: unknown, context: Context) => Promise<unknown>).call(page, args, context));
+}
+
 function text(value: unknown) {
 	return [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value) }];
 }
@@ -48,10 +53,7 @@ export function browserExtension(host: EngineHost): Extension {
 			execute: async (args, api, context) => {
 				const { tabId: named, ...rest } = args as { tabId?: number } & Record<string, unknown>;
 				const tabId = await tabOf(named, () => api.snapshot(TargetDoc, api.conversationId, context), context);
-				const result = await using(host, Page, { tabId }, context, (page) => {
-					const call = page[name] as unknown as (args: unknown, context: Context) => Promise<unknown>;
-					return call.call(page, rest, context);
-				});
+				const result = await callPage(host, tabId, name, rest, context);
 				return { output: text(result), structuredOutput: result as never };
 			},
 		});

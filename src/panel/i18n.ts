@@ -1,5 +1,4 @@
 const en = {
-	"app.name": "Oshawott",
 	"chat.untitled": "New chat",
 	"chat.list": "Chats",
 	"chat.new": "New chat",
@@ -53,7 +52,6 @@ const en = {
 	"model.connect": "Connect a model",
 	"model.search": "Search models",
 	"model.none": "No models match",
-	"model.noProviders": "No provider is connected yet.",
 	"tab.none": "No tab",
 	"tab.grant": "Allow on this site",
 	"tab.unavailable": "Page tools cannot run here",
@@ -105,7 +103,6 @@ const en = {
 type Key = keyof typeof en;
 
 const zh: Record<Key, string> = {
-	"app.name": "Oshawott",
 	"chat.untitled": "新对话",
 	"chat.list": "对话",
 	"chat.new": "新对话",
@@ -159,7 +156,6 @@ const zh: Record<Key, string> = {
 	"model.connect": "连接模型",
 	"model.search": "搜索模型",
 	"model.none": "没有匹配的模型",
-	"model.noProviders": "还没有连接任何模型服务。",
 	"tab.none": "没有标签页",
 	"tab.grant": "允许访问此站点",
 	"tab.unavailable": "此页面无法使用页面工具",

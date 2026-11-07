@@ -9,7 +9,6 @@ import { createModels } from "@earendil-works/pi-ai";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { IndexedDbStorage } from "@earendil-works/pi-durable/storage/indexeddb";
 import { Browser } from "../contracts/browser.ts";
-import { Page } from "../contracts/page.ts";
 import { PORTS } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, type Context, type Link } from "../lib/chord.ts";
 import { type PortLink, portLink } from "../link/port-link.ts";
@@ -21,7 +20,7 @@ import { IndexedDbCredentialStore } from "./credentials.ts";
 import { type Engine, startEngine } from "./engine.ts";
 import { ChatFiles } from "./files.ts";
 import { IndexedDbFileBackend } from "./files-idb.ts";
-import { using } from "./tools.ts";
+import { callPage, using } from "./tools.ts";
 
 const ATTACH_TIMEOUT_MS = 10_000;
 
@@ -41,13 +40,17 @@ export class Arrivals<K> {
 		});
 	}
 
-	take(key: K): PortLink | undefined {
-		const link = this.#links.get(key);
+	/** The port that already arrived for `key`, or the one `summon` makes arrive within `ms`. */
+	async obtain(key: K, ms: number, context: Context, summon: () => Promise<unknown>): Promise<PortLink> {
+		const ready = this.#links.get(key);
 		this.#links.delete(key);
-		return link;
+		if (ready && !ready.closed) return ready;
+		const arriving = this.#wait(key, ms, context);
+		await summon();
+		return await arriving;
 	}
 
-	wait(key: K, ms: number, context: Context): Promise<PortLink> {
+	#wait(key: K, ms: number, context: Context): Promise<PortLink> {
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.#waiters.delete(key);
@@ -122,13 +125,9 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 			credentials,
 			files,
 			broker: (ctx) => options.broker(ctx, brokers),
-			tab: async (tabId, ctx) => {
-				const ready = tabs.take(tabId);
-				if (ready && !ready.closed) return ready;
-				const arriving = tabs.wait(tabId, ATTACH_TIMEOUT_MS, ctx);
-				await using(engine!.host, Browser, {}, ctx, (browser) => browser.attach({ tabId }, ctx));
-				return await arriving;
-			},
+			tab: (tabId, ctx) =>
+				tabs.obtain(tabId, ATTACH_TIMEOUT_MS, ctx, () =>
+					using(engine!.host, Browser, {}, ctx, (browser) => browser.attach({ tabId }, ctx))),
 			extensions: [createCodemodeExtension({ sandbox })],
 		},
 		context,
@@ -140,10 +139,7 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 		engine: started,
 		codemode: (code: string) => sandbox.execute(code),
 		files: (chat: number) => new ChatFiles(files, chat),
-		page: (tabId: number, tool: PageToolName, args: Record<string, unknown>) =>
-			using(started.host, Page, { tabId }, context, (page) =>
-				(page[tool] as unknown as (args: unknown, context: Context) => Promise<unknown>).call(page, args, context),
-			),
+		page: (tabId: number, tool: PageToolName, args: Record<string, unknown>) => callPage(started.host, tabId, tool, args, context),
 	};
 	return engine;
 }

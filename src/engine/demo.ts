@@ -1,7 +1,8 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import type { FauxResponseFactory, Message } from "@earendil-works/pi-ai";
+import { NO_ACCESS } from "../contracts/browser.ts";
 
-export const DEMO_PROVIDER = "demo";
+const DEMO_PROVIDER = "demo";
 
 type Snapshot = { url?: string; title?: string; text?: string; elements?: { ref: string; role: string; name: string }[] };
 
@@ -99,7 +100,7 @@ function measureScript(path: string): string {
 }
 
 function fetchFailed(error: string, zh: boolean) {
-	const denied = error.includes("No access to");
+	const denied = error.includes(NO_ACCESS);
 	if (zh) {
 		return denied
 			? "我还不能访问这个网站。点上面卡片里的 **允许访问此站点**，然后再发一次。"

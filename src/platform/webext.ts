@@ -28,17 +28,9 @@ export interface TabInfo {
 	readonly url?: string;
 	readonly title?: string;
 	readonly active?: boolean;
-	readonly status?: string;
 	readonly favIconUrl?: string;
 	/** Milliseconds since the epoch. */
 	readonly lastAccessed?: number;
-}
-
-export interface InjectionResult {
-	readonly frameId: number;
-	readonly documentId?: string;
-	readonly result?: unknown;
-	readonly error?: unknown;
 }
 
 export interface WebExt {
@@ -58,27 +50,24 @@ export interface WebExt {
 		readonly onInstalled: WebExtEvent<(details: { reason: string }) => void>;
 	};
 	readonly tabs: {
-		query(query: { active?: boolean; currentWindow?: boolean; lastFocusedWindow?: boolean; windowId?: number; url?: string }): Promise<TabInfo[]>;
-		get(tabId: number): Promise<TabInfo>;
-		create(properties: { url: string; active?: boolean; windowId?: number }): Promise<TabInfo>;
+		query(query: { active?: boolean; currentWindow?: boolean; lastFocusedWindow?: boolean; windowId?: number }): Promise<TabInfo[]>;
+		create(properties: { url: string; active?: boolean }): Promise<TabInfo>;
 		readonly onRemoved: WebExtEvent<(tabId: number) => void>;
 		readonly onActivated: WebExtEvent<(info: { tabId: number; windowId: number }) => void>;
-		readonly onUpdated: WebExtEvent<(tabId: number, change: { status?: string; url?: string; title?: string; favIconUrl?: string }, tab: TabInfo) => void>;
+		readonly onUpdated: WebExtEvent<(tabId: number, change: { status?: string }) => void>;
 	};
 	readonly scripting: {
 		executeScript(injection: {
-			target: { tabId: number; frameIds?: number[]; allFrames?: boolean };
+			target: { tabId: number };
 			files?: string[];
 			func?: (...args: never[]) => unknown;
 			args?: unknown[];
-			world?: "ISOLATED" | "MAIN";
-			injectImmediately?: boolean;
-		}): Promise<InjectionResult[]>;
+		}): Promise<unknown>;
 	};
 	readonly alarms: {
-		create(name: string, info: { when?: number; delayInMinutes?: number; periodInMinutes?: number }): Promise<void> | void;
+		create(name: string, info: { when: number }): Promise<void> | void;
 		clear(name: string): Promise<boolean>;
-		readonly onAlarm: WebExtEvent<(alarm: { readonly name: string; readonly scheduledTime: number }) => void>;
+		readonly onAlarm: WebExtEvent<(alarm: { readonly name: string }) => void>;
 	};
 	readonly permissions: {
 		contains(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
@@ -88,17 +77,13 @@ export interface WebExt {
 	};
 	readonly action: {
 		readonly onClicked: WebExtEvent<(tab: TabInfo) => void>;
-		setBadgeText(details: { text: string; tabId?: number }): Promise<void>;
 	};
 	/** Chromium only. */
 	readonly offscreen?: {
 		createDocument(parameters: { url: string; reasons: string[]; justification: string }): Promise<void>;
-		closeDocument(): Promise<void>;
-		hasDocument?(): Promise<boolean>;
 	};
 	/** Chromium only. */
 	readonly sidePanel?: {
-		open(options: { windowId?: number; tabId?: number }): Promise<void>;
 		setPanelBehavior(behavior: { openPanelOnActionClick: boolean }): Promise<void>;
 	};
 	/** Firefox only. */

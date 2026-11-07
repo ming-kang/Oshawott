@@ -3,7 +3,6 @@ import { Chat, type ModelRef, type ProviderSummary, Workspace } from "../contrac
 import { MESSAGES, PORTS, type Principal } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, type Reference } from "../lib/chord.ts";
 import { portLink } from "../link/port-link.ts";
-import "../platform/target.ts";
 import { ext } from "../platform/webext.ts";
 import { ChatDrawer } from "./chats.ts";
 import { FilesSheet } from "./files.ts";
