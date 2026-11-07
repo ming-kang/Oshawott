@@ -1,13 +1,17 @@
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type RunFailure, type TaskId } from "@earendil-works/pi-durable";
+import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type RunFailure, type SubmissionId, type TaskId } from "@earendil-works/pi-durable";
 import type { Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { OverlayController, type OverlayView } from "./overlays.ts";
+import { t } from "./i18n.ts";
+import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
 import { Transcript } from "./render.ts";
 import { h } from "./ui.ts";
 
-type Step = { name: string; ok: boolean };
-type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "chats" | "createChat" | "deleteChat">;
+type Step = { name: string; ok: boolean; detail?: string };
+type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
+	"chats" | "createChat" | "deleteChat" | "busyMode" | "setBusyMode"
+>;
 async function until(read: () => boolean) {
 	const deadline = Date.now() + 5000;
 	while (!read()) {
@@ -23,7 +27,7 @@ const click = (selector: string) => {
 
 export async function testPanel(source: Source) {
 	const steps: Step[] = [];
-	const step = (name: string, ok: boolean) => steps.push({ name, ok });
+	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, detail });
 	const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
 	// These keys are only saved and cleared locally; all model requests still use the demo provider.
@@ -38,6 +42,12 @@ export async function testPanel(source: Source) {
 	step("settings refresh after saving a key without exposing it", document.querySelector<HTMLInputElement>('.provider[data-provider="anthropic"] input')?.value === "");
 	click('.provider[data-provider="anthropic"] .btn.danger');
 	await until(() => document.querySelector('.provider[data-provider="anthropic"] .pill')?.hasAttribute("data-on") === false);
+	const defaultDelivery = source.busyMode.value === "steer" && document.querySelector('#settings-delivery [data-value="steer"]')?.getAttribute("aria-checked") === "true";
+	click('#settings-delivery [data-value="followUp"]');
+	await until(() => source.busyMode.value === "followUp" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "followUp");
+	step("delivery defaults to Steer and Settings updates the composer preference", defaultDelivery && document.querySelector('#settings-delivery [data-value="followUp"]')?.getAttribute("aria-checked") === "true");
+	click('#settings-delivery [data-value="steer"]');
+	await until(() => source.busyMode.value === "steer" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "steer");
 	const theme = document.documentElement.dataset.theme ?? "system";
 	click('#settings [data-value="dark"]');
 	step("appearance stays owned by Settings", document.documentElement.dataset.theme === "dark" && document.querySelector('#settings [data-value="dark"]')?.getAttribute("aria-checked") === "true");
@@ -178,6 +188,96 @@ export async function testPanel(source: Source) {
 		step("all upstream failure reasons remain renderable", transcript.element.querySelector<HTMLElement>(".notice")?.dataset.reason === "restart_limit");
 		transcript.update({ kind: "empty", ready: true });
 		step("switching to a new chat clears committed rows and cards", !transcript.element.querySelector(".msg, .tool") && !transcript.busy);
+
+		const changes: { id: number; text?: string; whenBusy?: string }[] = [];
+		const cancelled: number[] = [];
+		let continuations = 0;
+		const queue = new MessageQueue({
+			update: async (id, change) => { changes.push({ id, ...change }); return "updated"; },
+			cancel: async (id) => { cancelled.push(id); return "aborted"; },
+			continue: async () => { continuations++; },
+		});
+		fixture.append(queue.element);
+		const queuedView: ConversationView = { ...view, docs: {
+			"pi.live": live,
+			"pi.inbox": { items: [
+				{ id: 11 as SubmissionId, mode: "steer", content: "Queued steer" },
+				{ id: 12 as SubmissionId, mode: "followUp", content: "Queued follow-up" },
+			] },
+		} };
+		queue.update(queuedView);
+		step("inbox projection renders both delivery modes", queue.count === 2 && queue.element.querySelectorAll(".queue-item").length === 2 && !queue.element.querySelector(".queue-continue"));
+		queue.element.querySelector<HTMLButtonElement>('[data-submission-id="11"] [data-action="mode"]')!.click();
+		await until(() => changes.length === 1);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const changedMode: ConversationView = { ...queuedView, docs: { ...queuedView.docs, "pi.inbox": { items: [
+			{ id: 11 as SubmissionId, mode: "followUp", content: "Queued steer" },
+			{ id: 12 as SubmissionId, mode: "followUp", content: "Queued follow-up" },
+		] } } };
+		queue.update(changedMode);
+		queue.element.querySelector<HTMLButtonElement>('[data-submission-id="12"] .queue-edit')!.click();
+		const editor = queue.element.querySelector<HTMLTextAreaElement>("[data-submission-id='12'] .queue-editor")!;
+		editor.value = "Edited follow-up";
+		editor.dispatchEvent(new Event("input"));
+		queue.update(changedMode);
+		const unchangedEditor = queue.element.querySelector("[data-submission-id='12'] .queue-editor") === editor && editor.value === "Edited follow-up";
+		editor.focus();
+		editor.setSelectionRange(4, 7);
+		const changedDuringEdit: ConversationView = { ...changedMode, docs: { ...changedMode.docs, "pi.inbox": { items: [
+			{ id: 11 as SubmissionId, mode: "followUp", content: "Queued steer" },
+			{ id: 12 as SubmissionId, mode: "followUp", content: "Queued follow-up" },
+			{ id: 13 as SubmissionId, mode: "followUp", content: "New while editing" },
+		] } } };
+		queue.update(changedDuringEdit);
+		const rebuiltEditor = queue.element.querySelector<HTMLTextAreaElement>("[data-submission-id='12'] .queue-editor")!;
+		const preservedEditor = unchangedEditor && rebuiltEditor !== editor && rebuiltEditor.value === "Edited follow-up"
+			&& document.activeElement === rebuiltEditor && rebuiltEditor.selectionStart === 4 && rebuiltEditor.selectionEnd === 7;
+		queue.element.querySelector<HTMLSelectElement>("[data-submission-id='12'] .queue-edit-mode")!.value = "steer";
+		queue.element.querySelector<HTMLButtonElement>("[data-submission-id='12'] .queue-save")!.click();
+		await until(() => changes.length === 2);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		step("queue edits preserve drafts and submit atomically", changes[0]?.id === 11 && changes[0]?.whenBusy === "followUp" && preservedEditor && changes[1]?.id === 12 && changes[1]?.text === "Edited follow-up" && changes[1]?.whenBusy === "steer");
+		queue.element.querySelector<HTMLButtonElement>('[data-submission-id="11"] .queue-cancel')!.click();
+		await until(() => cancelled.length === 1);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		queue.element.querySelector<HTMLButtonElement>('[data-submission-id="11"] .queue-edit')!.click();
+		const previousToasts = new Set(document.querySelectorAll(".toast"));
+		const failedQueue: ConversationView = { ...changedMode, docs: {
+			"pi.live": { runFailure: failure },
+			"pi.inbox": { items: [{ id: 12 as SubmissionId, mode: "steer", content: "Edited follow-up" }] },
+		} };
+		queue.update(failedQueue);
+		const lossNotice = [...document.querySelectorAll(".toast")].some((node) => !previousToasts.has(node) && node.textContent === t("queue.unavailable"));
+		queue.element.querySelector<HTMLButtonElement>(".queue-continue")!.click();
+		await until(() => continuations === 1);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		step("failed runs expose continuation and removed edits warn without losing state", cancelled[0] === 11 && continuations === 1 && queue.count === 1 && lossNotice && !queue.element.querySelector(".queue-editor"));
+		queue.update(null);
+		step("switching chats clears the inbox projection", queue.count === 0 && Boolean(queue.element.hidden));
+
+		let picked = "";
+		const sendMenu = new SendModeMenu("followUp", (mode) => { picked = mode; });
+		fixture.append(sendMenu.element);
+		sendMenu.focus();
+		sendMenu.element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		const keyboardMode = (document.activeElement as HTMLElement)?.dataset.mode;
+		(document.activeElement as HTMLButtonElement).click();
+		const radio = sendMenu.element.querySelector('[data-mode="steer"]')?.getAttribute("aria-checked");
+		step("delivery menu supports arrow keys and radio state", keyboardMode === "steer" && picked === "steer" && radio === "false", JSON.stringify({ keyboardMode, picked, radio }));
+
+		let stopConfirmed = false;
+		const stopMenu = new StopConfirmMenu(2, () => { stopConfirmed = true; }, () => {});
+		fixture.append(stopMenu.element);
+		stopMenu.focus();
+		const safeFocus = document.activeElement === stopMenu.element.querySelector(".queue-stop-cancel");
+		stopMenu.element.querySelector<HTMLButtonElement>(".queue-stop-confirm")!.click();
+		step("stop confirmation uses overlay controls with safe initial focus", safeFocus && stopConfirmed);
+
+		const stopButton = h("button", { class: "send-btn stop-btn", type: "button" });
+		const modeButton = h("button", { class: "send-mode-btn", type: "button" });
+		const sendButton = h("button", { class: "send-btn", type: "button" });
+		fixture.append(h("div", { class: "composer-bar" }, stopButton, modeButton, sendButton));
+		step("visible stop and delivery controls do not split the remaining space", getComputedStyle(modeButton).marginLeft === "0px" && getComputedStyle(sendButton).marginLeft === "0px");
 	} finally {
 		controller.dispose();
 		for (const root of retiredRoots) root.remove();

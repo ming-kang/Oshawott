@@ -1,7 +1,7 @@
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
-import type { ConversationId, Harness } from "@earendil-works/pi-durable";
+import { InboxDoc, type ConversationId, type Harness, type SubmissionId, type UserInput } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { Chat, ProviderSummary, Workspace } from "../contracts/chat.ts";
+import { Chat, DEFAULT_BUSY_MODE, ProviderSummary, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { arr, ChordError, type Context, defineFacet, defineState, obj } from "../lib/chord.ts";
 import { TargetDoc, WorkspaceDoc } from "./docs.ts";
@@ -23,6 +23,22 @@ export function titleOf(text: string): string {
 	const line = text.trim().split("\n")[0]!.replace(/\s+/g, " ");
 	const chars = [...line];
 	return chars.length > 48 ? `${chars.slice(0, 47).join("")}…` : line;
+}
+
+/** Keep image and future attachment blocks in place while replacing their editable text with one block. */
+function replaceInputText(content: UserInput, text: string): UserInput {
+	if (typeof content === "string") return text;
+	let inserted = false;
+	const blocks: Exclude<UserInput, string> = [];
+	for (const block of content) {
+		if (block.type !== "text") blocks.push(block);
+		else if (!inserted) {
+			blocks.push({ ...block, text });
+			inserted = true;
+		}
+	}
+	if (!inserted) blocks.unshift({ type: "text", text });
+	return blocks;
 }
 
 function forbidden(): never {
@@ -61,6 +77,7 @@ export function panelFacet(services: EngineServices) {
 				members: {
 					chats: self.derive([workspace], ([value]) => value.chats),
 					defaultModel: self.derive([workspace], ([value]) => value.defaultModel),
+					busyMode: self.derive([workspace], ([value]) => value.busyMode ?? DEFAULT_BUSY_MODE),
 					providers: self.derive([providers], ([value]) => value.list),
 					createChat: async ({ title }, ctx) => {
 						const { defaultModel } = await harness.snapshot(WorkspaceDoc, ctx) ?? { defaultModel: null };
@@ -97,6 +114,12 @@ export function panelFacet(services: EngineServices) {
 						}, ctx);
 						return null;
 					},
+					setBusyMode: async (mode, ctx) => {
+						await harness.commit(async (tx) => {
+							(await tx.doc(WorkspaceDoc)).busyMode = mode;
+						}, ctx);
+						return null;
+					},
 				},
 			};
 		});
@@ -124,16 +147,45 @@ export function panelFacet(services: EngineServices) {
 				members: {
 					view,
 					send: async ({ text, requestId, tabId, whenBusy }, ctx) => {
+						if (!text.trim()) throw new ChordError({ code: "invalid", reason: "args", message: "The message cannot be empty." });
 						const target = await conversation(ctx);
+						let submissionId!: SubmissionId;
 						await target.commit(async (tx) => {
 							// Check on the admission line too: another panel may remove this chat after the lookup above.
 							const summary = (await tx.doc(WorkspaceDoc)).chats.find((chat) => chat.id === id);
 							if (!summary) throw gone();
-							await target.submit(tx, { type: "input", content: text, requestId, ...(whenBusy ? { whenBusy } : {}) });
+							submissionId = await target.submit(tx, { type: "input", content: text, requestId, ...(whenBusy ? { whenBusy } : {}) });
 							if (tabId !== undefined) (await tx.doc(TargetDoc, target.id)).tabId = tabId;
 							if (!summary.title) summary.title = titleOf(text);
 						}, ctx);
-						return null;
+						return submissionId;
+					},
+					updateQueued: async ({ id: submissionId, text, whenBusy }, ctx) => {
+						if (text === undefined && whenBusy === undefined) {
+							throw new ChordError({ code: "invalid", reason: "args", message: "Nothing to update." });
+						}
+						if (text !== undefined && !text.trim()) {
+							throw new ChordError({ code: "invalid", reason: "args", message: "The message cannot be empty." });
+						}
+						const target = await conversation(ctx);
+						return target.commit(async (tx) => {
+							const inbox = await tx.doc(InboxDoc, target.id);
+							const item = inbox.items.find((item) => item.id === submissionId && (item.mode === "steer" || item.mode === "followUp"));
+							if (!item) return "not_found" as const;
+							const userItem = item as Exclude<typeof item, { mode: "write" }>;
+							if (text !== undefined) userItem.content = replaceInputText(userItem.content, text) as typeof userItem.content;
+							if (whenBusy !== undefined) userItem.mode = whenBusy;
+							return "updated" as const;
+						}, ctx);
+					},
+					cancelQueued: async ({ id: submissionId }, ctx) => {
+						await conversation(ctx);
+						return harness.abortSubmission(submissionId as SubmissionId, ctx, conversationId);
+					},
+					continueQueued: async (ctx) => {
+						const target = await conversation(ctx);
+						const submission = await target.submit({ type: "continue" }, ctx);
+						return submission.id;
 					},
 					abort: async (ctx) => {
 						await (await conversation(ctx)).abort(ctx);

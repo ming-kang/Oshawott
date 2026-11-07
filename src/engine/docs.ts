@@ -1,9 +1,11 @@
 import { defineDoc } from "@earendil-works/pi-durable";
-import type { ChatSummary, ModelRef } from "../contracts/chat.ts";
+import { DEFAULT_BUSY_MODE, type BusyMode, type ChatSummary, type ModelRef } from "../contracts/chat.ts";
 
 export type WorkspaceState = {
 	chats: ChatSummary[];
 	defaultModel: ModelRef | null;
+	/** Absent in older documents, whose delivery preference is Steer. */
+	busyMode?: BusyMode;
 	/** Optional for older v1 documents. An intent survives eviction between removing a chat and clearing its files. */
 	pendingFileDeletes?: number[];
 };
@@ -12,7 +14,7 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	kind: "oshawott.workspace",
 	version: 1,
 	scope: "session",
-	initial: () => ({ chats: [], defaultModel: null, pendingFileDeletes: [] }),
+	initial: () => ({ chats: [], defaultModel: null, busyMode: DEFAULT_BUSY_MODE, pendingFileDeletes: [] }),
 	checkpointWhen: () => true,
 });
 

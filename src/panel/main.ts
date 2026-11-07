@@ -1,5 +1,5 @@
 import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
-import { Chat, type ModelRef, type ProviderSummary, Workspace } from "../contracts/chat.ts";
+import { Chat, DEFAULT_BUSY_MODE, type BusyMode, type ModelRef, type ProviderSummary, Workspace } from "../contracts/chat.ts";
 import { MESSAGES, PORTS, type Principal } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, type Reference } from "../lib/chord.ts";
 import { portLink } from "../link/port-link.ts";
@@ -11,6 +11,7 @@ import { ModelMenu } from "./model-menu.ts";
 import { configuredProviders, modelName, sameModel, shownModel as resolveModel } from "./models.ts";
 import { OverlayController } from "./overlays.ts";
 import { testPanel } from "./panel-selftest.ts";
+import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
 import { Transcript } from "./render.ts";
 import { selftest } from "./selftest.ts";
 import { initializeTheme, SettingsSheet } from "./settings.ts";
@@ -25,6 +26,26 @@ const host = createHost<Principal>({ onError: (error) => console.debug("[oshawot
 const overlays = new OverlayController();
 initializeTheme();
 document.documentElement.lang = LANG;
+
+let workspace: WorkspaceRef | undefined;
+let chat: ChatRef | undefined;
+let chatId: number | undefined;
+let loaded = false;
+let whenBusy: BusyMode = DEFAULT_BUSY_MODE;
+const queue = new MessageQueue({
+	update: async (id, change) => {
+		if (!chat) throw new Error("The chat is not open.");
+		return chat.updateQueued({ id, ...change }, context);
+	},
+	cancel: async (id) => {
+		if (!chat) throw new Error("The chat is not open.");
+		return chat.cancelQueued({ id }, context);
+	},
+	continue: async () => {
+		if (!chat) throw new Error("The chat is not open.");
+		return chat.continueQueued(context);
+	},
+});
 
 const iconButton = (id: string, name: Parameters<typeof icon>[0], label: string) =>
 	h("button", { class: "icon-btn", id, type: "button", title: label, "aria-label": label }, icon(name, 18));
@@ -41,19 +62,16 @@ const $ = {
 	prompt: h("textarea", { id: "prompt", rows: 1, placeholder: t("composer.placeholder"), "aria-label": t("composer.placeholder") }),
 	model: h("button", { class: "model-btn", id: "model", type: "button", "aria-haspopup": "listbox" }),
 	stop: h("button", { class: "send-btn stop-btn", id: "stop", type: "button", title: t("composer.stop"), "aria-label": t("composer.stop"), hidden: true }, icon("stop", 16)),
+	sendMode: h("button", { class: "send-mode-btn", id: "send-mode", type: "button", "aria-haspopup": "menu", hidden: true }),
 	send: h("button", { class: "send-btn", id: "send", type: "button" }),
 };
 document.body.append(
 	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.files, $.settings),
 	h("main", { class: "main" }, $.banner, $.scroller, $.jump),
-	h("footer", { class: "composer-wrap" },
-		h("div", { class: "composer", id: "composer" }, $.context, $.prompt, h("div", { class: "composer-bar" }, $.model, $.stop, $.send))),
+	h("footer", { class: "composer-wrap" }, queue.element,
+		h("div", { class: "composer", id: "composer" }, $.context, $.prompt,
+			h("div", { class: "composer-bar" }, $.model, $.stop, $.sendMode, $.send))),
 );
-
-let workspace: WorkspaceRef | undefined;
-let chat: ChatRef | undefined;
-let chatId: number | undefined;
-let loaded = false;
 const tabs = new TabTracker();
 const transcript = new Transcript({ suggest: (text) => void send(text), openSettings, chooseModel: openModelMenu });
 $.scroller.append(transcript.element);
@@ -109,6 +127,7 @@ function renderView() {
 	const wasBusy = transcript.busy;
 	const value = view();
 	const ready = connected().length > 0;
+	queue.update(value);
 	if (value) transcript.update({ kind: "conversation", view: value, ready });
 	else transcript.update(loaded && chatId === undefined ? { kind: "empty", ready } : { kind: "loading" });
 	$.files.disabled = !chat;
@@ -127,14 +146,23 @@ function renderComposer() {
 	document.body.dataset.busy = String(busy);
 	$.prompt.placeholder = busy ? t("composer.placeholderBusy") : t("composer.placeholder");
 	$.stop.hidden = !busy || !text;
+	$.sendMode.hidden = !busy || !text;
+	if ((!busy || !text) && overlays.current instanceof SendModeMenu) overlays.close();
+	const deliveryLabel = t(whenBusy === "steer" ? "queue.steer" : "queue.followUp");
+	if ($.sendMode.dataset.mode !== whenBusy) {
+		$.sendMode.dataset.mode = whenBusy;
+		$.sendMode.replaceChildren(h("span", null, deliveryLabel), icon("chevron", 11));
+	}
+	$.sendMode.title = t("composer.delivery");
+	$.sendMode.setAttribute("aria-label", `${t("composer.delivery")}: ${deliveryLabel}`);
 	const mode = stop ? "stop" : "send";
 	if ($.send.dataset.mode !== mode) {
 		$.send.dataset.mode = mode;
 		$.send.replaceChildren(icon(stop ? "stop" : "send", 16));
 	}
 	$.send.disabled = !stop && !text;
-	$.send.title = stop ? t("composer.stop") : `${t("composer.send")} (Enter)`;
-	$.send.setAttribute("aria-label", stop ? t("composer.stop") : t("composer.send"));
+	$.send.title = stop ? t("composer.stop") : busy ? t("composer.sendBusy", deliveryLabel) : `${t("composer.send")} (Enter)`;
+	$.send.setAttribute("aria-label", stop ? t("composer.stop") : busy ? deliveryLabel : t("composer.send"));
 	const label = !ready ? t("model.connect") : ref ? modelName(providers(), ref) : t("model.choose");
 	if ($.model.dataset.attention !== String(!ready) || $.model.querySelector(".model-name")?.textContent !== label) {
 		$.model.dataset.attention = String(!ready);
@@ -194,6 +222,7 @@ let sending = false;
 async function send(given?: string) {
 	const text = (given ?? $.prompt.value).trim();
 	if (!text || sending || !workspace) return;
+	const delivery = whenBusy;
 	if (!connected().length) {
 		if (given) $.prompt.value = given;
 		openSettings();
@@ -210,9 +239,8 @@ async function send(given?: string) {
 		if (model && !sameModel(chatModel(), model)) await target.configure(model, context);
 		const tab = tabs.current;
 		await target.send({
-			text, requestId: crypto.randomUUID(),
+			text, requestId: crypto.randomUUID(), whenBusy: delivery,
 			...(tab && tab.access !== "unavailable" ? { tabId: tab.id } : {}),
-			...(transcript.busy ? { whenBusy: "steer" as const } : {}),
 		}, context);
 		toBottom();
 	} catch (error) {
@@ -235,11 +263,26 @@ $.prompt.addEventListener("keydown", (event) => {
 	event.preventDefault();
 	void send();
 });
-$.stop.addEventListener("click", () => void chat?.abort(context));
+function abort(target: ChatRef) {
+	void target.abort(context).catch((error) => toast(String((error as Error)?.message ?? error), "error"));
+}
+function stop(anchor: HTMLElement) {
+	const target = chat;
+	if (!target) return;
+	if (!queue.count) return abort(target);
+	const menu = new StopConfirmMenu(queue.count, () => {
+		overlays.close();
+		abort(target);
+	}, () => overlays.close());
+	overlays.open(menu, { kind: "popover", anchor });
+	menu.focus();
+}
+$.stop.addEventListener("click", () => stop($.stop));
 $.send.addEventListener("click", () => {
-	if ($.send.dataset.mode === "stop") void chat?.abort(context);
+	if ($.send.dataset.mode === "stop") stop($.send);
 	else void send();
 });
+$.sendMode.addEventListener("click", openSendModeMenu);
 $.newChat.addEventListener("click", () => { void open(undefined); $.prompt.focus(); });
 $.chats.addEventListener("click", openChats);
 $.title.addEventListener("click", openChats);
@@ -263,6 +306,17 @@ function openFiles() {
 }
 function openSettings() {
 	overlays.open(new SettingsSheet(() => workspace, () => overlays.close()), { kind: "sheet", anchor: $.settings });
+}
+function openSendModeMenu() {
+	if (overlays.current instanceof SendModeMenu) return overlays.close();
+	const menu = new SendModeMenu(whenBusy, (mode) => {
+		whenBusy = mode;
+		overlays.close();
+		renderComposer();
+		$.prompt.focus();
+	});
+	overlays.open(menu, { kind: "popover", anchor: $.sendMode });
+	menu.focus();
 }
 function openModelMenu() {
 	if (overlays.current instanceof ModelMenu) return overlays.close();
@@ -296,10 +350,12 @@ async function main() {
 	const held = await host.get(Workspace, {}, context);
 	if (held.variant !== "owner") throw new Error("The Engine refused the panel.");
 	workspace = held;
+	whenBusy = held.busyMode.value;
 	let knownChats = new Set(chats().map((chat) => chat.id));
-	for (const member of [held.chats, held.providers, held.defaultModel]) {
+	for (const member of [held.chats, held.providers, held.defaultModel, held.busyMode]) {
 		const watch = await member.watch(context);
 		watch.start(async () => {
+			if (member === held.busyMode) whenBusy = held.busyMode.value;
 			if (member === held.chats) {
 				const current = new Set(chats().map((chat) => chat.id));
 				if (chatId !== undefined && knownChats.has(chatId) && !current.has(chatId)) await open(undefined);

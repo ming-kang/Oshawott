@@ -69,6 +69,11 @@ test("provider auth checks run concurrently and key changes refresh the shared s
 		]);
 		assert.deepEqual(workspace.providers.value[0]?.models, [{ id: "one", name: "One" }]);
 		assert.equal(workspace.defaultModel.value, null);
+		assert.equal(workspace.busyMode.value, "steer");
+		await workspace.setBusyMode("followUp", context);
+		await until(() => workspace.busyMode.value === "followUp");
+		await workspace.setBusyMode("steer", context);
+		await until(() => workspace.busyMode.value === "steer");
 		await workspace.setApiKey({ provider: "missing", key: " test-key " }, context);
 		await until(() => workspace.providers.value.find((provider) => provider.id === "missing")?.configured === true);
 		assert.deepEqual(await credentials.read("missing"), { type: "api_key", key: "test-key" });

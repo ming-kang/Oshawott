@@ -7,6 +7,14 @@ export type ModelRef = DurableModelRef;
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
+export const BusyMode = oneOf("steer", "followUp");
+export type BusyMode = Static<typeof BusyMode>;
+export const DEFAULT_BUSY_MODE: BusyMode = "steer";
+export const QueueUpdateResult = oneOf("updated", "not_found");
+export type QueueUpdateResult = Static<typeof QueueUpdateResult>;
+export const QueueCancelResult = oneOf("aborted", "already_placed", "settled", "not_found");
+export type QueueCancelResult = Static<typeof QueueCancelResult>;
+
 export const ChatFile = obj({ path: str(), size: int(), mtimeMs: num() });
 
 export const ChatSummary = obj({ id: int(), title: str(), createdAt: num() });
@@ -21,7 +29,7 @@ export const ProviderSummary = obj({
 export type ProviderSummary = Static<typeof ProviderSummary>;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 1,
+	version: 2,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -29,6 +37,7 @@ export const Workspace = remote("oshawott.workspace", {
 			state: {
 				chats: arr(ChatSummary),
 				defaultModel: union([ModelRef, nul()]),
+				busyMode: BusyMode,
 				providers: arr(ProviderSummary),
 			},
 			methods: {
@@ -39,13 +48,14 @@ export const Workspace = remote("oshawott.workspace", {
 				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
 				clearApiKey: method(obj({ provider: str() })),
 				setDefaultModel: method(ModelRef),
+				setBusyMode: method(BusyMode),
 			},
 		},
 	},
 });
 
 export const Chat = remote("oshawott.chat", {
-	version: 1,
+	version: 2,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -61,12 +71,21 @@ export const Chat = remote("oshawott.chat", {
 				 */
 				send: method(
 					obj({
-						text: str({ max: 1_000_000 }),
+						text: str({ min: 1, max: 1_000_000 }),
 						requestId: str({ min: 1, max: 200 }),
 						tabId: opt(int()),
-						whenBusy: opt(oneOf("steer", "followUp")),
+						whenBusy: opt(BusyMode),
 					}),
+					int(),
 				),
+				/** Edit text and/or change delivery while the submission is still in `pi.inbox`. */
+				updateQueued: method(
+					obj({ id: int(), text: opt(str({ min: 1, max: 1_000_000 })), whenBusy: opt(BusyMode) }),
+					QueueUpdateResult,
+				),
+				cancelQueued: method(obj({ id: int() }), QueueCancelResult),
+				/** Continue an idle failed run, placing any inputs its `keep` policy left queued. */
+				continueQueued: method(undefined, int()),
 				abort: method(),
 				configure: method(ModelRef),
 				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */

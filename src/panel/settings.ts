@@ -1,11 +1,13 @@
-import type { ProviderSummary, Workspace } from "../contracts/chat.ts";
+import { DEFAULT_BUSY_MODE, type BusyMode, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";
 import { t } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon, logo, toast } from "./ui.ts";
 
-type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "setApiKey" | "clearApiKey">;
+type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
+	"providers" | "setApiKey" | "clearApiKey" | "busyMode" | "setBusyMode"
+>;
 type Theme = "system" | "light" | "dark";
 const context = BACKGROUND_CONTEXT;
 const THEME_KEY = "oshawott:theme";
@@ -28,13 +30,16 @@ export class SettingsSheet implements OverlayView {
 	readonly element: HTMLElement;
 	readonly #source: () => Source | undefined;
 	readonly #card = h("div", { class: "card providers", id: "providers" });
+	readonly #delivery = h("div", { class: "segmented", id: "settings-delivery", role: "radiogroup", "aria-label": t("settings.messaging") });
 	#expanded: string | undefined;
 	#closed = false;
+	#deliveryPending = false;
 
 	constructor(source: () => Source | undefined, onClose: () => void) {
 		this.#source = source;
 		const providers = source()?.providers.value ?? [];
 		this.#expanded = providers.some((provider) => provider.configured) ? undefined : providers[0]?.id;
+		this.#buildDelivery();
 		this.element = h(
 			"section", { class: "sheet", id: "settings", role: "dialog", "aria-modal": "true", "aria-label": t("settings.title") },
 			h("div", { class: "panel-head" },
@@ -43,6 +48,8 @@ export class SettingsSheet implements OverlayView {
 			h("div", { class: "sheet-body" },
 				h("section", { class: "section" }, h("h3", null, t("settings.providers")), this.#card,
 					h("p", { class: "section-hint" }, icon("lock", 12), h("span", null, t("settings.providersHint")))),
+				h("section", { class: "section" }, h("h3", null, t("settings.messaging")), this.#delivery,
+					h("p", { class: "section-hint" }, h("span", null, t("settings.messagingHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.appearance")), this.#themes()),
 				h("section", { class: "section" }, h("h3", null, t("settings.about")),
 					h("div", { class: "card about" }, logo(34), h("div", null, h("strong", null, "Oshawott"), h("span", null, t("settings.version", ext.runtime.getManifest().version))))),
@@ -52,6 +59,7 @@ export class SettingsSheet implements OverlayView {
 
 	refresh() {
 		if (this.#closed) return;
+		this.#refreshDelivery();
 		const active = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
 		const providerId = active?.closest<HTMLElement>(".provider")?.dataset.provider;
 		const action = active?.classList.contains("provider-head") ? ".provider-head"
@@ -131,6 +139,59 @@ export class SettingsSheet implements OverlayView {
 				h("span", { class: "pill", "data-on": provider.configured || null }, provider.configured ? t("settings.connected") : t("settings.notSet")), icon("chevron", 14)),
 			open ? h("div", { class: "provider-form" }, input, save, provider.configured ? remove : null) : null,
 		);
+	}
+
+	#buildDelivery() {
+		const modes: BusyMode[] = ["steer", "followUp"];
+		for (const [index, mode] of modes.entries()) {
+			this.#delivery.append(h("button", {
+				type: "button", role: "radio", "data-value": mode,
+				onclick: () => void this.#chooseDelivery(mode),
+				onkeydown: (event: KeyboardEvent) => {
+					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (index + 1) % modes.length
+						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (index + modes.length - 1) % modes.length
+							: event.key === "Home" ? 0 : event.key === "End" ? modes.length - 1 : -1;
+					if (next < 0) return;
+					event.preventDefault();
+					void this.#chooseDelivery(modes[next]!, true);
+				},
+			}, t(mode === "steer" ? "queue.steer" : "queue.followUp")));
+		}
+		this.#refreshDelivery();
+	}
+
+	async #chooseDelivery(mode: BusyMode, focus = false) {
+		if (this.#deliveryPending) return;
+		const source = this.#source();
+		if (!source) return toast(t("reconnecting"), "error");
+		if (source.busyMode.value === mode) {
+			if (focus) this.#delivery.querySelector<HTMLButtonElement>(`[data-value="${mode}"]`)?.focus({ preventScroll: true });
+			return;
+		}
+		this.#deliveryPending = true;
+		this.#refreshDelivery();
+		try {
+			await source.setBusyMode(mode, context);
+		} catch (error) {
+			toast(String((error as Error)?.message ?? error), "error");
+		} finally {
+			this.#deliveryPending = false;
+			this.#refreshDelivery();
+			if (focus) {
+				const selected = this.#source()?.busyMode.value ?? mode;
+				this.#delivery.querySelector<HTMLButtonElement>(`[data-value="${selected}"]`)?.focus({ preventScroll: true });
+			}
+		}
+	}
+
+	#refreshDelivery() {
+		const selected = this.#source()?.busyMode.value ?? DEFAULT_BUSY_MODE;
+		for (const button of this.#delivery.querySelectorAll<HTMLButtonElement>("button")) {
+			const active = button.dataset.value === selected;
+			button.setAttribute("aria-checked", String(active));
+			button.tabIndex = active ? 0 : -1;
+			button.disabled = this.#deliveryPending;
+		}
 	}
 
 	#themes() {
