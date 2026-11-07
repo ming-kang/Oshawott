@@ -1,6 +1,4 @@
-// The host permission that covers a URL's site: its scheme and host name, every path. Without the port, which Firefox
-// does not support in match patterns (a pattern with one matches nothing there); Chromium matches every port of a host
-// whose pattern has none. Only http(s) URLs have one.
+// Firefox match patterns do not support ports; Chromium patterns without one cover every port.
 export function sitePattern(url: string): string | undefined {
 	try {
 		const parsed = new URL(url);

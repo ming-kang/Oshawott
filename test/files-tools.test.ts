@@ -1,6 +1,3 @@
-// Focused checks around the web tool: denied sites never reach the network, binary/text bodies and limits, and
-// redirects must not turn one permitted request into an unchecked request to another host. Full Harness/Code Mode
-// integration is in files.test.ts; these call the registered fetch directly over a real chord Broker connection.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";

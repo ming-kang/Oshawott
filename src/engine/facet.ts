@@ -1,7 +1,3 @@
-// What the Engine serves to panels: the workspace and its chats, as Chord objects over Durable.
-//
-// Every state member follows Durable through `self.follow` (Durable's synchronous observers), so a panel's reference
-// is Durable's committed state, sent once and then as deltas: no event bus, no snapshot polling, no second copy.
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
@@ -17,14 +13,12 @@ export interface EngineServices {
 	readonly models: MutableModels;
 	readonly credentials: CredentialStore;
 	readonly files: FileBackend;
-	/** The Engine's clock (tests pass a fixed one). */
 	readonly now: () => number;
 }
 
 const ProviderList = obj({ list: arr(ProviderSummary) });
 const Providers = defineState("providers", { schema: ProviderList, version: 1, initial: () => ({ list: [] }) });
 
-/** A chat title from a message: its first line, whitespace folded, at most 48 characters. */
 export function titleOf(text: string): string {
 	const line = text.trim().split("\n")[0]!.replace(/\s+/g, " ");
 	const chars = [...line];
@@ -120,7 +114,6 @@ export function panelFacet(services: EngineServices) {
 			};
 			const view = self.follow((observer, ctx) => harness.observeConversation(conversationId, observer, ctx));
 			const files = new ChatFiles(services.files, id, services.now);
-			/** A path the panel names, below `/workspace`; nothing outside it. */
 			const inWorkspace = (path: string) => {
 				const resolved = resolvePath(WORKSPACE, path);
 				if (!resolved.startsWith(`${WORKSPACE}/`)) throw new ChordError({ code: "forbidden", message: `Not a file of this chat: ${path}` });

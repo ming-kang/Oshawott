@@ -1,7 +1,3 @@
-// Code mode's VM in a dedicated Worker, one per execution: the Engine keeps the tools and the call records
-// (`RemoteCodemodeSandbox`), the Worker only runs QuickJS (`serveCodemodeRemote`). A script that computes never blocks
-// the Engine, and a stopped execution's Worker is terminated outright. Needs no SharedArrayBuffer, so it works in a
-// Firefox event page as in a Chromium offscreen document; the extension CSP allows `wasm-unsafe-eval` for QuickJS.
 import {
 	type CodemodeRemote,
 	type CodemodeRemoteMessage,

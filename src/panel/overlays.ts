@@ -1,4 +1,3 @@
-// One owner for drawers, sheets and the model popover. Components own their content; this owns dismissal and focus.
 import { h } from "./ui.ts";
 
 export interface OverlayView {

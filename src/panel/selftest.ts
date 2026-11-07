@@ -1,7 +1,3 @@
-// A dev build's self-test, run by the panel when it is opened as `panel.html?selftest=<origin>` (Firefox's WebDriver
-// cannot reach extension pages, so the extension drives itself and reports to the test's server). The same steps as
-// scripts/smoke-chromium.mjs, through the panel's UI: Engine state in Settings, page tools on the test tab, and a turn
-// of the demo model (page_snapshot on the tab, then its answer), and fetch → Code Mode → the chat's files.
 import { ext } from "../platform/webext.ts";
 import { testToolCards } from "./tool-selftest.ts";
 
@@ -78,7 +74,6 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 		prompt.value = "What is on this page?";
 		prompt.dispatchEvent(new Event("input"));
 		click("#send");
-		// The committed answer: a heading, and nothing streaming any more.
 		const heading = await until(
 			() => (document.querySelector(".msg.assistant[data-live]") ? undefined : all(".msg.assistant .md :is(h2, h3)").at(-1)?.textContent),
 			30_000,
@@ -101,7 +96,6 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 		});
 		step("fetch → Code Mode file read/write → file sheet refresh", paths.includes("items.json") && paths.includes("items.json.stats.json"), paths.join(", "));
 
-		// Capture the Blob prepared by the button. The Node driver also verifies what Firefox saves to disk.
 		const file = await download("items.json");
 		const downloaded = await file.text();
 		step("download through Chat.readFile and an octet-stream Blob", file.type === "application/octet-stream" && JSON.parse(downloaded).items.join(",") === "1,2,3", `${file.size} bytes`);
@@ -143,7 +137,6 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 	} catch (error) {
 		step("self-test", false, String(error));
 	}
-	// What the panel looks like here, for a person to check (dist/smoke-firefox-panel.png).
 	const screenshot = await shot();
 	await fetch(`${origin}/report`, { method: "POST", body: JSON.stringify({ steps, screenshot, filesScreenshot }) });
 }

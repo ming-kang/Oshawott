@@ -1,4 +1,3 @@
-// One page's tools, served by the content script of tab `tabId` and used by the Engine only.
 import { int, method, obj, remote } from "../lib/chord.ts";
 import { type PageToolName, pageTools as t } from "../tools/page-tools.ts";
 import { TabHost } from "./hosts.ts";

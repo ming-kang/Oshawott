@@ -1,4 +1,3 @@
-// Dev-only regressions for component ownership, explicit transcript states and the real panel controls.
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type RunFailure, type TaskId } from "@earendil-works/pi-durable";
 import type { Workspace } from "../contracts/chat.ts";

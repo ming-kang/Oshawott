@@ -1,7 +1,3 @@
-// A chat's files: `ChatFiles` against pi-durable's own environment conformance cases (those an environment without a
-// shell, change notifications, git or symbolic links can pass), then what Oshawott relies on beyond them, then the
-// whole path through the Engine: the model fetches into a file, reads and lists it, is refused a site the user has not
-// allowed, and the panel lists, downloads and loses the files with the chat.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -137,7 +133,6 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 								throw new Error("unused");
 							},
 							attach: async () => null,
-							// The user allowed data.example only.
 							hasAccess: async ({ url }) => new URL(url).hostname === "data.example",
 							armWake: async () => null,
 						},

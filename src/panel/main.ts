@@ -1,4 +1,3 @@
-// Panel controller: connection, current chat, transcript and composer. Drawers, sheets and menus own their content.
 import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
 import { Chat, type ModelRef, type ProviderSummary, Workspace } from "../contracts/chat.ts";
 import { MESSAGES, PORTS, type Principal } from "../contracts/hosts.ts";
@@ -28,8 +27,6 @@ const overlays = new OverlayController();
 initializeTheme();
 document.documentElement.lang = LANG;
 
-// ── Shell ──
-
 const iconButton = (id: string, name: Parameters<typeof icon>[0], label: string) =>
 	h("button", { class: "icon-btn", id, type: "button", title: label, "aria-label": label }, icon(name, 18));
 const $ = {
@@ -54,11 +51,8 @@ document.body.append(
 		h("div", { class: "composer", id: "composer" }, $.context, $.prompt, h("div", { class: "composer-bar" }, $.model, $.stop, $.send))),
 );
 
-// ── State ──
-
 let workspace: WorkspaceRef | undefined;
 let chat: ChatRef | undefined;
-/** Undefined for a new chat, created when its first message is sent. */
 let chatId: number | undefined;
 let loaded = false;
 const tabs = new TabTracker();
@@ -72,14 +66,11 @@ const chatModel = () => (view()?.docs["pi.agent"] as AgentState | undefined)?.mo
 const currentModel = (): ModelRef | undefined => chatModel() ?? workspace?.defaultModel.value ?? undefined;
 const shownModel = () => resolveModel(providers(), currentModel());
 
-// ── Connection ──
-
 let backoff = 250;
 async function connect() {
 	try {
 		await ext.runtime.sendMessage({ type: MESSAGES.ensureEngine });
 	} catch {
-		// The Broker answers once it is up; connecting tells the rest.
 	}
 	const link = portLink(ext.runtime.connect({ name: PORTS.panel }), () => ext.runtime.lastError?.message);
 	host.connect(link, { principal: { kind: "engine" } }, context);
@@ -94,8 +85,6 @@ async function connect() {
 		backoff = Math.min(backoff * 2, 10_000);
 	});
 }
-
-// ── Rendering ──
 
 function renderHeader() {
 	const summary = chats().find((c) => c.id === chatId);
@@ -148,7 +137,6 @@ function renderComposer() {
 	$.send.title = stop ? t("composer.stop") : `${t("composer.send")} (Enter)`;
 	$.send.setAttribute("aria-label", stop ? t("composer.stop") : t("composer.send"));
 	const label = !ready ? t("model.connect") : ref ? modelName(providers(), ref) : t("model.choose");
-	// Compare the actual presentation, not a second cache requiring manual invalidation after a model change.
 	if ($.model.dataset.attention !== String(!ready) || $.model.querySelector(".model-name")?.textContent !== label) {
 		$.model.dataset.attention = String(!ready);
 		$.model.replaceChildren(icon(ready ? "spark" : "key", 14), h("span", { class: "model-name" }, label), icon("chevron", 12));
@@ -175,8 +163,6 @@ function grant() {
 	// No await before the permission request: Firefox requires the click's user gesture.
 	void tabs.grant().then((granted) => toast(granted ? t("tab.granted") : t("tab.denied"), granted ? "info" : "error"));
 }
-
-// ── Current chat and submissions ──
 
 async function open(id: number | undefined) {
 	if (id === chatId && loaded && (id === undefined || chat)) return;
@@ -262,8 +248,6 @@ $.files.addEventListener("click", openFiles);
 $.settings.addEventListener("click", openSettings);
 $.model.addEventListener("click", openModelMenu);
 
-// ── Component wiring ──
-
 function openChats(event?: Event) {
 	const anchor = event?.currentTarget instanceof HTMLElement ? event.currentTarget : $.chats;
 	overlays.open(new ChatDrawer(() => workspace, {
@@ -303,8 +287,6 @@ function openModelMenu() {
 	menu.focus();
 }
 
-// ── Start ──
-
 async function main() {
 	renderHeader();
 	renderView();
@@ -325,7 +307,6 @@ async function main() {
 				knownChats = current;
 			}
 			renderHeader();
-			// These members feed state-backed overlays; files are queried only on open, manual refresh or run-end.
 			if (!(overlays.current instanceof FilesSheet)) void overlays.refresh();
 			renderView();
 		});

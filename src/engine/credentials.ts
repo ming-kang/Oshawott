@@ -1,5 +1,3 @@
-// pi-ai's credential store in the Engine's own IndexedDB database. Keys never leave the Engine's document: panels set
-// them through `Workspace.setApiKey` and see only whether a provider is configured.
 import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 
 const STORE = "credentials";

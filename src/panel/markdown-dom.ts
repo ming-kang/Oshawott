@@ -1,4 +1,3 @@
-// DOM for the Markdown tree of `markdown.ts`: elements and text nodes only, links opened in a new tab without an opener.
 import { t } from "./i18n.ts";
 import { type Block, closeDangling, type Inline, parseMarkdown } from "./markdown.ts";
 import { copyText, h, icon } from "./ui.ts";
@@ -76,7 +75,6 @@ function block(node: Block): Node {
 	}
 }
 
-/** Markdown as a `.md` element; `streaming` closes dangling spans and adds the caret after the last text. */
 export function markdown(source: string, streaming = false): HTMLElement {
 	const root = h("div", { class: "md" }, parseMarkdown(streaming ? closeDangling(source) : source).map(block));
 	if (streaming) {

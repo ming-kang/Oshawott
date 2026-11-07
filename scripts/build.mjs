@@ -1,6 +1,3 @@
-// Builds dist/chromium and dist/firefox (or the one named): one esbuild pass per bundle, the target fixed at build time
-// so each bundle carries only its browser's branch, then the static files and the generated manifest.
-//   node scripts/build.mjs [chromium|firefox] [--dev]
 import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

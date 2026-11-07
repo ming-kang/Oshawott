@@ -1,10 +1,3 @@
-// The one place that touches the WebExtension API. Everything else imports the typed subset below, so the surface
-// Oshawott depends on is explicit, and the Chromium/Firefox differences are written down once.
-//
-// Both browsers expose a promise-based `chrome.*` in Manifest V3 (Firefox also as `browser.*`). Only the members used
-// here are typed; a missing optional namespace (`offscreen`, `sidePanel`, `sidebarAction`, `userScripts`) is
-// `undefined`, never an empty object.
-
 export interface WebExtEvent<L extends (...args: never[]) => unknown> {
 	addListener(listener: L): void;
 	removeListener(listener: L): void;
@@ -15,7 +8,6 @@ export interface MessageSender {
 	readonly url?: string;
 	readonly tab?: TabInfo;
 	readonly frameId?: number;
-	/** Chromium 106+, Firefox 128+. */
 	readonly documentId?: string;
 }
 
@@ -37,9 +29,8 @@ export interface TabInfo {
 	readonly title?: string;
 	readonly active?: boolean;
 	readonly status?: string;
-	/** With the `tabs` permission. */
 	readonly favIconUrl?: string;
-	/** Milliseconds since the epoch: Chromium 121+, Firefox. */
+	/** Milliseconds since the epoch. */
 	readonly lastAccessed?: number;
 }
 
@@ -119,5 +110,4 @@ export interface WebExt {
 
 const scope = globalThis as unknown as { browser?: WebExt; chrome?: WebExt };
 
-/** The extension API of this context: `browser` where it exists (Firefox), else `chrome`. */
 export const ext: WebExt = (scope.browser ?? scope.chrome) as WebExt;

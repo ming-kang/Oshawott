@@ -1,9 +1,3 @@
-// The tools on a chat's files and the web, as one Durable extension: pi-durable's `read`, `write` and `edit` over the
-// chat's `ChatFiles` (the Harness's `env`), Oshawott's `ls`, and `fetch`. Code mode scripts call the same tools
-// (`await tools.read({ path })`), which is how the model searches, parses and transforms files without a shell.
-//
-// `fetch` runs in the Engine's document, without cookies, and only on sites the user has allowed (the Broker checks the
-// host permission): the permission that lets page tools act on a site lets the model read it from the network too.
 import { defineExtension, defineTool, type Extension, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
@@ -73,7 +67,6 @@ const readTextTool = defineTool({
 
 const TEXTUAL = /^text\/|[/+](json|xml)\b|javascript|ecmascript|csv|yaml|toml|x-www-form-urlencoded/i;
 
-/** The body as text: by its content type and charset, or, without a content type, if it is valid UTF-8. */
 function decodeBody(contentType: string, body: Uint8Array): string | undefined {
 	if (TEXTUAL.test(contentType)) {
 		const charset = /charset="?([\w-]+)/i.exec(contentType)?.[1];

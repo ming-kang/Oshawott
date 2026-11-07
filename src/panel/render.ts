@@ -1,7 +1,5 @@
-// Renders Durable's conversation view (`Chat.view`) into the thread, incrementally. Committed entries never change, so
-// each is built once, keyed by its ID; a tool result fills in the card of its call. Only what `pi.live` holds (the
-// answer streaming in, running tools, a retry, the last run's failure) is rebuilt on every change. Text is always set
-// as text; model Markdown goes through `markdown.ts`, which builds elements, never HTML.
+// Committed entries never change and are built once by ID; a tool result fills its call's card.
+// Only `pi.live` (streaming answer, running tools, retry, last failure) is rebuilt on every change.
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureReason } from "@earendil-works/pi-durable";
 import { t } from "./i18n.ts";
@@ -15,13 +13,11 @@ const FAILURE_LABELS = {
 } as const satisfies Record<RunFailureReason, string | null>;
 
 export interface TranscriptActions {
-	/** A suggestion of the empty state was picked. */
 	suggest(text: string): void;
 	openSettings(): void;
 	chooseModel(): void;
 }
 
-/** A new chat is not a fabricated ConversationView; loading and empty are explicit UI states. */
 export type TranscriptState =
 	| { kind: "loading" }
 	| { kind: "empty"; ready: boolean }

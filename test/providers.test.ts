@@ -1,4 +1,3 @@
-// Provider state must reflect pi-ai's AuthCheck result, with independent auth checks started together.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";

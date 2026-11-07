@@ -1,10 +1,3 @@
-// The Engine: one Chord host at `EngineHost()` around one Durable Harness. Platform-free: the browser entry passes in
-// storage, models, and how to reach the Broker and a tab; tests pass memory ones.
-//
-// Lifecycle. Every context of an extension can be evicted (a service worker, an offscreen document, a Firefox event
-// page). Durable is built for that: a reopened Harness continues from its last commit (`resume()`), and `onWake` says
-// when a process is needed again. The Engine forwards `onWake` to the Broker, which arms an alarm; the alarm brings the
-// Engine back. Nothing else keeps it alive.
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
 import { FileError } from "@earendil-works/pi-durable/env";
 import { createRegistry, type Extension, Harness, type Storage, type Wake } from "@earendil-works/pi-durable";
@@ -22,15 +15,10 @@ export interface EngineOptions {
 	readonly storage: Storage;
 	readonly models: MutableModels;
 	readonly credentials: CredentialStore;
-	/** The link to the Broker (Chromium: its service worker's port; Firefox: a memory link in the same page). */
 	readonly broker: (context: Context) => Promise<Link>;
-	/** The link to the page host of `tabId`; the platform injects the page bundle when the tab has none. */
 	readonly tab: (tabId: number, context: Context) => Promise<Link>;
-	/** Where the chats' files are kept (IndexedDB in the browser). */
 	readonly files: FileBackend;
-	/** The network for the `fetch` tool; default the global `fetch`. */
 	readonly fetch?: typeof fetch;
-	/** More extensions, such as code mode with the platform's sandbox. */
 	readonly extensions?: readonly Extension[];
 	readonly now?: () => number;
 	readonly onError?: (error: HostError | unknown) => void;
@@ -39,7 +27,6 @@ export interface EngineOptions {
 export interface Engine {
 	readonly host: Host<Principal>;
 	readonly harness: Harness;
-	/** A panel connected: its port's link, and an id for this panel instance. */
 	acceptPanel(link: Link, instance: string): void;
 	close(): Promise<void>;
 }
@@ -49,7 +36,6 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const now = options.now ?? Date.now;
 
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError });
-	// Only the Engine's own work reaches the browser and the pages: a panel's hold for them is refused.
 	host.route(
 		BrokerHost,
 		{
@@ -110,7 +96,6 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		},
 		context,
 	);
-	// The workspace document exists before anything follows it.
 	await harness.commit(async (tx) => {
 		await tx.doc(WorkspaceDoc);
 	}, context);

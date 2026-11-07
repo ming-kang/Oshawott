@@ -1,6 +1,3 @@
-// Firefox's event page: the Broker and the Engine in one document (Firefox has no offscreen documents, and its event
-// page has a DOM and Workers). They are still two Chord hosts, joined by a memory link, so the code above them is the
-// same as on Chromium. Open views (the sidebar) keep an event page alive; alarms bring it back after an unload.
 import { MESSAGES } from "../contracts/hosts.ts";
 import { startBroker } from "../broker/broker.ts";
 import { runEngine } from "../engine/browser.ts";
@@ -13,7 +10,6 @@ const broker = startBroker(context);
 
 // Listeners at the top level, synchronously: they are what wakes this page.
 ext.runtime.onMessage.addListener((message) => {
-	// This page is the Engine's document: being awake is the answer.
 	if ((message as { type?: unknown } | null)?.type === MESSAGES.ensureEngine) return Promise.resolve({ ok: true });
 	return undefined;
 });

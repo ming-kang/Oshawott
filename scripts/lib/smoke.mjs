@@ -1,5 +1,3 @@
-// What the smoke tests and screenshot scripts share: the Chromium to launch, the test page and its server, loading
-// dist/chromium, and polling. OSHAWOTT_CHROME names the browser; by default Playwright's cached Chromium.
 import { existsSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -25,11 +23,9 @@ export const TEST_PAGE = `<!doctype html><title>Oshawott test page</title>
 <input id="q" placeholder="Search"><button id="go" onclick="out.textContent='searched: '+q.value">Go</button>
 <p id="out">nothing yet</p>`;
 
-/** A small UTF-8 download for the file tools and the Code Mode → files flow. */
 export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawott 文件" })}\n`;
 export const TEST_LARGE_DOWNLOAD = JSON.stringify({ padding: "x".repeat(1_100_000), ending: "complete" });
 
-/** Serves `page` (the test page by default); `routes` adds handlers by method and path. */
 export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 	const redirects = { get302: 0, post307: 0, target: 0 };
 	const server = createServer((req, res) => {
@@ -53,7 +49,6 @@ export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 	return { url: `http://127.0.0.1:${server.address().port}/`, redirectHits: () => ({ ...redirects }), close: () => server.close() };
 }
 
-/** Chromium with dist/chromium loaded: the browser, the service worker's target, the extension id, `evaluateIn`. */
 export async function launchExtension({ args = [] } = {}) {
 	const browser = await puppeteer.launch({
 		executablePath: chromiumPath(),

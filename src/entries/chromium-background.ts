@@ -1,5 +1,3 @@
-// Chromium's service worker: the Broker. It creates the offscreen document the Engine runs in, and connects its port
-// to the Engine only when the Engine asks (`MESSAGES.wakeBroker`) or an alarm fires, so an idle extension sleeps.
 import { MESSAGES, PORTS } from "../contracts/hosts.ts";
 import { startBroker, WAKE_ALARM } from "../broker/broker.ts";
 import { BACKGROUND_CONTEXT, type Host } from "../lib/chord.ts";
@@ -51,7 +49,6 @@ ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	return true;
 });
 ext.alarms.onAlarm.addListener((alarm) => {
-	// The Engine asked to be woken (a sleeping task is due, or a run was active): bring it back; it resumes on open.
 	if (alarm.name === WAKE_ALARM) void connectToEngine();
 });
 ext.runtime.onInstalled.addListener(() => void ext.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }));

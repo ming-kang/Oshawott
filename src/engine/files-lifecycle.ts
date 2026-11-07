@@ -1,6 +1,4 @@
-// A chat removal spans Durable and the separate files database. Commit the intent with the removal, so submissions
-// stop immediately; abort all owned work, clear the files, then acknowledge the intent. A crash or failed clear leaves
-// a retryable intent. Startup finishes those before accepting panels. There is no cross-database atomicity claim.
+// Durable and the file database cannot commit atomically, so deletion is coordinated by a retryable durable intent.
 import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import type { Context } from "../lib/chord.ts";
 import { WorkspaceDoc } from "./docs.ts";

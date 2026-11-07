@@ -1,6 +1,3 @@
-// One tool call as a timeline row: what the tool does in words, its state, and, expanded, its arguments and result.
-// A card is made from the call in the assistant's answer, then follows the call: `pi.live` while it runs, its result
-// entry when it settles.
 import { NO_ACCESS } from "../contracts/browser.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { sitePattern } from "../platform/patterns.ts";
@@ -54,7 +51,6 @@ function look(name: string, args: Record<string, unknown>): Look {
 	}
 }
 
-/** A short line about a result, shown next to the label once the call is done. */
 function resultMeta(name: string, text: string): string | undefined {
 	if (name === "fetch") {
 		const summary = /^HTTP (\d{3})[^\n]*? · (\d+) bytes(?: · from .*?)?$/m.exec(text);
@@ -136,7 +132,6 @@ export class ToolCard {
 		);
 	}
 
-	/** Running output from `pi.live` (bounded there). */
 	setOutput(output: string | undefined) {
 		if (this.settled || !output) return;
 		if (!this.#output) {

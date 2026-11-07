@@ -1,6 +1,3 @@
-// The Engine's document is evicted in the middle of a model request (an offscreen document closed, a Firefox event
-// page unloaded). A new Engine opens the same storage; Durable sends the request again; the panel, whose link dropped,
-// connects to the new Engine and its chat reference comes back by itself, with the answer.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -53,7 +50,6 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 		context,
 	);
 
-	// The first request hangs (the provider is slow); the Engine is evicted while it waits.
 	let firstRequestStarted = false;
 	const faux = fauxProvider({ models: [{ id: "faux-1" }] });
 	faux.setResponses([
@@ -120,11 +116,9 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 	await chat.send({ text: "Hello", requestId: "r1" }, context);
 	await until(() => (firstRequestStarted ? true : undefined), "the first model request");
 
-	// Eviction: the document goes away with its Engine and its ports.
 	await engine.close();
 	await until(() => ((first as { closed?: boolean }).closed ? true : undefined), "the panel's link to drop");
 
-	// The browser brings the Engine back (an alarm, the panel reopening); the panel connects again.
 	engine = await open();
 	panel.connect(attachPanel(engine), { principal: { kind: "engine" } }, context);
 

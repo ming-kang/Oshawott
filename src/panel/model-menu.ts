@@ -1,4 +1,3 @@
-// Search and keyboard navigation for model choices. Selection writes are owned by the panel controller.
 import type { ModelRef, Workspace } from "../contracts/chat.ts";
 import type { Reference } from "../lib/chord.ts";
 import { t } from "./i18n.ts";

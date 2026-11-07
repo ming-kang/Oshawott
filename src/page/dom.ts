@@ -1,5 +1,3 @@
-// The page tools' DOM side. Refs are kept in this content script's memory (never written into the page's DOM), and
-// last until the next snapshot or a navigation (which ends this script).
 import type { Static } from "../lib/chord.ts";
 import type { PageToolArgs as Args, SnapshotResult } from "../tools/page-tools.ts";
 

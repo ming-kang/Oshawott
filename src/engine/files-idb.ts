@@ -1,5 +1,3 @@
-// Chats' files in IndexedDB, in a database of their own beside Durable's: entries in `meta`, file bytes in `data`, both
-// keyed `[chat, path]`, so listing a directory never loads its files and a chat's tree is one key range.
 import type { Entry, FileBackend, FileTx } from "./files.ts";
 
 const STORES = ["meta", "data"] as const;

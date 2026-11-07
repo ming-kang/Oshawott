@@ -1,4 +1,3 @@
-// Chromium's offscreen document: the Engine. Its Broker is the service worker, which it pulls when it needs it.
 import { MESSAGES } from "../contracts/hosts.ts";
 import { runEngine } from "../engine/browser.ts";
 import { ext } from "../platform/webext.ts";

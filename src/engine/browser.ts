@@ -1,7 +1,5 @@
-// The Engine in a browser document: the Chromium offscreen document, or the Firefox event page. It is the only
-// context with a `runtime.onConnect` listener, so every port of the extension reaches it, and only it:
-// - Firefox closes a port when *any* context that received it unloads; one receiver avoids that.
-// - An offscreen document cannot call `tabs.connect`; pages and the Broker connect to it instead.
+// This is the only `runtime.onConnect` receiver: Firefox drops a port when any receiving context unloads,
+// and a Chromium offscreen document cannot initiate `tabs.connect`.
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 import { googleProvider } from "@earendil-works/pi-ai/providers/google";
@@ -27,10 +25,7 @@ import { using } from "./tools.ts";
 
 const ATTACH_TIMEOUT_MS = 10_000;
 
-/**
- * Links that arrived before anyone asked for them, and askers waiting for one. A port becomes a link the moment it
- * arrives: Port events are not buffered, and the peer's Chord sends its handshake at once.
- */
+/** Port events are not buffered, so incoming ports become links immediately and wait here for their consumers. */
 export class Arrivals<K> {
 	#links = new Map<K, PortLink>();
 	#waiters = new Map<K, (link: PortLink) => void>();
@@ -70,7 +65,6 @@ export class Arrivals<K> {
 const lastError = () => ext.runtime.lastError?.message;
 
 export interface BrowserEngineOptions {
-	/** How the Engine reaches the Broker: a port from the service worker, or a memory link in the same page. */
 	readonly broker: (context: Context, brokerPorts: Arrivals<"broker">) => Promise<Link>;
 }
 
@@ -141,8 +135,6 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	);
 	for (const panel of panels.splice(0)) engine.acceptPanel(panel.link, panel.instance);
 
-	// A handle for the document's devtools (and the smoke tests): `await oshawott.page(tabId, "page_snapshot", {})`,
-	// `await oshawott.codemode("return 1 + 1")`, `await oshawott.files(chatId).listDir(".", BACKGROUND_CONTEXT)`.
 	const started = engine;
 	(globalThis as { oshawott?: unknown }).oshawott = {
 		engine: started,

@@ -1,9 +1,7 @@
-// Model selection policy shared by the composer and the menu; no DOM or remote calls here.
 import type { ModelRef, ProviderSummary } from "../contracts/chat.ts";
 
 export const configuredProviders = (providers: readonly ProviderSummary[]) => providers.filter((provider) => provider.configured);
 
-/** Keep the choice when its provider is connected, otherwise fall back to the first connected model. */
 export function shownModel(providers: readonly ProviderSummary[], chosen: ModelRef | undefined): ModelRef | undefined {
 	const connected = configuredProviders(providers);
 	if (chosen && connected.some((provider) => provider.id === chosen.provider)) return chosen;

@@ -1,4 +1,3 @@
-// Provider credentials and appearance; form state belongs to the sheet, not to the panel's conversation controller.
 import type { ProviderSummary, Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";

@@ -1,4 +1,3 @@
-/** A file size in binary units, shared by the panel's file list and tool summaries. */
 export function formatBytes(bytes: number): string {
 	const units = ["B", "KiB", "MiB", "GiB"];
 	let unit = 0;

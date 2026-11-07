@@ -1,7 +1,3 @@
-// A scripted model for `--dev` builds: the panel can be tried, and the smoke tests can run a whole turn, without a key.
-// Asked anything, it reads the user's tab with `page_snapshot`, then answers from what it read, streamed at a readable
-// pace, in the Markdown the panel renders (a heading, a list, a table, code). Given a web address, it downloads it into
-// the chat's files with `fetch`, reads the full text in code mode (`tools.read_text`), writes statistics, and answers.
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import type { FauxResponseFactory, Message } from "@earendil-works/pi-ai";
 
@@ -73,13 +69,11 @@ function answer(snapshot: Snapshot | undefined, error: string | undefined, zh: b
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'）)\]]+/i;
 
-/** The file a download lands in: the address's last path segment, or `page.html`. */
 function fileFor(url: string): string {
 	const name = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "";
 	return /^[\w.-]{1,64}$/.test(name) && name.includes(".") ? name : "page.html";
 }
 
-/** A code mode script that reads the download, measures it, and writes a JSON summary beside it. */
 function measureScript(path: string): string {
 	const summary = `${path}.stats.json`;
 	return [
@@ -125,7 +119,6 @@ function measured(text: string, zh: boolean) {
 	).join("\n");
 }
 
-/** Registers the demo provider on `models`; it answers every request, as many as are made. */
 export function demoProvider() {
 	const handle = fauxProvider({
 		provider: DEMO_PROVIDER,

@@ -1,4 +1,3 @@
-// The Engine's own state, stored in Durable next to the transcripts: one storage, one owner, one commit line.
 import { defineDoc } from "@earendil-works/pi-durable";
 import type { ChatSummary, ModelRef } from "../contracts/chat.ts";
 
@@ -9,7 +8,6 @@ export type WorkspaceState = {
 	pendingFileDeletes?: number[];
 };
 
-/** The workspace: the chats, default model, and recoverable file deletion intents. */
 export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	kind: "oshawott.workspace",
 	version: 1,
@@ -18,7 +16,6 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	checkpointWhen: () => true,
 });
 
-/** The tab a conversation's page tools act on when a call names none: the tab its panel showed at the last send. */
 export const TargetDoc = defineDoc<{ tabId: number | null }>({
 	kind: "oshawott.target",
 	version: 1,

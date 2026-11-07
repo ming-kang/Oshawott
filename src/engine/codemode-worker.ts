@@ -1,4 +1,3 @@
-// The code mode Worker: runs one execution's QuickJS VM and forwards its messages to the Engine.
 import { type CodemodeRemoteReply, serveCodemodeRemote } from "@earendil-works/pi-codemode/portable";
 import type { FromWorker, ToWorker } from "./codemode.ts";
 

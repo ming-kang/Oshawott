@@ -1,5 +1,3 @@
-// The panel's strings, in Chinese and English, chosen from the browser's language. `{0}`, `{1}` are arguments.
-
 const en = {
 	"app.name": "Oshawott",
 	"chat.untitled": "New chat",

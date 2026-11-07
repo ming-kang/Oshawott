@@ -1,7 +1,3 @@
-// The content script of one tab, injected on demand by the Broker (never declared for every site). It serves `Page`
-// at `TabHost({ tabId })` and connects a Port to the Engine, which accepts nothing on it: the Engine is this host's
-// child, holding its tools. When the port drops (the Engine's document went away), the script only waits: the Engine
-// injects again when it needs the tab, and a second injection reconnects instead of starting a second host.
 import { Page } from "../contracts/page.ts";
 import { PORTS, type Principal, TabHost } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../lib/chord.ts";

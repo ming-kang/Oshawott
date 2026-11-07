@@ -1,7 +1,3 @@
-// What a panel uses: the workspace (chats, models, keys) and one chat. Served by the Engine.
-//
-// A chat's state is Durable's conversation view itself: a window of entries and documents, streaming included.
-// Nothing is mirrored into a second store or broadcast per event.
 import type { ConversationView, ModelRef as DurableModelRef } from "@earendil-works/pi-durable";
 import { arr, bool, bytes, int, method, nul, num, obj, oneOf, opt, remote, type Static, str, typed, union, unknown } from "../lib/chord.ts";
 import { EngineHost } from "./hosts.ts";
@@ -9,7 +5,6 @@ import { EngineHost } from "./hosts.ts";
 export const ModelRef = obj({ provider: str(), modelId: str() });
 export type ModelRef = DurableModelRef;
 
-/** The largest file a chat keeps (`src/engine/files.ts`), and so the largest a panel downloads. */
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 export const ChatFile = obj({ path: str(), size: int(), mtimeMs: num() });
@@ -51,13 +46,12 @@ export const Workspace = remote("oshawott.workspace", {
 
 export const Chat = remote("oshawott.chat", {
 	version: 1,
-	/** Durable's conversation id. */
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
 		owner: {
 			state: {
-				/** Durable's view of the conversation; null until its first value. */
+				/** Null until Durable produces its first conversation view. */
 				view: typed<ConversationView | null>(unknown()),
 			},
 			methods: {

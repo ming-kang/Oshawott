@@ -1,7 +1,3 @@
-// The tab the panel's prompts are about: the active tab of the panel's window, or, when the panel is itself a tab (a
-// panel opened as a page), the user's most recently used other tab. With it, whether page tools may run there:
-// `granted` (the site's host permission is held), `grantable` (an http(s) site; the user can allow it), or `unavailable`
-// (browser and extension pages, where no extension may inject).
 import { sitePattern } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
@@ -13,7 +9,6 @@ export interface TargetTab {
 	readonly url: string;
 	readonly favIconUrl?: string;
 	readonly access: Access;
-	/** The match pattern to request for `grantable`. */
 	readonly pattern?: string;
 }
 

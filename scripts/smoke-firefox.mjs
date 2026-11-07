@@ -1,9 +1,3 @@
-// Loads dist/firefox (a --dev build) into Firefox as a temporary add-on (WebDriver BiDi) and checks what the Chromium
-// smoke test checks, where the Broker and the Engine share the event page:
-//   1. the panel reaches the Engine over a Port; 2. page tools act on a tab; 3. a prompt's run (the demo model reading
-//   the tab) streams into the panel; 4. fetch and Code Mode write files that the panel downloads and removes.
-// The steps run inside the extension (src/panel/selftest.ts) and are reported here.
-// OSHAWOTT_FIREFOX names the browser; by default the installed Firefox.
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";

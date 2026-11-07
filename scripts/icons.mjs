@@ -1,6 +1,4 @@
-// Renders static/icons/icon.svg to the PNG sizes the manifests use (Chromium does not take SVG icons):
-//   node scripts/icons.mjs
-// The PNGs are committed; run this again after changing the SVG.
+// The manifests need PNGs: Chromium does not take SVG icons.
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";

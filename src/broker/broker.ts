@@ -1,6 +1,3 @@
-// The Broker: the browser shell, served as `Browser` at `BrokerHost()`. It holds no state of its own; whatever must
-// survive is the Engine's. It runs where the extension APIs are: the service worker (Chromium) or the event page
-// (Firefox).
 import { Browser } from "../contracts/browser.ts";
 import { BrokerHost, type Principal } from "../contracts/hosts.ts";
 import { type Context, createHost, defineFacet, type Host } from "../lib/chord.ts";
@@ -21,7 +18,6 @@ function tabOf(tab: TabInfo) {
 	};
 }
 
-/** Injects the page bundle into `tabId`: first its tab id, then the script (both in the isolated world). */
 export async function injectPage(tabId: number) {
 	await ext.scripting.executeScript({
 		target: { tabId },

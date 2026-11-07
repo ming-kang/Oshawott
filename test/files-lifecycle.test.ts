@@ -1,5 +1,3 @@
-// Removal crosses two stores. Test its durable intent and retry, denial through old/new references and old tool
-// environments, and another panel sending while deletion is still clearing files.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";

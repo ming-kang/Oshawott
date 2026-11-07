@@ -1,4 +1,3 @@
-// The panel's Markdown parser: the tree it builds from what chat models write, and that only safe link targets survive.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { closeDangling, type Inline, parseInline, parseMarkdown, plainText } from "../src/panel/markdown.ts";

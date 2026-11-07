@@ -1,6 +1,3 @@
-// Small DOM helpers for the panel: `h()` builds elements (text always as text, never parsed as HTML), `icon()` the
-// stroke icons, `logo()` the Oshawott mark.
-
 type Child = Node | string | number | null | undefined | false;
 type Props = Record<string, string | number | boolean | null | undefined | ((event: never) => void)>;
 
@@ -95,7 +92,6 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 
 let logoCount = 0;
 
-/** The Oshawott mark: a drop of water with a wave across it. */
 export function logo(size = 24): SVGSVGElement {
 	const id = `oshawott-logo-${logoCount++}`;
 	const svg = document.createElementNS(SVG, "svg");
@@ -134,7 +130,6 @@ export function logo(size = 24): SVGSVGElement {
 	return svg;
 }
 
-/** A transient message at the bottom of the panel. */
 export function toast(text: string, tone: "info" | "error" = "info") {
 	const node = h("div", { class: "toast", "data-tone": tone, role: tone === "error" ? "alert" : "status" }, text);
 	document.body.appendChild(node);

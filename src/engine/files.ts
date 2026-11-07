@@ -1,11 +1,3 @@
-// Each chat's files: a small tree of files and directories per conversation, behind pi-durable's `ExecutionEnv`, so
-// its `read`, `write` and `edit` tools, code mode's output files, and Oshawott's `ls` and `fetch` work on it as on a
-// disk. A `FileBackend` keeps the trees: IndexedDB in the browser (`files-idb.ts`), a Map in tests. The files outlive
-// the Engine's document, so a restarted Engine finds them, and go with their chat.
-//
-// Paths are POSIX and absolute from the chat's own root; the working directory is `/workspace`. There are no symbolic
-// links, no change notifications, and no shell: `exec` fails with `shell_unavailable`, and the model processes files
-// with code mode instead.
 import type { Context } from "@earendil-works/chord/context";
 import {
 	type BinaryReader,
@@ -36,13 +28,11 @@ export const WORKSPACE = "/workspace";
 
 export type Entry = { readonly kind: "file" | "directory"; readonly size: number; readonly mtimeMs: number };
 
-/** One transaction on one chat's tree. Reads are awaited; writes apply in order and land with the transaction. */
 export interface FileTx {
 	get(path: string): Promise<Entry | undefined>;
 	data(path: string): Promise<Uint8Array | undefined>;
 	/** Every entry strictly below the directory `dir`, in no particular order. */
 	below(dir: string): Promise<(readonly [string, Entry])[]>;
-	/** A file's entry with its bytes, or a directory's. */
 	put(path: string, entry: Entry, data?: Uint8Array): void;
 	delete(path: string): void;
 }
@@ -53,13 +43,10 @@ export interface FileBackend {
 	 * transaction's own reads (an IndexedDB transaction ends at the first await of anything else).
 	 */
 	transact<T>(chat: number, mode: "readonly" | "readwrite", fn: (tx: FileTx) => Promise<T>): Promise<T>;
-	/** Removes `chat`'s whole tree. */
 	clear(chat: number): Promise<void>;
-	/** Releases the storage connection after the Engine has stopped its work. */
 	close?(): void;
 }
 
-/** A `FileBackend` in memory, for tests: one transaction at a time, writes staged until it resolves. */
 export class MemoryFileBackend implements FileBackend {
 	readonly #trees = new Map<number, Map<string, { entry: Entry; data?: Uint8Array }>>();
 	#tail: Promise<unknown> = Promise.resolve();
@@ -92,9 +79,6 @@ export class MemoryFileBackend implements FileBackend {
 	}
 }
 
-// ── Paths ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** `path` as an absolute, normalized path: relative to `cwd`, without `.`, `..`, or empty segments. */
 export function resolvePath(cwd: string, path: string): string {
 	const parts: string[] = [];
 	for (const part of (path.startsWith("/") ? path : `${cwd}/${path}`).split("/")) {
@@ -111,7 +95,6 @@ const prefixOf = (dir: string) => (dir === "/" ? "/" : `${dir}/`);
 const relativeTo = (dir: string, path: string) => path.slice(prefixOf(dir).length);
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Compare path segments, not whole paths: a directory's descendants precede its next sibling (a/ before a.txt). */
 function bySegments(a: readonly string[], b: readonly string[]): number {
 	for (let i = 0; i < Math.min(a.length, b.length); i++) {
 		const order = byName(a[i]!, b[i]!);
@@ -136,15 +119,10 @@ const isCount = (value: number) => Number.isSafeInteger(value) && value >= 0;
 
 const DIRECTORY: Entry = { kind: "directory", size: 0, mtimeMs: 0 };
 
-/** Detailed descendants with paths relative to the requested directory. */
 type TreeEntry = Entry & { readonly path: string };
 
-/** A file of a chat as the panel lists it: its path below `/workspace`. */
 export type WorkspaceFile = { readonly path: string; readonly size: number; readonly mtimeMs: number };
 
-// ── The environment ──────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** One chat's files as an `ExecutionEnv`. Cheap to make: it holds no state of its own. */
 export class ChatFiles implements ExecutionEnv {
 	readonly id: string;
 	cwd = WORKSPACE;
@@ -165,7 +143,6 @@ export class ChatFiles implements ExecutionEnv {
 		return resolvePath(this.cwd, path);
 	}
 
-	/** The root and the working directory always exist and cannot be removed or moved. */
 	#fixed(path: string) {
 		return path === "/" || path === WORKSPACE;
 	}
@@ -204,7 +181,6 @@ export class ChatFiles implements ExecutionEnv {
 		return ok({ entry, data: (await tx.data(path)) ?? new Uint8Array() });
 	}
 
-	/** Checks that `path`'s parents are directories or missing; the missing ones, to create, else the failure. */
 	async #missingParents(tx: FileTx, path: string): Promise<Result<string[], FileError>> {
 		const missing: string[] = [];
 		for (let dir = parentOf(path); ; dir = parentOf(dir)) {
@@ -219,7 +195,6 @@ export class ChatFiles implements ExecutionEnv {
 		for (const dir of [...dirs].reverse()) tx.put(dir, { kind: "directory", size: 0, mtimeMs: this.#now() });
 	}
 
-	/** Writes a whole file, creating its parents. */
 	async #put(tx: FileTx, path: string, data: Uint8Array): Promise<Result<void, FileError>> {
 		if (data.length > MAX_FILE_BYTES) return tooLarge(path, data.length);
 		if ((await this.#get(tx, path))?.kind === "directory") return fail("is_directory", `Is a directory: ${path}`, path);
@@ -423,14 +398,12 @@ export class ChatFiles implements ExecutionEnv {
 		return info.ok ? ok(info.value.path) : err(info.error);
 	}
 
-	/** Stored descendants, plus virtual fixed directories that belong in the root listing. */
 	async #below(tx: FileTx, dir: string) {
 		const entries = await tx.below(dir);
 		if (dir === "/" && !entries.some(([path]) => path === WORKSPACE)) entries.push([WORKSPACE, DIRECTORY]);
 		return entries;
 	}
 
-	/** The entries of the directory `dir`, by name. */
 	async #children(tx: FileTx, dir: string): Promise<Result<FileInfo[], FileError>> {
 		const entry = await this.#get(tx, dir);
 		if (!entry) return notFound(dir);
@@ -459,7 +432,6 @@ export class ChatFiles implements ExecutionEnv {
 				if (stop) return stop;
 				const entries: FileInfo[] = [];
 				while (next < paths.length && entries.length < maxEntries) {
-					// An entry removed since the reader opened is skipped.
 					const info = await this.fileInfo(paths[next++]!, ctx);
 					if (info.ok) entries.push(info.value);
 					else if (info.error.code !== "not_found") return err(info.error);
@@ -472,7 +444,6 @@ export class ChatFiles implements ExecutionEnv {
 		});
 	}
 
-	/** One metadata transaction, in depth-first order; the public listing surfaces only filter and project it. */
 	async listTree(path: string, context: Context): Promise<Result<TreeEntry[], FileError>> {
 		const target = this.#resolve(path);
 		return this.#run("readonly", context, target, async (tx) => {
@@ -583,9 +554,6 @@ export class ChatFiles implements ExecutionEnv {
 
 	async cleanup(_context: Context): Promise<void> {}
 
-	// ── For the panel ──
-
-	/** Every file below `/workspace`, by path relative to it. */
 	async workspaceFiles(context: Context): Promise<Result<WorkspaceFile[], FileError>> {
 		const listed = await this.listTree(WORKSPACE, context);
 		return listed.ok

@@ -1,6 +1,3 @@
-// Screenshots of the panel in its states, light and dark, from a --dev build (the demo model answers):
-//   node scripts/build.mjs chromium --dev && node scripts/screenshots.mjs [outDir]
-// outDir defaults to dist/screenshots. OSHAWOTT_LANG sets the UI language (default zh-CN).
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { launchExtension, root, testSite, until } from "./lib/smoke.mjs";
@@ -51,7 +48,6 @@ try {
 	await until("the tab chip", () => panel.$eval("#tab-chip .name", (n) => n.textContent || undefined));
 	await both("empty");
 
-	// Mid-stream: the answer is still coming in.
 	await panel.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
 	await panel.type("#prompt", zh ? "这个页面讲了什么？" : "What is this page about?");
 	await panel.click("#send");
@@ -63,7 +59,6 @@ try {
 	await panel.$eval(".thinking", (d) => (d.open = true));
 	await panel.$eval("#scroller", (s) => (s.scrollTop = 0));
 	await both("chat-top");
-	// A tool call expanded: its arguments and result.
 	await panel.$eval(".tool", (d) => (d.open = true));
 	await both("tool");
 	await panel.$eval(".tool", (d) => (d.open = false));

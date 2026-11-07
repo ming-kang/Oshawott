@@ -1,6 +1,3 @@
-// A chat's files in a sheet: list, download, remove. It holds the chat reference supplied by the panel, not a copy
-// of its files. Refreshes are explicit (opening, refresh button, a run ending); stale reads cannot overwrite a newer
-// list or a closed sheet. Downloaded bytes become an octet-stream Blob, never HTML rendered in the extension.
 import type { Chat } from "../contracts/chat.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";

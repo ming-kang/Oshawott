@@ -1,4 +1,3 @@
-// All listing surfaces share one metadata read and depth-first order, regardless of backend insertion order.
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -1,10 +1,4 @@
-// Page tools, declared once. Each spec is the single source for three things:
-// - the `Page` contract's method (arguments and result, checked by Chord at the page's host),
-// - the Durable tool the model calls (its parameters are the arguments plus an optional `tabId`),
-// - the replay policy: whether a call cut off by a restart may run again (`safe`: reads; `unsafe`: anything that acts).
-//
-// The framework never sends an action twice: Durable records a call's intent before `execute()`, and a call cut off by
-// a restart or a navigation reruns only when it is `safe`; otherwise the model gets an `interrupted` result.
+// Durable records intent before execute(): after an interruption, only `safe` calls replay.
 import type { Properties, StaticObject } from "@earendil-works/pi-schema";
 import { arr, bool, int, obj, opt, type Schema, str } from "../lib/chord.ts";
 
@@ -66,5 +60,4 @@ export const pageTools = {
 
 export type PageToolName = keyof typeof pageTools;
 
-/** The arguments of a page tool, as its implementation receives them. */
 export type PageToolArgs<N extends PageToolName> = StaticObject<(typeof pageTools)[N]["args"]>;

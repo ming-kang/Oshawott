@@ -1,8 +1,6 @@
-// One manifest per target, from one description. What differs is only where things run and which keys each browser
-// reads; the permissions are the same, and none is broader than a feature needs.
 import type { Target } from "./platform/target.ts";
 
-/** Model APIs the Engine calls from its document; host permissions let those requests skip CORS. */
+/** Host permissions allow cross-origin model API requests from the extension. */
 export const MODEL_ORIGINS = [
 	"https://api.anthropic.com/*",
 	"https://api.openai.com/*",
@@ -26,11 +24,8 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 		description: "A durable AI agent for your browser, built on Pi Durable.",
 		icons: ICONS,
 		action: { default_title: "Oshawott", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
-		// `tabs` for titles and URLs in tabs_list; `scripting` + `activeTab` / granted origins to inject page tools on
-		// demand (nothing is declared for every site); `alarms` for the Engine's wakeups.
 		permissions: ["tabs", "scripting", "activeTab", "alarms"],
 		host_permissions: dev ? [...MODEL_ORIGINS, "<all_urls>"] : MODEL_ORIGINS,
-		// Page tools on any site the user grants; requested at runtime, never at install.
 		optional_host_permissions: ["<all_urls>"],
 		// QuickJS (code mode) is WebAssembly.
 		content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },

@@ -1,11 +1,5 @@
-// A Chord link over a WebExtension `runtime.Port`.
-//
-// Chord's links move whole `Uint8Array` messages in order and close both ends. A Port moves messages in order too, but
-// Chromium serializes them as JSON (a Uint8Array would arrive as an object of indexes), so every message travels as one
-// base64 string. Firefox would structured-clone bytes; one encoding keeps one code path.
-//
-// The Port's own events give the rest: `onDisconnect` is the peer's close, and `disconnect()` closes our end without an
-// event on it, so the close listener is run here.
+// Chromium JSON-serializes Port messages, so bytes travel as base64. `disconnect()` emits no local
+// `onDisconnect`, hence the explicit close notification below.
 
 import type { Link } from "../lib/chord.ts";
 import type { RuntimePort } from "../platform/webext.ts";
@@ -47,7 +41,6 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 	const receive = (data: unknown) => {
 		if (closed) return;
 		if (typeof data !== "string") {
-			// Not ours: a Port carries only this link's frames.
 			close("unexpected message");
 			return;
 		}
@@ -59,9 +52,7 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 		if (closed) return;
 		try {
 			port.disconnect();
-		} catch {
-			// Already gone.
-		}
+		} catch {}
 		end(why);
 	};
 

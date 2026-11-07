@@ -1,7 +1,3 @@
-/* Oshawott panel. Neutral warm greys (light and dark: the system's, or the one chosen in Settings) and one accent,
-   sea blue, kept for what acts: send, focus, links, grants, the selected item. Tool calls and thinking are quiet rows
-   on a timeline; cards are for things that ask something of the user. */
-
 :root {
 	color-scheme: light;
 	--bg: #ffffff;
@@ -105,8 +101,6 @@
 		--backdrop: rgba(0, 0, 0, 0.5);
 	}
 }
-
-/* ── Base ──────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 *,
 *::before,
@@ -291,8 +285,6 @@ button:disabled {
 	}
 }
 
-/* ── Top bar ───────────────────────────────────────────────────────────────────────────────────────────────────── */
-
 .topbar {
 	position: relative;
 	z-index: 2;
@@ -339,8 +331,6 @@ body[data-scrolled] .topbar {
 .title-btn:hover {
 	background: var(--surface-2);
 }
-
-/* ── Thread ────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 .main {
 	position: relative;
@@ -430,8 +420,6 @@ body[data-scrolled] .topbar {
 .msg-actions .icon-btn {
 	color: var(--text-3);
 }
-
-/* Markdown */
 
 .md {
 	min-width: 0;
@@ -612,8 +600,6 @@ body[data-scrolled] .topbar {
 	}
 }
 
-/* Thinking */
-
 .thinking > summary {
 	display: flex;
 	align-items: center;
@@ -678,8 +664,6 @@ body[data-scrolled] .topbar {
 	font-size: 13px;
 	line-height: 1.65;
 }
-
-/* Tool calls */
 
 .tools {
 	display: flex;
@@ -866,8 +850,6 @@ body[data-scrolled] .topbar {
 	opacity: 0.7;
 }
 
-/* Live state, notices, dividers */
-
 .typing {
 	display: flex;
 	align-items: center;
@@ -1034,8 +1016,6 @@ body[data-scrolled] .topbar {
 	color: var(--text);
 }
 
-/* Empty state */
-
 .empty {
 	display: flex;
 	flex: 1;
@@ -1146,8 +1126,6 @@ body[data-scrolled] .topbar {
 	color: var(--text-2);
 	font-size: 13px;
 }
-
-/* ── Composer ──────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 .composer-wrap {
 	position: relative;
@@ -1368,8 +1346,6 @@ body[data-scrolled] .topbar {
 	margin-left: 0;
 }
 
-/* ── Popover: models ───────────────────────────────────────────────────────────────────────────────────────────── */
-
 .popover {
 	position: fixed;
 	right: 12px;
@@ -1473,8 +1449,6 @@ body[data-scrolled] .topbar {
 	font-size: 13px;
 	text-align: center;
 }
-
-/* ── Overlays: drawer (chats) and sheet (settings) ─────────────────────────────────────────────────────────────── */
 
 .overlay {
 	position: fixed;
@@ -1830,8 +1804,6 @@ body[data-scrolled] .topbar {
 	font-size: 12.5px;
 }
 
-/* ── Files ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
-
 .files-body {
 	gap: 14px;
 	min-height: 0;
@@ -1941,8 +1913,6 @@ body[data-scrolled] .topbar {
 	font-size: 12px;
 	overflow-wrap: anywhere;
 }
-
-/* ── Toast ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 .toast {
 	position: fixed;

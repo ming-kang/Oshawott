@@ -1,6 +1,3 @@
-// The tools the model calls, as one Durable extension. Page tools are generated from their specs and reach the page
-// over Chord (`Page` at `TabHost({ tabId })`); browser tools reach the Broker (`Browser`). A tool holds a reference only
-// for its call: the route keeps the link to a tab while it is open, so the next call is not resolved again.
 import { defineExtension, defineTool, type Extension, section } from "@earendil-works/pi-durable";
 import { Browser } from "../contracts/browser.ts";
 import type { Principal } from "../contracts/hosts.ts";
@@ -11,7 +8,6 @@ import { TargetDoc } from "./docs.ts";
 
 type EngineHost = Host<Principal>;
 
-/** Runs `fn` with a reference that is released when it settles. */
 export async function using<C extends Contract, T>(
 	host: EngineHost,
 	Type: C,
@@ -32,7 +28,6 @@ function text(value: unknown) {
 }
 
 export function browserExtension(host: EngineHost): Extension {
-	/** The call's tab: named, else the conversation's target, else the active tab. */
 	const tabOf = async (named: number | undefined, read: () => Promise<{ tabId: number | null } | undefined>, context: Context) => {
 		if (named !== undefined) return named;
 		const target = (await read())?.tabId;

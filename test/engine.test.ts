@@ -1,6 +1,3 @@
-// The whole topology in one process, over fake runtime.Ports with Chromium's semantics: a panel holds the workspace
-// and a chat on the Engine; the Engine's model calls a page tool, which the Engine routes to the page host of tab 7;
-// the Broker gets the Engine's wakeups. Only the browser APIs are fake; Chord, Durable, and pi-ai are the real ones.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -30,8 +27,6 @@ async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Pr
 test("a panel's prompt runs a page tool on its tab and the answer reaches the panel", async () => {
 	const errors: unknown[] = [];
 	const onError = (error: unknown) => errors.push(error);
-
-	// The Broker: the browser shell, here with one tab.
 	const wakes: { active: boolean; at?: number }[] = [];
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
 	await broker.load(
@@ -63,7 +58,6 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 		context,
 	);
 
-	// The page host of tab 7: its tools, with a fixed DOM.
 	const snapshots: number[] = [];
 	const page = createHost<Principal>({ address: TabHost({ tabId: 7 }), principal: { kind: "tab", tabId: 7 }, onError });
 	await page.load(
@@ -95,7 +89,6 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 		context,
 	);
 
-	// Each route resolve makes a fresh port pair, as a page or the service worker connecting would.
 	const tabResolves: number[] = [];
 	const linkTo = (target: typeof broker) => {
 		const [engineEnd, otherEnd] = fakePortPair();
@@ -128,7 +121,6 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 		context,
 	);
 
-	// The panel: a client host whose parent is the Engine.
 	const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
 	engine.acceptPanel(portLink(engineEnd), "panel-1");
 	const panel = createHost<Principal>({ onError });
@@ -149,7 +141,6 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 
 	const answer = await until(() => {
 		const entries = chat.view.value?.entries ?? [];
-		// An entry carries its model messages: `{ kind, model: [message] }`.
 		const last = entries.at(-1) as { kind?: string; model?: { content?: { type: string; text?: string }[]; stopReason?: string }[] } | undefined;
 		const message = last?.model?.[0];
 		if (last?.kind !== "pi.assistant" || message?.stopReason !== "stop") return undefined;
@@ -163,7 +154,6 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	assert.ok(kinds.includes("pi.tool-result"), `a tool result in ${kinds.join(", ")}`);
 	assert.ok(wakes.some((wake) => wake.active), "the Broker was asked for a recovery wakeup while the run was active");
 
-	// An untitled chat is named after its first message; removing a chat takes it off the list.
 	faux.appendResponses([fauxAssistantMessage("Hello.")]);
 	const second = await workspace.createChat({}, context);
 	const secondChat = await panel.get(Chat, { id: second }, context);
@@ -175,7 +165,6 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	await until(() => (workspace.chats.value.length === 1 ? true : undefined), "the second chat removed");
 	secondChat.release();
 
-	// A panel cannot reach the Broker or a page: those routes admit the Engine's own work only.
 	await assert.rejects(panel.get(Page, { tabId: 7 }, context, { readyTimeout: 500 }), /forbidden|refus|not/i);
 
 	chat.release();

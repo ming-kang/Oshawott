@@ -1,5 +1,3 @@
-// Dev-only DOM checks shared by the two browser smoke tests. A stub checks the permission request's arguments and
-// timing, not the browser's native permission popup (that still needs a manual check).
 import { NO_ACCESS } from "../contracts/browser.ts";
 import { ext } from "../platform/webext.ts";
 import { ToolCard } from "./tool-card.ts";

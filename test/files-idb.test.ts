@@ -1,5 +1,3 @@
-// Exercise the actual IndexedDB backend in Node as well as the real-browser smoke tests. The supported Durable
-// conformance cases must work on both backends; failed transactions must roll back metadata and bytes together.
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { test } from "node:test";

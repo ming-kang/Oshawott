@@ -1,4 +1,3 @@
-// Chat list content. Current-chat ownership stays in main; this owns rows, confirmation and list refreshes.
 import type { ChatSummary, Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { LANG, t } from "./i18n.ts";

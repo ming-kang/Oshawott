@@ -1,7 +1,3 @@
-// A Markdown parser for model answers: the subset chat models write (paragraphs, headings, lists, quotes, fenced code,
-// tables, emphasis, code spans, links). It returns a tree, never HTML: the panel builds DOM nodes from it, and text
-// stays text. Links keep only `http(s):` and `mailto:` targets. Pure, so it runs in tests without a DOM.
-
 export type Inline =
 	| { readonly t: "text"; readonly text: string }
 	| { readonly t: "code"; readonly text: string }
@@ -14,7 +10,6 @@ export type Align = "left" | "center" | "right" | null;
 export type Block =
 	| { readonly t: "p"; readonly children: Inline[] }
 	| { readonly t: "h"; readonly level: number; readonly children: Inline[] }
-	/** `open`: the fence is not closed yet (an answer still streaming). */
 	| { readonly t: "code"; readonly lang: string; readonly text: string; readonly open: boolean }
 	| { readonly t: "quote"; readonly children: Block[] }
 	| { readonly t: "list"; readonly ordered: boolean; readonly start: number; readonly items: Block[][] }
@@ -164,7 +159,6 @@ export function safeUrl(url: string): string | undefined {
 const WORD = /[\p{L}\p{N}]/u;
 const ESCAPABLE = /[\\`*_{}[\]()#+\-.!|~>]/;
 
-/** The index of the marker that closes an emphasis opened before `from`, or -1. */
 function closing(source: string, marker: string, from: number): number {
 	const single = marker.length === 1;
 	for (let j = source.indexOf(marker, from); j !== -1; j = source.indexOf(marker, j + 1)) {
@@ -177,7 +171,6 @@ function closing(source: string, marker: string, from: number): number {
 	return -1;
 }
 
-/** The index of the `]` matching the `[` at `open`, or -1. */
 function bracket(source: string, open: number): number {
 	let depth = 0;
 	for (let j = open; j < source.length; j++) {
@@ -298,7 +291,6 @@ export function closeDangling(source: string): string {
 	return closed;
 }
 
-/** The plain text of inline nodes (for titles and copying). */
 export function plainText(nodes: readonly Inline[]): string {
 	return nodes.map((node) => ("text" in node ? node.text : node.t === "br" ? "\n" : plainText(node.children))).join("");
 }
