@@ -20,4 +20,4 @@
 - 移除对话会停止运行、清除文件并从列表移除；Durable 的对话记录仍保留，因为 pi-durable 1.5 没有删除对话的接口。
 - 文件总容量受浏览器配额限制，尚无每对话总量限制或临时文件定期清理；Firefox 事件页回收后的文件流程未专门测试。
 - Chromium 上 offscreen 文档空闲时不会自动关闭。
-- Firefox 附加组件 ID `oshawatt@example.org` 是占位值；AMO 要求的 `data_collection_permissions` 未填写。见 [开发](development.md#发布前清单)。
+- Firefox 附加组件 ID `oshawatt@example.org` 是占位值；AMO 要求的 `data_collection_permissions` 和相应同意流程尚未完成。数据说明见[隐私政策草稿](../PRIVACY.md)，发布要求见[开发](development.md#发布前清单)。

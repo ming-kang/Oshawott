@@ -8,6 +8,8 @@ import { launchExtension, root, testSite, until } from "./lib/smoke.mjs";
 const out = process.argv[2] ?? join(root, "dist", "screenshots");
 const lang = process.env.OSHAWATT_LANG ?? "zh-CN";
 const zh = lang.startsWith("zh");
+// Chromium on Linux takes its UI language from LANGUAGE, not --lang. An explicit OSHAWATT_LANG must win over the shell.
+process.env.LANGUAGE = lang.replace("-", "_");
 await mkdir(out, { recursive: true });
 
 const PAGE = `<!doctype html><html lang="${zh ? "zh-CN" : "en"}"><meta charset="utf-8"><title>${zh ? "港湾潮汐 · 本周预报" : "Harbor Tides · This Week"}</title>
@@ -42,6 +44,10 @@ try {
 	};
 
 	await until("the empty state", () => panel.$(".suggestion"));
+	const firstSuggestion = zh ? "总结这个页面" : "Summarize this page";
+	await until("the requested UI language", () =>
+		panel.$eval(".suggestion span:last-child", (n, expected) => (n.textContent === expected ? n.textContent : undefined), firstSuggestion),
+	);
 	await until("the tab chip", () => panel.$eval("#tab-chip .name", (n) => n.textContent || undefined));
 	await both("empty");
 
@@ -57,6 +63,10 @@ try {
 	await panel.$eval(".thinking", (d) => (d.open = true));
 	await panel.$eval("#scroller", (s) => (s.scrollTop = 0));
 	await both("chat-top");
+	// A tool call expanded: its arguments and result.
+	await panel.$eval(".tool", (d) => (d.open = true));
+	await both("tool");
+	await panel.$eval(".tool", (d) => (d.open = false));
 	await panel.$eval("#scroller", (s) => (s.scrollTop = s.scrollHeight));
 	await both("chat");
 

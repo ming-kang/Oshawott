@@ -8,7 +8,7 @@
 - 每个对话有独立的持久文件区，支持 `read`、`write`、`edit`、`ls`；Engine 被回收或浏览器重启后仍保留，面板可以下载和删除文件。
 - `fetch`：访问已授权的 HTTP(S) 站点，可把响应直接保存成文件；不带浏览器 cookie，不跟随重定向。
 - 支持 Anthropic、OpenAI、Google、OpenRouter、DeepSeek，API key 只保存在 Engine 所在的文档里。
-- 侧边栏界面：Markdown 回答流式显示，工具调用以卡片呈现，思考过程可折叠；输入框上方显示当前标签页，未授权的站点可一键授权；浅色和深色主题；中文和英文界面。
+- 侧边栏界面：Markdown 回答流式显示，工具调用以紧凑的时间线呈现、可展开参数和结果，思考过程可折叠；输入框上方显示当前标签页，未授权的站点可一键授权；浅色和深色主题；中文和英文界面。
 
 > 状态：0.1.0，框架和界面已在真实 Chromium 和 Firefox 中跑通（开发构建的演示模型）。
 >
@@ -84,6 +84,7 @@ docs/          架构与各子系统文档、截图
 - [面板](docs/panel.md)：侧边栏界面的渲染、Markdown、标签页与授权
 - [文件与 fetch](docs/files.md)：对话文件区、Code Mode 读写、下载与网络权限
 - [安全](docs/security.md)：安全边界
+- [隐私政策草稿](PRIVACY.md)：本地存储、模型 API 传输、数据保留与商店材料
 - [开发](docs/development.md)：环境、构建、测试、调试、常见改动、发布前清单
 - [已知限制](docs/limitations.md)
 - [路线图](ROADMAP.md)：功能计划与分发策略

@@ -1,6 +1,6 @@
-// One tool call as a card: what the tool does in words, its state, and, expanded, its arguments and result. A card is
-// made from the call in the assistant's answer, then follows the call: `pi.live` while it runs, its result entry when
-// it settles.
+// One tool call as a timeline row: what the tool does in words, its state, and, expanded, its arguments and result.
+// A card is made from the call in the assistant's answer, then follows the call: `pi.live` while it runs, its result
+// entry when it settles.
 import { NO_ACCESS } from "../contracts/browser.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { sitePattern } from "../platform/patterns.ts";

@@ -227,7 +227,7 @@ export class Transcript {
 		if (busy && message && partial) parts.push(this.#assistant(message, true));
 		const running = (live?.tools ?? []).some((slot) => slot.status === "running");
 		if (busy && !partial && !running) {
-			parts.push(h("div", { class: "typing", "aria-label": t("thinking.live") }, h("span"), h("span"), h("span")));
+			parts.push(h("div", { class: "typing", role: "status" }, h("span"), h("span", null, t("thinking.live"))));
 		}
 		const retry = live?.generation?.retry;
 		if (retry) parts.push(notice("warn", t("live.retry", retry.error, Math.max(0, Math.round((retry.at - Date.now()) / 1000)))));
@@ -260,7 +260,7 @@ export class Transcript {
 		return h(
 			"div",
 			{ class: "empty" },
-			h("div", { class: "empty-logo" }, logo(56)),
+			h("div", { class: "empty-logo" }, logo(44)),
 			h("h1", null, t("empty.title")),
 			h("p", null, t("empty.subtitle")),
 			state.ready

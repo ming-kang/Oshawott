@@ -60,7 +60,7 @@ pi-durable 原生支持，Pi-Tab 已在生产使用（`prompt` / `steer` / `foll
 审核要点：
 
 - `<all_urls>` 放在 `optional_host_permissions`、由用户手势逐站授权，是官方认可的低风险形态（不出现在安装警告、升级免重新授权、审核评级更低），但隐私实践页仍要逐项写理由。
-- `wasm-unsafe-eval` 需说明：Code Mode 的 QuickJS 是本地打包的 wasm，非远程代码；全部代码随包分发，天然满足远程代码政策。
+- `wasm-unsafe-eval` 需说明：QuickJS 解释器是本地打包的 wasm，但实际执行的 JavaScript 由远程模型生成，并能通过受控工具访问文件、页面和网络。不能仅凭“解释器随包分发”就认定满足远程代码政策；发布前需准备隔离边界与工具能力说明，并取得商店审核结论。
 
 权限理由表（隐私实践页用，AMO 侧复用）：
 
@@ -79,14 +79,14 @@ pi-durable 原生支持，Pi-Tab 已在生产使用（`prompt` / `steer` / `foll
 
 - CI 里 `web-ext sign --channel unlisted`：上传 AMO 自动签名（通常几分钟、无人工审核），签名的 `.xpi` 挂 GitHub Release。
 - 配 `browser_specific_settings.gecko.update_url` 指向自托管的 update manifest（GitHub Pages 放 JSON），Firefox 端获得真自动更新——体验反而好于 Chromium 端。
-- 待办：换掉占位 ID `oshawatt@example.org`；填 AMO 要求的 `data_collection_permissions`（基本不收集数据，声明简单）；AMO API key 进 CI secret。
+- 待办：换掉占位 ID `oshawatt@example.org`；AMO API key 进 CI secret。`data_collection_permissions` 不能按“基本不收集”填 `none`：页面内容、URL、用户消息和工具结果会发往用户配置的模型 API。发布前须复核 [隐私政策草稿](PRIVACY.md) 中的数据类别；若使用 Firefox 内置同意 UI，将桌面 `strict_min_version` 提到 140.0，否则需为 128–139 实现自定义同意流程。
 
 ### 过渡期与通用项
 
 - 当前过渡：GitHub zip + 加载已解压（Chromium）。
-- **manifest 固定 `"key"`**：已解压扩展的 ID 默认从解压路径推导，而 IndexedDB 挂在 `chrome-extension://<id>` 下——ID 一变，全部对话记录与 API key 失联。固定 `key` 后 ID 与路径无关，公钥提交进仓库。这件事现在就该做。
+- **manifest 固定 `"key"`**：已解压扩展的 ID 默认从解压路径推导，而 IndexedDB 挂在 `chrome-extension://<id>` 下——ID 一变，全部对话记录与 API key 失联。固定 `key` 后 ID 与路径无关，公钥可提交进仓库；应在首个公开版本前确定，并单独处理现有用户的 ID 迁移。商店构建再去掉 `key`，由商店分配正式 ID。
 - 面板内版本检查：调 GitHub releases API，有新版本提示用户（CWS unlisted 上线前是 Chromium 端唯一的更新通道）。
-- 写 PRIVACY.md：key 只存本机 IndexedDB、逐站授权、仅访问模型 API 和用户已授权的 URL。两端商店的隐私材料都从这里复用。
+- 隐私政策：已有 [PRIVACY.md](PRIVACY.md) 草稿，覆盖本地 IndexedDB、模型 API 传输、登录态页面和单对话删除的保留限制。发布前复核数据分类并托管 HTTPS 政策 URL，两端商店材料从这里复用。
 - release 自动化：参考 Pi-Tab `scripts/release.mjs`（conventional commits 推版本号），加双端 zip 与 xpi 签名两步。
 
 ## 参考来源

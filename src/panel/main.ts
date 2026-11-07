@@ -148,6 +148,8 @@ function toBottom(smooth = false) {
 }
 $.scroller.addEventListener("scroll", () => {
 	if (nearBottom()) $.jump.hidden = true;
+	// The top bar gets its rule only once the thread runs under it.
+	document.body.toggleAttribute("data-scrolled", $.scroller.scrollTop > 2);
 });
 $.jump.addEventListener("click", () => toBottom(true));
 
@@ -365,7 +367,7 @@ function openChats() {
 				h(
 					"button",
 					{
-						class: "btn small primary",
+						class: "btn small ghost",
 						type: "button",
 						onclick: () => {
 							close();

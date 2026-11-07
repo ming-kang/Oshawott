@@ -43,7 +43,7 @@ node scripts/build.mjs [chromium|firefox] [--dev]
 - 两端额外验证超过百万字符的单行下载可由 `read_text` 完整处理，并用本机 GET 302 / POST 307 端点证明重定向目标没有收到请求。Chromium 还检查 280 / 420 px 面板不会被长 URL 和 JSON 撑出水平溢出；截图脚本对所有状态检查页面宽度。
 - 两端都用 `tool-selftest.ts` 检查文件工具卡片和 fetch 授权按钮。权限调用被 stub，用于验证参数、点击时同步调用和不会自动重跑；不替代原生权限弹窗的手动验证。
 
-**截图**：`node scripts/build.mjs chromium --dev && node scripts/screenshots.mjs [目录]` 截取空状态、流式中、对话、模型菜单、对话列表、设置、文件工具对话和文件面板的浅色和深色版本，默认输出到 `dist/screenshots`；`OSHAWATT_LANG=en` 可切换界面语言。改了界面后用它检查效果，README 里的截图也来自这里。
+**截图**：`node scripts/build.mjs chromium --dev && node scripts/screenshots.mjs [目录]` 截取空状态、流式中、展开的工具调用、对话、模型菜单、对话列表、设置、文件工具对话和文件面板的浅色和深色版本，默认输出到 `dist/screenshots`；`OSHAWATT_LANG=en` 可切换界面语言（脚本同时设置 `LANGUAGE`，适配 Linux 上的 Chromium）。改了界面后用它检查效果，README 里的截图也来自这里。
 
 ## 调试
 
@@ -75,3 +75,12 @@ node scripts/build.mjs [chromium|firefox] [--dev]
 **修改文件系统或网络工具**：`src/engine/files.ts` 定义环境与事务后端接口，`files-idb.ts` 是真实存储，`files-tools.ts` 注册工具。跑文件单测与两端冒烟测试：只测内存后端不能发现 IndexedDB 的事务生命周期问题。不可让事务回调等待非 IndexedDB 的异步工作；不要把 fetch 改成未经逐跳权限检查的自动重定向。
 
 **升级 chord**：上游把新版 API 移到根入口后，只需把 `src/lib/chord.ts` 里的 `@earendil-works/chord/next` 改为 `@earendil-works/chord`，然后跑 `npm run check`，并根据报错调整 API 差异。
+
+## 发布前清单
+
+- 运行 `npm run check`、`npm test`、`npm run build` 和两端冒烟测试；发布包只能使用正式构建，不得包含演示模型、source map 或开发版的 `<all_urls>` 静态 host 权限。
+- 用真实模型验证流式回复、页面工具、文件与网络流程；原生站点授权及撤权后的既有页面行为仍需手动验收。
+- 复核并托管 [隐私政策](../PRIVACY.md)，确保商店数据类别与当前版本实际传输一致。
+- Firefox：确定稳定的 gecko ID；填写 `data_collection_permissions`，并选择 Firefox 140+ 内置同意或为 128–139 实现自定义同意。需要运行时明确同意的数据类别不能只写在 manifest 中。
+- Chromium：在固定 manifest `key` 前确定正式 ID 和现有用户的数据迁移方案；商店包应省略 `key`。固定 ID 与 `--store` 构建目前尚未实现。
+- 为 Code Mode 准备远程生成逻辑的审核说明。QuickJS wasm 随包分发并不自动等于符合商店远程代码政策。
