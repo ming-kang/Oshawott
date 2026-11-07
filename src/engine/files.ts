@@ -1,5 +1,5 @@
 // Each chat's files: a small tree of files and directories per conversation, behind pi-durable's `ExecutionEnv`, so
-// its `read`, `write` and `edit` tools, code mode's output files, and Oshawatt's `ls` and `fetch` work on it as on a
+// its `read`, `write` and `edit` tools, code mode's output files, and Oshawott's `ls` and `fetch` work on it as on a
 // disk. A `FileBackend` keeps the trees: IndexedDB in the browser (`files-idb.ts`), a Map in tests. The files outlive
 // the Engine's document, so a restarted Engine finds them, and go with their chat.
 //
@@ -154,7 +154,7 @@ export class ChatFiles implements ExecutionEnv {
 	readonly #requireActive: ((context: Context) => Promise<void>) | undefined;
 
 	constructor(backend: FileBackend, chat: number, now: () => number = Date.now, requireActive?: (context: Context) => Promise<void>) {
-		this.id = `oshawatt-files:${chat}`;
+		this.id = `oshawott-files:${chat}`;
 		this.#backend = backend;
 		this.#chat = chat;
 		this.#now = now;

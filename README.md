@@ -1,8 +1,8 @@
-# Oshawatt
+# Oshawott
 
 > 正在开发中
 
-水水獭/ Oshawatt 是基于 [Pi Durable](https://github.com/earendil-works/pi) 的浏览器智能体扩展，同时支持 Chromium 和 Firefox。
+水水獭/ Oshawott 是基于 [Pi Durable](https://github.com/earendil-works/pi) 的浏览器智能体扩展，同时支持 Chromium 和 Firefox。
 
 - 对话、工具调用、运行状态记录在 Durable 中，可以随时恢复状态
 - 模型通过页面工具读取和操作当前标签页（快照、点击、输入、滚动），列出标签页列表、打开新标签页

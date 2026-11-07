@@ -50,20 +50,20 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 
 		// The Engine's devtools handle, in the event page (Firefox lets an extension page reach it).
 		const background = (await (ext.runtime as unknown as { getBackgroundPage(): Promise<Window> }).getBackgroundPage()) as Window & {
-			oshawatt: {
+			oshawott: {
 				page(tabId: number, tool: string, args: object): Promise<any>;
 				codemode(code: string): Promise<{ ok: boolean; value?: unknown; output?: { text?: string }[] }>;
 			};
 		};
 		const target = (await ext.tabs.query({})).find((t) => t.url?.startsWith(origin));
 		const chip = await until(() => document.querySelector("#tab-chip .name")?.textContent);
-		const page = (tool: string, args: object) => background.oshawatt.page(target!.id!, tool, args);
+		const page = (tool: string, args: object) => background.oshawott.page(target!.id!, tool, args);
 		const snap = await page("page_snapshot", {});
 		const input = snap.elements.find((e: { role: string }) => e.role.startsWith("input"));
 		const button = snap.elements.find((e: { name: string }) => e.name === "Go");
 		step(
 			"page_snapshot via Broker injection",
-			snap.title === "Oshawatt test page" && !!input && !!button,
+			snap.title === "Oshawott test page" && !!input && !!button,
 			`${snap.elements.length} elements; panel targets “${chip}”`,
 		);
 		await page("page_type", { ref: input.ref, text: "otters" });
@@ -71,7 +71,7 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 		const after = await page("page_snapshot", {});
 		step("page_type + page_click act on the page", after.text.includes("searched: otters"), after.text.split("\n").at(-1));
 
-		const run = await background.oshawatt.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)");
+		const run = await background.oshawott.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)");
 		step("code mode runs in a Worker", run.ok && JSON.stringify(run.value) === "[1,4,9]", `${JSON.stringify(run.value)} ${run.output?.[0]?.text ?? ""}`);
 
 		const prompt = document.querySelector<HTMLTextAreaElement>("#prompt")!;
@@ -86,7 +86,7 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 		const tool = document.querySelector<HTMLElement>('.tool[data-tool="page_snapshot"]');
 		step(
 			"prompt → page_snapshot on the tab → answer streamed into the panel",
-			heading === "Oshawatt test page" && tool?.dataset.status === "done",
+			heading === "Oshawott test page" && tool?.dataset.status === "done",
 			`“${heading}”; tool ${tool?.dataset.status}: ${tool?.querySelector(".tool-meta")?.textContent ?? ""}`,
 		);
 
@@ -154,7 +154,7 @@ async function storedFile(path: string): Promise<Uint8Array | undefined> {
 		req.onsuccess = () => resolve(req.result);
 		req.onerror = () => reject(req.error);
 	});
-	const db = await request(indexedDB.open("oshawatt-files"));
+	const db = await request(indexedDB.open("oshawott-files"));
 	try {
 		const store = db.transaction("data", "readonly").objectStore("data");
 		const keys = await request(store.getAllKeys());

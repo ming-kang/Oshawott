@@ -24,7 +24,7 @@ export class IndexedDbFileBackend implements FileBackend {
 		db.onversionchange = () => db.close();
 	}
 
-	static async open(name = "oshawatt-files"): Promise<IndexedDbFileBackend> {
+	static async open(name = "oshawott-files"): Promise<IndexedDbFileBackend> {
 		const opening = indexedDB.open(name, 1);
 		opening.onupgradeneeded = () => {
 			for (const store of STORES) opening.result.createObjectStore(store);

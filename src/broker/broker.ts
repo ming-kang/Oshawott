@@ -7,7 +7,7 @@ import { type Context, createHost, defineFacet, type Host } from "../lib/chord.t
 import { sitePattern } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
-export const WAKE_ALARM = "oshawatt:wake";
+export const WAKE_ALARM = "oshawott:wake";
 /** While a run is active, a recovery alarm this far ahead (Chromium's minimum alarm delay is 30 s). */
 const HEARTBEAT_MS = 60_000;
 
@@ -26,7 +26,7 @@ export async function injectPage(tabId: number) {
 	await ext.scripting.executeScript({
 		target: { tabId },
 		func: ((id: number) => {
-			(globalThis as { __oshawattTabId?: number }).__oshawattTabId = id;
+			(globalThis as { __oshawottTabId?: number }).__oshawottTabId = id;
 		}) as (...args: never[]) => unknown,
 		args: [tabId],
 	});
@@ -44,12 +44,12 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 	const host = createHost<Principal>({
 		address: BrokerHost(),
 		principal: { kind: "broker" },
-		onError: (error) => console.debug("[oshawatt broker]", error),
+		onError: (error) => console.debug("[oshawott broker]", error),
 	});
 	await host.load(
 		[
 			{
-				name: "oshawatt.broker",
+				name: "oshawott.broker",
 				facet: defineFacet<Principal>((self) => {
 					self.serve(Browser, (_params, principal) => {
 						if (principal.kind !== "engine") throw new Error("Only the Engine uses the browser.");

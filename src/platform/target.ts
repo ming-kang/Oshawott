@@ -1,19 +1,19 @@
-// The build target, fixed at build time (`scripts/build.mjs` defines `__OSHAWATT_TARGET__`), so each bundle carries
+// The build target, fixed at build time (`scripts/build.mjs` defines `__OSHAWOTT_TARGET__`), so each bundle carries
 // only its own browser's branch. Tests run without the define and get "chromium".
 
 export type Target = "chromium" | "firefox";
 
-declare const __OSHAWATT_TARGET__: Target | undefined;
+declare const __OSHAWOTT_TARGET__: Target | undefined;
 
 declare global {
 	/**
 	 * A `--dev` build: test hooks on (see `scripts/smoke-*.mjs`). Defined by the build only, and used as the bare
 	 * identifier, so a non-dev build drops the hooks' code (`if (false)`); bundles only, never in tests.
 	 */
-	const __OSHAWATT_DEV__: boolean;
+	const __OSHAWOTT_DEV__: boolean;
 }
 
-export const TARGET: Target = typeof __OSHAWATT_TARGET__ === "undefined" ? "chromium" : __OSHAWATT_TARGET__;
+export const TARGET: Target = typeof __OSHAWOTT_TARGET__ === "undefined" ? "chromium" : __OSHAWOTT_TARGET__;
 
 /**
  * Where each role runs. The roles are the same on both browsers; only their placement differs:

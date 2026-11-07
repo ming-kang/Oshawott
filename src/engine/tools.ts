@@ -87,7 +87,7 @@ export function browserExtension(host: EngineHost): Extension {
 	});
 
 	return defineExtension({
-		name: "oshawatt.browser",
+		name: "oshawott.browser",
 		sections: [
 			section(
 				"browser",

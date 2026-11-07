@@ -22,16 +22,16 @@ node scripts/build.mjs firefox --dev
 
 ```sh
 node scripts/build.mjs chromium --dev
-node scripts/screenshots.mjs [目录]   # 默认 dist/screenshots；OSHAWATT_LANG=en 可切换英文
+node scripts/screenshots.mjs [目录]   # 默认 dist/screenshots；OSHAWOTT_LANG=en 可切换英文
 ```
 
 ## 调试
 
-Engine 全局对象 `oshawatt` 在普通构建中也可用：
+Engine 全局对象 `oshawott` 在普通构建中也可用：
 
-- `await oshawatt.page(tabId, "page_snapshot", {})`：调用页面工具。
-- `await oshawatt.codemode("return 1 + 1")`：直接执行 Code Mode，不经过 Harness 或对话工具。
-- `oshawatt.engine.harness`：Durable Harness。
-- `oshawatt.files(chatId)`：该对话的低层文件环境。
+- `await oshawott.page(tabId, "page_snapshot", {})`：调用页面工具。
+- `await oshawott.codemode("return 1 + 1")`：直接执行 Code Mode，不经过 Harness 或对话工具。
+- `oshawott.engine.harness`：Durable Harness。
+- `oshawott.files(chatId)`：该对话的低层文件环境。
 
-Chromium 在 `chrome://extensions` 的“检查视图”中打开 `engine.html`；Firefox 在 `about:debugging` 中检查扩展。日志前缀为 `[oshawatt engine]`、`[oshawatt broker]`、`[oshawatt page]`、`[oshawatt panel]`。
+Chromium 在 `chrome://extensions` 的“检查视图”中打开 `engine.html`；Firefox 在 `about:debugging` 中检查扩展。日志前缀为 `[oshawott engine]`、`[oshawott broker]`、`[oshawott page]`、`[oshawott panel]`。

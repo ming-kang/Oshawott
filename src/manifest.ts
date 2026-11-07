@@ -21,11 +21,11 @@ const ICONS = { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/ico
 export function manifestFor(target: Target, version: string, { dev = false } = {}): Record<string, unknown> {
 	const common = {
 		manifest_version: 3,
-		name: "Oshawatt",
+		name: "Oshawott",
 		version,
 		description: "A durable AI agent for your browser, built on Pi Durable.",
 		icons: ICONS,
-		action: { default_title: "Oshawatt", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
+		action: { default_title: "Oshawott", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
 		// `tabs` for titles and URLs in tabs_list; `scripting` + `activeTab` / granted origins to inject page tools on
 		// demand (nothing is declared for every site); `alarms` for the Engine's wakeups.
 		permissions: ["tabs", "scripting", "activeTab", "alarms"],
@@ -51,13 +51,13 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 		background: { scripts: ["background.js"], type: "module" },
 		sidebar_action: {
 			default_panel: "panel.html",
-			default_title: "Oshawatt",
+			default_title: "Oshawott",
 			default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" },
 			open_at_install: false,
 		},
 		browser_specific_settings: {
 			// Keep the add-on identity stable so its local data stays under one extension origin.
-			gecko: { id: "oshawatt@astralyn", strict_min_version: "128.0" },
+			gecko: { id: "oshawott@astralyn", strict_min_version: "128.0" },
 		},
 	};
 }

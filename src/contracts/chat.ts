@@ -25,7 +25,7 @@ export const ProviderSummary = obj({
 });
 export type ProviderSummary = Static<typeof ProviderSummary>;
 
-export const Workspace = remote("oshawatt.workspace", {
+export const Workspace = remote("oshawott.workspace", {
 	version: 1,
 	params: {},
 	hostAddress: () => EngineHost(),
@@ -49,7 +49,7 @@ export const Workspace = remote("oshawatt.workspace", {
 	},
 });
 
-export const Chat = remote("oshawatt.chat", {
+export const Chat = remote("oshawott.chat", {
 	version: 1,
 	/** Durable's conversation id. */
 	params: { id: int() },

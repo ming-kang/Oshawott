@@ -1,14 +1,14 @@
 // Screenshots of the panel in its states, light and dark, from a --dev build (the demo model answers):
 //   node scripts/build.mjs chromium --dev && node scripts/screenshots.mjs [outDir]
-// outDir defaults to dist/screenshots. OSHAWATT_LANG sets the UI language (default zh-CN).
+// outDir defaults to dist/screenshots. OSHAWOTT_LANG sets the UI language (default zh-CN).
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { launchExtension, root, testSite, until } from "./lib/smoke.mjs";
 
 const out = process.argv[2] ?? join(root, "dist", "screenshots");
-const lang = process.env.OSHAWATT_LANG ?? "zh-CN";
+const lang = process.env.OSHAWOTT_LANG ?? "zh-CN";
 const zh = lang.startsWith("zh");
-// Chromium on Linux takes its UI language from LANGUAGE, not --lang. An explicit OSHAWATT_LANG must win over the shell.
+// Chromium on Linux takes its UI language from LANGUAGE, not --lang. An explicit OSHAWOTT_LANG must win over the shell.
 process.env.LANGUAGE = lang.replace("-", "_");
 await mkdir(out, { recursive: true });
 

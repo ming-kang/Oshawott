@@ -45,7 +45,7 @@ export interface Engine {
 }
 
 export async function startEngine(options: EngineOptions, context: Context): Promise<Engine> {
-	const onError = options.onError ?? ((error: unknown) => console.error("[oshawatt engine]", error));
+	const onError = options.onError ?? ((error: unknown) => console.error("[oshawott engine]", error));
 	const now = options.now ?? Date.now;
 
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError });
@@ -104,7 +104,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 				if (cwd !== undefined) files.cwd = resolvePath(WORKSPACE, cwd);
 				return files;
 			},
-			identity: { attribution: { name: "Oshawatt", url: "https://github.com/" } },
+			identity: { attribution: { name: "Oshawott", url: "https://github.com/" } },
 			onWake: armWake,
 			onReport: (report) => onError(report),
 		},
@@ -119,7 +119,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	await host.load(
 		[
 			{
-				name: "oshawatt.panel",
+				name: "oshawott.panel",
 				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, files: options.files, now }),
 			},
 		],

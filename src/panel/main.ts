@@ -23,7 +23,7 @@ import { h, icon, toast } from "./ui.ts";
 type WorkspaceRef = Extract<Reference<typeof Workspace>, { variant: "owner" }>;
 type ChatRef = Extract<Reference<typeof Chat>, { variant: "owner" }>;
 const context = BACKGROUND_CONTEXT;
-const host = createHost<Principal>({ onError: (error) => console.debug("[oshawatt panel]", error) });
+const host = createHost<Principal>({ onError: (error) => console.debug("[oshawott panel]", error) });
 const overlays = new OverlayController();
 initializeTheme();
 document.documentElement.lang = LANG;
@@ -337,9 +337,9 @@ async function main() {
 	renderView();
 	$.prompt.focus();
 
-	if (__OSHAWATT_DEV__) {
+	if (__OSHAWOTT_DEV__) {
 		const panelTests = () => testPanel(held);
-		(globalThis as { __oshawattTest?: unknown }).__oshawattTest = { toolCards: testToolCards, panel: panelTests };
+		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests };
 		const origin = new URLSearchParams(location.search).get("selftest");
 		if (origin) void selftest(origin, panelTests);
 	}

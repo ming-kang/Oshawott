@@ -44,17 +44,17 @@ try {
 	// 2. Page tools in the test tab, through the Engine's route to TabHost({ tabId }).
 	const chip = await until("the tab chip", () => panel.$eval("#tab-chip .name", (n) => n.textContent || undefined));
 	const tabId = await panel.evaluate(async (url) => (await chrome.tabs.query({ url: `${url}*` }))[0]?.id, site.url);
-	const snap = await evaluateIn(offscreen, `oshawatt.page(${tabId}, "page_snapshot", {})`);
+	const snap = await evaluateIn(offscreen, `oshawott.page(${tabId}, "page_snapshot", {})`);
 	const input = snap.elements.find((e) => e.role.startsWith("input"));
 	const button = snap.elements.find((e) => e.name === "Go");
-	step("page_snapshot via Broker injection", snap.title === "Oshawatt test page" && input && button, `${snap.elements.length} elements; panel targets “${chip}”`);
-	await evaluateIn(offscreen, `oshawatt.page(${tabId}, "page_type", { ref: ${JSON.stringify(input.ref)}, text: "otters" })`);
-	await evaluateIn(offscreen, `oshawatt.page(${tabId}, "page_click", { ref: ${JSON.stringify(button.ref)} })`);
+	step("page_snapshot via Broker injection", snap.title === "Oshawott test page" && input && button, `${snap.elements.length} elements; panel targets “${chip}”`);
+	await evaluateIn(offscreen, `oshawott.page(${tabId}, "page_type", { ref: ${JSON.stringify(input.ref)}, text: "otters" })`);
+	await evaluateIn(offscreen, `oshawott.page(${tabId}, "page_click", { ref: ${JSON.stringify(button.ref)} })`);
 	const out = await tab.$eval("#out", (p) => p.textContent);
 	step("page_type + page_click act on the page", out === "searched: otters", out);
 
 	// Code mode's QuickJS in its Worker, under the extension CSP (`wasm-unsafe-eval`), with no SharedArrayBuffer.
-	const run = await evaluateIn(offscreen, `oshawatt.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)").then((r) => JSON.parse(JSON.stringify(r)))`);
+	const run = await evaluateIn(offscreen, `oshawott.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)").then((r) => JSON.parse(JSON.stringify(r)))`);
 	step("code mode runs in a Worker", run.ok && JSON.stringify(run.value) === "[1,4,9]", `${JSON.stringify(run.value)} ${run.output?.[0]?.text ?? ""}`);
 
 	// 3. A prompt: the demo model reads the tab with page_snapshot and answers in Markdown.
@@ -73,7 +73,7 @@ try {
 	const title = await panel.$eval("#title", (t) => t.textContent);
 	step(
 		"prompt → page_snapshot on the tab → answer streamed into the panel",
-		heading === "Oshawatt test page" && tool[0]?.[0] === "done" && title === "What is on this page?",
+		heading === "Oshawott test page" && tool[0]?.[0] === "done" && title === "What is on this page?",
 		`tool ${tool[0]?.join(": ")}; title “${title}”`,
 	);
 
@@ -111,8 +111,8 @@ try {
 	step("file removal refreshes the sheet", remaining === "items.json", remaining);
 	await panel.click("#files-back");
 	await until("the file sheet closed", async () => !(await panel.$("#files")) || undefined);
-	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawattTest.toolCards())) step(name, ok, detail);
-	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawattTest.panel())) step(name, ok, detail);
+	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.toolCards())) step(name, ok, detail);
+	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.panel())) step(name, ok, detail);
 	await panel.click("#new-chat");
 	await until("the new chat ready", () => panel.$eval("#files-toggle", (button) => button.hidden || undefined));
 	await ask("And again?");

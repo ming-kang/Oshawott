@@ -14,7 +14,7 @@ export const TabSchema = obj({
 	active: bool(),
 });
 
-export const Browser = remote("oshawatt.browser", {
+export const Browser = remote("oshawott.browser", {
 	version: 1,
 	params: {},
 	hostAddress: () => BrokerHost(),

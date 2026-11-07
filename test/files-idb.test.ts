@@ -15,7 +15,7 @@ const bytes = (value: string) => encoder.encode(value);
 const entry = (value: string): Entry => ({ kind: "file", size: bytes(value).length, mtimeMs: 42 });
 
 async function withBackend(use: (backend: IndexedDbFileBackend, name: string) => Promise<void>) {
-	const name = `oshawatt-files-test-${crypto.randomUUID()}`;
+	const name = `oshawott-files-test-${crypto.randomUUID()}`;
 	const backend = await IndexedDbFileBackend.open(name);
 	try {
 		await use(backend, name);

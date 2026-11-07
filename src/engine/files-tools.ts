@@ -1,5 +1,5 @@
 // The tools on a chat's files and the web, as one Durable extension: pi-durable's `read`, `write` and `edit` over the
-// chat's `ChatFiles` (the Harness's `env`), Oshawatt's `ls`, and `fetch`. Code mode scripts call the same tools
+// chat's `ChatFiles` (the Harness's `env`), Oshawott's `ls`, and `fetch`. Code mode scripts call the same tools
 // (`await tools.read({ path })`), which is how the model searches, parses and transforms files without a shell.
 //
 // `fetch` runs in the Engine's document, without cookies, and only on sites the user has allowed (the Broker checks the
@@ -159,7 +159,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 			const allowed = await using(host, Browser, {}, context, (browser) => browser.hasAccess({ url: url.href }, context));
 			if (!allowed) {
 				throw new Error(
-					`${NO_ACCESS} ${url.host}: the user has not allowed Oshawatt on this site. They can allow it from this call in the panel; then try again.`,
+					`${NO_ACCESS} ${url.host}: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.`,
 				);
 			}
 			const method = args.method ?? "GET";
@@ -227,7 +227,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 
 export function filesExtension(options: FilesToolsOptions): Extension {
 	return defineExtension({
-		name: "oshawatt.files",
+		name: "oshawott.files",
 		sections: [
 			section(
 				"files",

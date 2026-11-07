@@ -102,7 +102,7 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 
 	// One Engine per profile: a second document (a restart overlapping the old one) waits for the first to let go.
 	await new Promise<void>((acquired) => {
-		void navigator.locks.request("oshawatt:engine", () => {
+		void navigator.locks.request("oshawott:engine", () => {
 			acquired();
 			return new Promise(() => {});
 		});
@@ -117,13 +117,13 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	for (const provider of [anthropicProvider(), openaiProvider(), googleProvider(), openrouterProvider(), deepseekProvider()]) {
 		models.setProvider(provider);
 	}
-	if (__OSHAWATT_DEV__) models.setProvider((await import("./demo.ts")).demoProvider());
+	if (__OSHAWOTT_DEV__) models.setProvider((await import("./demo.ts")).demoProvider());
 
 	const sandbox = workerCodemodeSandbox(new URL("codemode-worker.js", location.href));
 	const files = await IndexedDbFileBackend.open();
 	engine = await startEngine(
 		{
-			storage: await IndexedDbStorage.open("oshawatt"),
+			storage: await IndexedDbStorage.open("oshawott"),
 			models,
 			credentials,
 			files,
@@ -141,10 +141,10 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	);
 	for (const panel of panels.splice(0)) engine.acceptPanel(panel.link, panel.instance);
 
-	// A handle for the document's devtools (and the smoke tests): `await oshawatt.page(tabId, "page_snapshot", {})`,
-	// `await oshawatt.codemode("return 1 + 1")`, `await oshawatt.files(chatId).listDir(".", BACKGROUND_CONTEXT)`.
+	// A handle for the document's devtools (and the smoke tests): `await oshawott.page(tabId, "page_snapshot", {})`,
+	// `await oshawott.codemode("return 1 + 1")`, `await oshawott.files(chatId).listDir(".", BACKGROUND_CONTEXT)`.
 	const started = engine;
-	(globalThis as { oshawatt?: unknown }).oshawatt = {
+	(globalThis as { oshawott?: unknown }).oshawott = {
 		engine: started,
 		codemode: (code: string) => sandbox.execute(code),
 		files: (chat: number) => new ChatFiles(files, chat),

@@ -16,7 +16,7 @@ export class IndexedDbCredentialStore implements CredentialStore {
 	/** Writes one after another, as `modify` must be serialized. */
 	#line: Promise<unknown> = Promise.resolve();
 
-	constructor(name = "oshawatt-credentials") {
+	constructor(name = "oshawott-credentials") {
 		this.#db = new Promise((resolve, reject) => {
 			const open = indexedDB.open(name, 1);
 			open.onupgradeneeded = () => open.result.createObjectStore(STORE);

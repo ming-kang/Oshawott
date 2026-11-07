@@ -1,6 +1,6 @@
 # 架构
 
-Oshawatt 分为四个角色，通过 chord 对象通信。对话与运行状态由 Pi Durable 持久化，文件和凭据分别保存在独立 IndexedDB 中。
+Oshawott 分为四个角色，通过 chord 对象通信。对话与运行状态由 Pi Durable 持久化，文件和凭据分别保存在独立 IndexedDB 中。
 
 ## 角色与连接
 
@@ -15,9 +15,9 @@ Oshawatt 分为四个角色，通过 chord 对象通信。对话与运行状态�
 
 | 连接 | 建立方式 | 暴露对象 |
 |:-:|:-:|:-:|
-| Panel ↔ Engine | Panel 打开时连接 `oshawatt:panel`，断开后重连 | `Workspace`、`Chat({id})` |
-| Broker ↔ Engine | 需要浏览器能力或 alarm 唤醒时连接 `oshawatt:broker` | `Browser` |
-| Page ↔ Engine | Broker 按需注入后连接 `oshawatt:tab` | `Page({tabId})` |
+| Panel ↔ Engine | Panel 打开时连接 `oshawott:panel`，断开后重连 | `Workspace`、`Chat({id})` |
+| Broker ↔ Engine | 需要浏览器能力或 alarm 唤醒时连接 `oshawott:broker` | `Browser` |
+| Page ↔ Engine | Broker 按需注入后连接 `oshawott:tab` | `Page({tabId})` |
 
 契约集中在 `src/contracts/`。Engine 是唯一注册 `runtime.onConnect` 的上下文，并按 Port 名称、发送方和 frame 校验连接；`ensureEngine` 与 `wakeBroker` 两条一次性消息负责唤醒后台。
 
@@ -27,9 +27,9 @@ Oshawatt 分为四个角色，通过 chord 对象通信。对话与运行状态�
 
 | 存储 | 内容 |
 |:-:|:-:|
-| IndexedDB `oshawatt` | Durable 对话与运行状态；`WorkspaceDoc` 保存对话列表、默认模型和待删除文件意图；`TargetDoc` 保存对话的目标标签页 |
-| IndexedDB `oshawatt-files` | 每个对话独立的目录树，元信息与字节分开，键为 `[conversationId, path]` |
-| IndexedDB `oshawatt-credentials` | 模型 API key，仅 Engine 读写 |
+| IndexedDB `oshawott` | Durable 对话与运行状态；`WorkspaceDoc` 保存对话列表、默认模型和待删除文件意图；`TargetDoc` 保存对话的目标标签页 |
+| IndexedDB `oshawott-files` | 每个对话独立的目录树，元信息与字节分开，键为 `[conversationId, path]` |
+| IndexedDB `oshawott-credentials` | 模型 API key，仅 Engine 读写 |
 | Panel `localStorage` | 主题 |
 
 Panel 通过 `self.follow` 直接观察 Durable state，不维护第二份对话副本。提供商列表及 key 是否配置是 Engine 内存状态，在 Panel 连接或修改 key 时刷新。
@@ -37,10 +37,10 @@ Panel 通过 `self.follow` 直接观察 Durable state，不维护第二份对话
 ## 生命周期
 
 1. Panel 请求 `ensureEngine`，随后连接 Engine。
-2. Engine 获取 Web Lock `oshawatt:engine`，打开存储并执行 `Harness.open()`、`resume()`，再接入 Panel。
+2. Engine 获取 Web Lock `oshawott:engine`，打开存储并执行 `Harness.open()`、`resume()`，再接入 Panel。
 3. 页面工具需要标签页时，Engine 经 Broker 注入 Page，并等待其 Port 建立 route。
 
-Durable 通过 `onWake` 请求后续运行，Broker 用 alarm `oshawatt:wake` 在后台回收后唤醒 Engine。运行中每 60 秒心跳，有定时任务时取更早时间，无任务时清除 alarm。
+Durable 通过 `onWake` 请求后续运行，Broker 用 alarm `oshawott:wake` 在后台回收后唤醒 Engine。运行中每 60 秒心跳，有定时任务时取更早时间，无任务时清除 alarm。
 
 重启后从最后一次 Durable 提交继续。工具调用在执行前记录意图：只有 `replay: "safe"` 的调用会自动重跑，`unsafe` 调用中断后返回 `interrupted`，避免重复副作用。文件事务不与 Durable 提交原子绑定，详见[文件与 Fetch](files.md)。
 

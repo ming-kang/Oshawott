@@ -3,14 +3,14 @@
 //   1. the panel reaches the Engine over a Port; 2. page tools act on a tab; 3. a prompt's run (the demo model reading
 //   the tab) streams into the panel; 4. fetch and Code Mode write files that the panel downloads and removes.
 // The steps run inside the extension (src/panel/selftest.ts) and are reported here.
-// OSHAWATT_FIREFOX names the browser; by default the installed Firefox.
+// OSHAWOTT_FIREFOX names the browser; by default the installed Firefox.
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 import { root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
 
 const extension = join(root, "dist", "firefox");
-const executablePath = process.env.OSHAWATT_FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe";
+const executablePath = process.env.OSHAWOTT_FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe";
 
 let reported;
 const report = new Promise((resolve) => (reported = resolve));
@@ -49,7 +49,7 @@ try {
 	// The extension drives itself: installed next to this tab, a dev build opens its panel in self-test mode, which
 	// runs the steps and posts them to /report (WebDriver BiDi cannot reach extension pages in Firefox).
 	const page = await browser.newPage();
-	await page.goto(`${site.url}?oshawatt-selftest`);
+	await page.goto(`${site.url}?oshawott-selftest`);
 	await browser.installExtension(extension);
 	const results = await Promise.race([
 		report,

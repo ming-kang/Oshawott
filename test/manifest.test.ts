@@ -22,7 +22,7 @@ test("Firefox has a stable gecko ID and never inherits the Chromium key", () => 
 		const manifest = manifestFor("firefox", "1.2.3", options);
 		assert.equal("key" in manifest, false);
 		assert.deepEqual(manifest.browser_specific_settings, {
-			gecko: { id: "oshawatt@astralyn", strict_min_version: "128.0" },
+			gecko: { id: "oshawott@astralyn", strict_min_version: "128.0" },
 		});
 	}
 });

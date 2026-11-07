@@ -1,11 +1,11 @@
 # AGENTS.md
 
-Oshawatt is a browser extension built on [Pi Durable](https://github.com/earendil-works/pi), providing an agent inside Chromium and Firefox.
+Oshawott is a browser extension built on [Pi Durable](https://github.com/earendil-works/pi), providing an agent inside Chromium and Firefox.
 
 ## Repository Map
 
 ```text
-Oshawatt/
+Oshawott/
 |-- AGENTS.md                Coding-agent guidance
 |-- README.md                Features, setup and user workflows
 |-- src/

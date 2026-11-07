@@ -1,7 +1,7 @@
 // The panel's strings, in Chinese and English, chosen from the browser's language. `{0}`, `{1}` are arguments.
 
 const en = {
-	"app.name": "Oshawatt",
+	"app.name": "Oshawott",
 	"chat.untitled": "New chat",
 	"chat.list": "Chats",
 	"chat.new": "New chat",
@@ -14,7 +14,7 @@ const en = {
 	"files.loading": "Loading…",
 	"files.count": "{0} files · {1}",
 	"files.empty": "No files yet",
-	"files.emptyHint": "Ask Oshawatt to save a download or create a file.",
+	"files.emptyHint": "Ask Oshawott to save a download or create a file.",
 	"files.hint": "These files belong only to this chat and survive browser restarts. Removing the chat deletes them. Up to 20 MiB per file.",
 	"files.download": "Download",
 	"files.downloadStarted": "Download started",
@@ -40,7 +40,7 @@ const en = {
 	"settings.about": "About",
 	"settings.version": "Version {0}",
 	"empty.title": "What can I do for you?",
-	"empty.subtitle": "Oshawatt reads and acts on the page you are looking at.",
+	"empty.subtitle": "Oshawott reads and acts on the page you are looking at.",
 	"empty.setupTitle": "Connect a model first",
 	"empty.setupBody": "Add an API key for a provider, then pick a model.",
 	"empty.setupAction": "Open settings",
@@ -59,7 +59,7 @@ const en = {
 	"tab.none": "No tab",
 	"tab.grant": "Allow on this site",
 	"tab.unavailable": "Page tools cannot run here",
-	"tab.granted": "Oshawatt can act on this site",
+	"tab.granted": "Oshawott can act on this site",
 	"tab.denied": "Permission was not granted",
 	"thinking.title": "Thinking",
 	"thinking.live": "Thinking…",
@@ -107,7 +107,7 @@ const en = {
 type Key = keyof typeof en;
 
 const zh: Record<Key, string> = {
-	"app.name": "Oshawatt",
+	"app.name": "Oshawott",
 	"chat.untitled": "新对话",
 	"chat.list": "对话",
 	"chat.new": "新对话",
@@ -120,7 +120,7 @@ const zh: Record<Key, string> = {
 	"files.loading": "正在加载…",
 	"files.count": "{0} 个文件 · {1}",
 	"files.empty": "还没有文件",
-	"files.emptyHint": "可以让 Oshawatt 保存下载内容或创建文件。",
+	"files.emptyHint": "可以让 Oshawott 保存下载内容或创建文件。",
 	"files.hint": "文件仅属于此对话，重启浏览器后仍会保留；移除对话时一起删除。单个文件上限 20 MiB。",
 	"files.download": "下载",
 	"files.downloadStarted": "下载已开始",
@@ -146,7 +146,7 @@ const zh: Record<Key, string> = {
 	"settings.about": "关于",
 	"settings.version": "版本 {0}",
 	"empty.title": "有什么可以帮你？",
-	"empty.subtitle": "Oshawatt 可以读取并操作你正在看的网页。",
+	"empty.subtitle": "Oshawott 可以读取并操作你正在看的网页。",
 	"empty.setupTitle": "先连接一个模型",
 	"empty.setupBody": "在设置里填入任一模型服务的 API key，再选择模型。",
 	"empty.setupAction": "打开设置",
@@ -165,7 +165,7 @@ const zh: Record<Key, string> = {
 	"tab.none": "没有标签页",
 	"tab.grant": "允许访问此站点",
 	"tab.unavailable": "此页面无法使用页面工具",
-	"tab.granted": "Oshawatt 现在可以操作此站点",
+	"tab.granted": "Oshawott 现在可以操作此站点",
 	"tab.denied": "未获得授权",
 	"thinking.title": "思考过程",
 	"thinking.live": "思考中…",

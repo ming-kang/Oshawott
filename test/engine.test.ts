@@ -129,7 +129,7 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	);
 
 	// The panel: a client host whose parent is the Engine.
-	const [panelEnd, engineEnd] = fakePortPair("oshawatt:panel");
+	const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
 	engine.acceptPanel(portLink(engineEnd), "panel-1");
 	const panel = createHost<Principal>({ onError });
 	panel.connect(portLink(panelEnd), { principal: { kind: "engine" } }, context);

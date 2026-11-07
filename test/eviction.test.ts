@@ -101,7 +101,7 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 			context,
 		);
 	const attachPanel = (engine: Engine) => {
-		const [panelEnd, engineEnd] = fakePortPair("oshawatt:panel");
+		const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
 		engine.acceptPanel(portLink(engineEnd), "panel-1");
 		return portLink(panelEnd);
 	};

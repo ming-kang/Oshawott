@@ -52,7 +52,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			minify: !dev,
 			sourcemap: dev ? "inline" : false,
 			legalComments: "none",
-			define: { __OSHAWATT_TARGET__: JSON.stringify(target), __OSHAWATT_DEV__: JSON.stringify(dev) },
+			define: { __OSHAWOTT_TARGET__: JSON.stringify(target), __OSHAWOTT_DEV__: JSON.stringify(dev) },
 			// SDK code paths for Node (proxies, files) that a browser never takes.
 			external: ["node:*"],
 			logLevel: "warning",

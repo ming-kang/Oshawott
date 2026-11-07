@@ -1,5 +1,5 @@
 // What the smoke tests and screenshot scripts share: the Chromium to launch, the test page and its server, loading
-// dist/chromium, and polling. OSHAWATT_CHROME names the browser; by default Playwright's cached Chromium.
+// dist/chromium, and polling. OSHAWOTT_CHROME names the browser; by default Playwright's cached Chromium.
 import { existsSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -9,24 +9,24 @@ import puppeteer from "puppeteer-core";
 export const root = join(fileURLToPath(import.meta.url), "..", "..", "..");
 
 export function chromiumPath() {
-	if (process.env.OSHAWATT_CHROME) return process.env.OSHAWATT_CHROME;
+	if (process.env.OSHAWOTT_CHROME) return process.env.OSHAWOTT_CHROME;
 	const cache = join(process.env.LOCALAPPDATA ?? join(process.env.HOME ?? "", ".cache"), "ms-playwright");
 	const build = existsSync(cache) ? readdirSync(cache).filter((d) => /^chromium-\d+$/.test(d)).sort().at(-1) : undefined;
 	const path = build && ["chrome-win64/chrome.exe", "chrome-linux/chrome", "chrome-mac/Chromium.app/Contents/MacOS/Chromium"]
 		.map((p) => join(cache, build, p))
 		.find((p) => existsSync(p));
-	if (!path) throw new Error("No Chromium: set OSHAWATT_CHROME");
+	if (!path) throw new Error("No Chromium: set OSHAWOTT_CHROME");
 	return path;
 }
 
-export const TEST_PAGE = `<!doctype html><title>Oshawatt test page</title>
+export const TEST_PAGE = `<!doctype html><title>Oshawott test page</title>
 <style>body{font:15px/1.5 system-ui;margin:40px}input,button{font:inherit;padding:4px 8px}</style>
 <h1>Hello</h1><p>A page for the extension's tests: a search box and a button.</p>
 <input id="q" placeholder="Search"><button id="go" onclick="out.textContent='searched: '+q.value">Go</button>
 <p id="out">nothing yet</p>`;
 
 /** A small UTF-8 download for the file tools and the Code Mode → files flow. */
-export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawatt 文件" })}\n`;
+export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawott 文件" })}\n`;
 export const TEST_LARGE_DOWNLOAD = JSON.stringify({ padding: "x".repeat(1_100_000), ending: "complete" });
 
 /** Serves `page` (the test page by default); `routes` adds handlers by method and path. */

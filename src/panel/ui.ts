@@ -1,5 +1,5 @@
 // Small DOM helpers for the panel: `h()` builds elements (text always as text, never parsed as HTML), `icon()` the
-// stroke icons, `logo()` the Oshawatt mark.
+// stroke icons, `logo()` the Oshawott mark.
 
 type Child = Node | string | number | null | undefined | false;
 type Props = Record<string, string | number | boolean | null | undefined | ((event: never) => void)>;
@@ -95,9 +95,9 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 
 let logoCount = 0;
 
-/** The Oshawatt mark: a drop of water with a wave across it. */
+/** The Oshawott mark: a drop of water with a wave across it. */
 export function logo(size = 24): SVGSVGElement {
-	const id = `oshawatt-logo-${logoCount++}`;
+	const id = `oshawott-logo-${logoCount++}`;
 	const svg = document.createElementNS(SVG, "svg");
 	svg.setAttribute("viewBox", "0 0 32 32");
 	svg.setAttribute("width", String(size));

@@ -32,7 +32,7 @@
 
 文件面板列出当前对话 `/workspace` 下的路径、大小和修改时间，支持下载、手动刷新和二次确认删除。切换对话会关闭面板，过期请求不能覆盖新列表。`Chat.files`、`readFile`、`removeFile` 仅服务 Panel，并拒绝 `/workspace` 外的路径。
 
-`src/engine/files-idb.ts` 使用数据库 `oshawatt-files`，元信息与字节分开，以 `[conversationId, path]` 为键。`MemoryFileBackend` 仅用于测试。`listFiles`、`ls` 与 Panel 列表共用 `ChatFiles.listTree` 的单事务元信息遍历，按路径段排序
+`src/engine/files-idb.ts` 使用数据库 `oshawott-files`，元信息与字节分开，以 `[conversationId, path]` 为键。`MemoryFileBackend` 仅用于测试。`listFiles`、`ls` 与 Panel 列表共用 `ChatFiles.listTree` 的单事务元信息遍历，按路径段排序
 
 - 单文件最大 20 MiB，总容量受浏览器配额限制。同一扩展 ID 下，Engine 重建或浏览器重启后文件仍保留。
 - 重置对话上下文不清除文件；移除对话会清除文件，但 Durable 原始对话记录仍保留。

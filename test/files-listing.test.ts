@@ -16,7 +16,7 @@ const depthFirst = [".cache", ".cache/kept.txt", ".git", ".git/config", "a", "a/
 
 for (const kind of ["memory", "indexeddb"] as const) {
 	test(`${kind}: tree, ls and Panel listings share one read without changing their policies`, async () => {
-		const name = `oshawatt-listing-${crypto.randomUUID()}`;
+		const name = `oshawott-listing-${crypto.randomUUID()}`;
 		const backend = kind === "memory" ? new MemoryFileBackend() : await IndexedDbFileBackend.open(name);
 		let reads = 0;
 		const counted: FileBackend = {

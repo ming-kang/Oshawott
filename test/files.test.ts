@@ -1,5 +1,5 @@
 // A chat's files: `ChatFiles` against pi-durable's own environment conformance cases (those an environment without a
-// shell, change notifications, git or symbolic links can pass), then what Oshawatt relies on beyond them, then the
+// shell, change notifications, git or symbolic links can pass), then what Oshawott relies on beyond them, then the
 // whole path through the Engine: the model fetches into a file, reads and lists it, is refused a site the user has not
 // allowed, and the panel lists, downloads and loses the files with the chat.
 import assert from "node:assert/strict";
@@ -200,7 +200,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		},
 		context,
 	);
-	const [panelEnd, engineEnd] = fakePortPair("oshawatt:panel");
+	const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
 	engine.acceptPanel(portLink(engineEnd), "panel-1");
 	const panel = createHost<Principal>({ onError });
 	panel.connect(portLink(panelEnd), { principal: { kind: "engine" } }, context);

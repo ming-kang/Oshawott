@@ -11,8 +11,8 @@ import { click, scroll, snapshot, type } from "./dom.ts";
 
 declare global {
 	// Set by the Broker's first injection step, read here: a content script cannot learn its tab id by itself.
-	var __oshawattTabId: number | undefined;
-	var __oshawattPage: { connect(): void } | undefined;
+	var __oshawottTabId: number | undefined;
+	var __oshawottPage: { connect(): void } | undefined;
 }
 
 const context = BACKGROUND_CONTEXT;
@@ -21,12 +21,12 @@ async function start(tabId: number) {
 	const host = createHost<Principal>({
 		address: TabHost({ tabId }),
 		principal: { kind: "tab", tabId },
-		onError: (error) => console.debug("[oshawatt page]", error),
+		onError: (error) => console.debug("[oshawott page]", error),
 	});
 	await host.load(
 		[
 			{
-				name: "oshawatt.page",
+				name: "oshawott.page",
 				facet: defineFacet<Principal>((self) => {
 					self.serve(Page, (_params, principal) => {
 						if (principal.kind !== "engine") throw new Error("Only the Engine uses page tools.");
@@ -49,9 +49,9 @@ async function start(tabId: number) {
 		const port = ext.runtime.connect({ name: PORTS.tab });
 		host.accept(portLink(port, () => ext.runtime.lastError?.message), { principal: { kind: "engine" } }, context);
 	};
-	globalThis.__oshawattPage = { connect };
+	globalThis.__oshawottPage = { connect };
 	connect();
 }
 
-if (globalThis.__oshawattPage) globalThis.__oshawattPage.connect();
-else if (typeof globalThis.__oshawattTabId === "number") void start(globalThis.__oshawattTabId);
+if (globalThis.__oshawottPage) globalThis.__oshawottPage.connect();
+else if (typeof globalThis.__oshawottTabId === "number") void start(globalThis.__oshawottTabId);

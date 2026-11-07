@@ -9,7 +9,7 @@ import { h, icon, logo, toast } from "./ui.ts";
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "setApiKey" | "clearApiKey">;
 type Theme = "system" | "light" | "dark";
 const context = BACKGROUND_CONTEXT;
-const THEME_KEY = "oshawatt:theme";
+const THEME_KEY = "oshawott:theme";
 const savedTheme = (): Theme => {
 	const value = localStorage.getItem(THEME_KEY);
 	return value === "light" || value === "dark" ? value : "system";
@@ -46,7 +46,7 @@ export class SettingsSheet implements OverlayView {
 					h("p", { class: "section-hint" }, icon("lock", 12), h("span", null, t("settings.providersHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.appearance")), this.#themes()),
 				h("section", { class: "section" }, h("h3", null, t("settings.about")),
-					h("div", { class: "card about" }, logo(34), h("div", null, h("strong", null, "Oshawatt"), h("span", null, t("settings.version", ext.runtime.getManifest().version))))),
+					h("div", { class: "card about" }, logo(34), h("div", null, h("strong", null, "Oshawott"), h("span", null, t("settings.version", ext.runtime.getManifest().version))))),
 			),
 		);
 	}

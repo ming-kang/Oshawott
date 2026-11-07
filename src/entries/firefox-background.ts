@@ -23,9 +23,9 @@ ext.alarms.onAlarm.addListener(() => {
 ext.action.onClicked.addListener(() => void (ext.sidebarAction?.toggle?.() ?? ext.sidebarAction?.open()));
 // Test hook: WebDriver cannot reach extension pages, so a dev build installed next to a self-test tab opens its panel
 // in self-test mode, which reports to that tab's server (scripts/smoke-firefox.mjs).
-if (__OSHAWATT_DEV__) {
+if (__OSHAWOTT_DEV__) {
 	ext.runtime.onInstalled.addListener(async () => {
-		const tab = (await ext.tabs.query({})).find((t) => t.url?.includes("oshawatt-selftest"));
+		const tab = (await ext.tabs.query({})).find((t) => t.url?.includes("oshawott-selftest"));
 		if (tab?.url) void ext.tabs.create({ url: `panel.html?selftest=${encodeURIComponent(new URL(tab.url).origin)}` });
 	});
 }

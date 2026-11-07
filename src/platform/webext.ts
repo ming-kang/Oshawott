@@ -1,5 +1,5 @@
 // The one place that touches the WebExtension API. Everything else imports the typed subset below, so the surface
-// Oshawatt depends on is explicit, and the Chromium/Firefox differences are written down once.
+// Oshawott depends on is explicit, and the Chromium/Firefox differences are written down once.
 //
 // Both browsers expose a promise-based `chrome.*` in Manifest V3 (Firefox also as `browser.*`). Only the members used
 // here are typed; a missing optional namespace (`offscreen`, `sidePanel`, `sidebarAction`, `userScripts`) is

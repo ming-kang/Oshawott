@@ -10,7 +10,7 @@ const methods = {
 	page_scroll: method(obj(t.page_scroll.args), t.page_scroll.result),
 } satisfies Record<PageToolName, unknown>;
 
-export const Page = remote("oshawatt.page", {
+export const Page = remote("oshawott.page", {
 	version: 1,
 	params: { tabId: int() },
 	hostAddress: ({ tabId }) => TabHost({ tabId }),

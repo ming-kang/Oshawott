@@ -1,4 +1,4 @@
-// Chord, through one module. Oshawatt is written against Chord's v2 API, which 1.5.0 publishes as
+// Chord, through one module. Oshawott is written against Chord's v2 API, which 1.5.0 publishes as
 // `@earendil-works/chord/next` and the next release moves to the package root. Switching is this one line.
 export * from "@earendil-works/chord/next";
 export { BACKGROUND_CONTEXT, type Context, withAbortSignal } from "@earendil-works/chord/context";

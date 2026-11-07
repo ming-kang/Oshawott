@@ -11,7 +11,7 @@ export type WorkspaceState = {
 
 /** The workspace: the chats, default model, and recoverable file deletion intents. */
 export const WorkspaceDoc = defineDoc<WorkspaceState>({
-	kind: "oshawatt.workspace",
+	kind: "oshawott.workspace",
 	version: 1,
 	scope: "session",
 	initial: () => ({ chats: [], defaultModel: null, pendingFileDeletes: [] }),
@@ -20,7 +20,7 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 
 /** The tab a conversation's page tools act on when a call names none: the tab its panel showed at the last send. */
 export const TargetDoc = defineDoc<{ tabId: number | null }>({
-	kind: "oshawatt.target",
+	kind: "oshawott.target",
 	version: 1,
 	scope: "conversation",
 	history: "latest",
