@@ -100,7 +100,7 @@ export class ToolCard {
 		this.#fetchUrl = name === "fetch" && typeof args.url === "string" ? args.url : undefined;
 		const { icon: iconName, label, meta } = look(name, args);
 		this.#meta = h("span", { class: "tool-meta" }, meta ?? "");
-		this.#state = h("span", { class: "tool-state" });
+		this.#state = h("span", { class: "tool-state", role: "status", "aria-live": "polite" });
 		this.#body = h("div", { class: "tool-body" });
 		const code = name === "codemode" && typeof args.code === "string" ? args.code : undefined;
 		if (code !== undefined) this.#body.append(section(t("tool.args"), h("pre", { class: "code" }, code)));
@@ -116,18 +116,23 @@ export class ToolCard {
 
 	setStatus(status: ToolStatus) {
 		if (this.settled && status !== "done" && status !== "error") return;
+		if (this.#status === status && this.#state.childNodes.length) return;
 		this.#status = status;
 		this.element.dataset.status = status;
-		const title = { pending: t("tool.pending"), streaming: t("tool.pending"), running: t("tool.running"), stopped: t("tool.stopped"), done: "", error: "" }[status];
+		const title = {
+			pending: t("tool.pending"), streaming: t("tool.pending"), running: t("tool.running"), stopped: t("tool.stopped"),
+			done: t("tool.done"), error: t("tool.error"),
+		}[status];
 		this.#state.title = title;
 		this.#state.replaceChildren(
 			status === "running" || status === "pending" || status === "streaming"
-				? h("span", { class: "spinner" })
+				? h("span", { class: "spinner", "aria-hidden": "true" })
 				: status === "done"
 					? icon("check", 14)
 					: status === "error"
 						? icon("alert", 14)
-						: h("span", { class: "tool-stopped" }, title),
+						: h("span", { class: "tool-stopped", "aria-hidden": "true" }, title),
+			h("span", { class: "sr-only" }, title),
 		);
 	}
 

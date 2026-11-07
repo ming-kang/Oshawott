@@ -136,7 +136,7 @@ export function logo(size = 24): SVGSVGElement {
 
 /** A transient message at the bottom of the panel. */
 export function toast(text: string, tone: "info" | "error" = "info") {
-	const node = h("div", { class: "toast", "data-tone": tone, role: "status" }, text);
+	const node = h("div", { class: "toast", "data-tone": tone, role: tone === "error" ? "alert" : "status" }, text);
 	document.body.appendChild(node);
 	setTimeout(() => node.classList.add("leaving"), 1800);
 	setTimeout(() => node.remove(), 2100);

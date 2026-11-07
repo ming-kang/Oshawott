@@ -44,13 +44,14 @@ const $ = {
 	context: h("div", { class: "context-row", id: "context" }),
 	prompt: h("textarea", { id: "prompt", rows: 1, placeholder: t("composer.placeholder"), "aria-label": t("composer.placeholder") }),
 	model: h("button", { class: "model-btn", id: "model", type: "button", "aria-haspopup": "listbox" }),
+	stop: h("button", { class: "send-btn stop-btn", id: "stop", type: "button", title: t("composer.stop"), "aria-label": t("composer.stop"), hidden: true }, icon("stop", 16)),
 	send: h("button", { class: "send-btn", id: "send", type: "button" }),
 };
 document.body.append(
 	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.files, $.settings),
 	h("main", { class: "main" }, $.banner, $.scroller, $.jump),
 	h("footer", { class: "composer-wrap" },
-		h("div", { class: "composer", id: "composer" }, $.context, $.prompt, h("div", { class: "composer-bar" }, $.model, $.send))),
+		h("div", { class: "composer", id: "composer" }, $.context, $.prompt, h("div", { class: "composer-bar" }, $.model, $.stop, $.send))),
 );
 
 // ── State ──
@@ -137,6 +138,7 @@ function renderComposer() {
 	const ready = connected().length > 0;
 	document.body.dataset.busy = String(busy);
 	$.prompt.placeholder = busy ? t("composer.placeholderBusy") : t("composer.placeholder");
+	$.stop.hidden = !busy || !text;
 	const mode = stop ? "stop" : "send";
 	if ($.send.dataset.mode !== mode) {
 		$.send.dataset.mode = mode;
@@ -160,8 +162,11 @@ function renderContext(tab: TargetTab | undefined) {
 	}
 	const favicon = tab.favIconUrl ? h("img", { src: tab.favIconUrl, alt: "", width: 14, height: 14, referrerpolicy: "no-referrer" }) : icon("globe", 13);
 	if (favicon instanceof HTMLImageElement) favicon.addEventListener("error", () => favicon.replaceWith(icon("globe", 13)), { once: true });
+	const access = tab.access === "granted" ? "check" : tab.access === "unavailable" ? "alert" : undefined;
+	const accessLabel = tab.access === "granted" ? t("tab.granted") : t("tab.unavailable");
 	const chip = h("span", { class: "tab-chip", id: "tab-chip", "data-access": tab.access, title: tab.access === "unavailable" ? t("tab.unavailable") : tab.url },
-		favicon, h("span", { class: "name" }, tab.title));
+		favicon, h("span", { class: "name" }, tab.title),
+		access ? h("span", { class: "tab-access", title: accessLabel }, icon(access, 12), h("span", { class: "sr-only" }, accessLabel)) : null);
 	const extra = tab.access === "grantable"
 		? h("button", { class: "grant-btn", id: "grant", type: "button", onclick: grant }, icon("lock", 12), t("tab.grant")) : null;
 	$.context.replaceChildren(chip, ...(extra ? [extra] : []));
@@ -245,6 +250,7 @@ $.prompt.addEventListener("keydown", (event) => {
 	event.preventDefault();
 	void send();
 });
+$.stop.addEventListener("click", () => void chat?.abort(context));
 $.send.addEventListener("click", () => {
 	if ($.send.dataset.mode === "stop") void chat?.abort(context);
 	else void send();
@@ -258,7 +264,8 @@ $.model.addEventListener("click", openModelMenu);
 
 // ── Component wiring ──
 
-function openChats() {
+function openChats(event?: Event) {
+	const anchor = event?.currentTarget instanceof HTMLElement ? event.currentTarget : $.chats;
 	overlays.open(new ChatDrawer(() => workspace, {
 		currentId: () => chatId,
 		select: (id) => {
@@ -266,7 +273,7 @@ function openChats() {
 			void open(id);
 			if (id === undefined) $.prompt.focus();
 		},
-	}), { kind: "drawer", anchor: $.chats });
+	}), { kind: "drawer", anchor });
 }
 function openFiles() {
 	if (chat) overlays.open(new FilesSheet(chat, () => overlays.close()), { kind: "sheet", anchor: $.files });

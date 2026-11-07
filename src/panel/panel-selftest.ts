@@ -29,6 +29,7 @@ export async function testPanel(source: Source) {
 
 	// These keys are only saved and cleared locally; all model requests still use the demo provider.
 	click("#settings-toggle");
+	step("settings opens as a named modal and receives focus", document.querySelector("#settings")?.getAttribute("aria-modal") === "true" && document.activeElement?.id === "settings-back" && document.querySelector("#settings-back")?.hasAttribute("aria-label") === true);
 	click('.provider[data-provider="anthropic"] .provider-head');
 	const input = document.querySelector<HTMLInputElement>('.provider[data-provider="anthropic"] input')!;
 	input.value = "panel-smoke-key";
@@ -41,9 +42,16 @@ export async function testPanel(source: Source) {
 	const theme = document.documentElement.dataset.theme ?? "system";
 	click('#settings [data-value="dark"]');
 	step("appearance stays owned by Settings", document.documentElement.dataset.theme === "dark" && document.querySelector('#settings [data-value="dark"]')?.getAttribute("aria-checked") === "true");
+	document.querySelector('#settings [data-value="dark"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+	step("appearance radios support arrow keys and roving focus", document.documentElement.dataset.theme === "system" && (document.activeElement as HTMLElement)?.dataset.value === "system" && document.querySelector('#settings [data-value="system"]')?.getAttribute("aria-checked") === "true");
 	click(`#settings [data-value="${theme}"]`);
 	click("#settings-back");
 	await until(() => !document.querySelector("#settings"));
+
+	click("#chats-toggle");
+	step("chat rows are buttons inside a focus-managed dialog", document.querySelector("#chat-drawer")?.getAttribute("role") === "dialog" && document.querySelector(".chat-select") instanceof HTMLButtonElement && document.querySelector("#chat-drawer")?.contains(document.activeElement) === true);
+	escape();
+	await until(() => !document.querySelector("#chat-drawer"));
 
 	click("#model");
 	const search = document.querySelector<HTMLInputElement>("#model-menu input")!;
@@ -51,6 +59,7 @@ export async function testPanel(source: Source) {
 	search.dispatchEvent(new Event("input"));
 	const choices = [...document.querySelectorAll<HTMLElement>("#model-menu .menu-item")];
 	step("model menu filters the shared provider state", choices.length > 0 && choices.every((item) => item.dataset.provider === "demo"));
+	step("model combobox exposes its active option", choices.every((item) => item.tabIndex === -1) && search.getAttribute("aria-activedescendant") === choices.find((item) => item.classList.contains("active"))?.id);
 	search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 	await until(() => !document.querySelector("#model-menu"));
 	click("#model");
@@ -102,12 +111,20 @@ export async function testPanel(source: Source) {
 	const makeView = () => {
 		let refreshes = 0;
 		let closes = 0;
-		const view: OverlayView = { element: h("div"), refresh: () => { refreshes++; }, close: () => { closes++; } };
+		const element = h("div", null, h("button", null, "first"), h("button", null, "last"));
+		const view: OverlayView = { element, refresh: () => { refreshes++; }, close: () => { closes++; } };
 		return { view, refreshes: () => refreshes, closes: () => closes };
 	};
 	try {
 		const first = makeView();
 		controller.open(first.view, { kind: "drawer", anchor: firstTrigger });
+		const focusable = [...first.view.element.querySelectorAll<HTMLButtonElement>("button")];
+		focusable.at(-1)!.focus();
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+		const wrappedForward = document.activeElement === focusable[0];
+		focusable[0]!.focus();
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }));
+		step("modal overlays receive focus and trap both Tab directions", first.view.element.getAttribute("aria-modal") === "true" && wrappedForward && document.activeElement === focusable.at(-1));
 		const root = first.view.element.parentElement!;
 		retiredRoots.push(root);
 		const backdrop = root.querySelector<HTMLElement>(".backdrop")!;

@@ -54,6 +54,13 @@ export class FilesSheet implements OverlayView {
 	async refresh() {
 		if (this.#closed) return;
 		const revision = ++this.#revision;
+		const active = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+		const focusedRow = active?.closest<HTMLElement>(".file-row");
+		const focused = focusedRow ? {
+			path: focusedRow.dataset.path,
+			index: [...this.#list.querySelectorAll(".file-row")].indexOf(focusedRow),
+			action: active?.classList.contains("file-remove") ? ".file-remove" : ".file-download",
+		} : undefined;
 		this.#refresh.disabled = true;
 		this.#list.setAttribute("aria-busy", "true");
 		this.#summary.textContent = t("files.loading");
@@ -62,7 +69,7 @@ export class FilesSheet implements OverlayView {
 			if (this.#closed || revision !== this.#revision) return;
 			this.#summary.textContent = t("files.count", files.length, formatBytes(files.reduce((sum, file) => sum + file.size, 0)));
 			this.#list.replaceChildren(
-				...(files.length ? files.map((file) => this.#row(file)) : [h("div", { class: "files-empty" }, icon("folder", 30), h("strong", null, t("files.empty")), h("span", null, t("files.emptyHint")))]),
+				...(files.length ? files.map((file) => this.#row(file)) : [h("div", { class: "files-empty", role: "status" }, icon("folder", 30), h("strong", null, t("files.empty")), h("span", null, t("files.emptyHint")))]),
 			);
 		} catch (error) {
 			if (this.#closed || revision !== this.#revision) return;
@@ -72,6 +79,13 @@ export class FilesSheet implements OverlayView {
 			if (!this.#closed && revision === this.#revision) {
 				this.#refresh.disabled = false;
 				this.#list.setAttribute("aria-busy", "false");
+				if (focused) {
+					const rows = [...this.#list.querySelectorAll<HTMLElement>(".file-row")];
+					const same = rows.find((row) => row.dataset.path === focused.path);
+					const row = same ?? rows[Math.min(Math.max(focused.index, 0), rows.length - 1)];
+					const target = row?.querySelector<HTMLElement>(same ? focused.action : ".file-download") ?? this.#refresh;
+					target.focus({ preventScroll: true });
+				}
 			}
 		}
 	}

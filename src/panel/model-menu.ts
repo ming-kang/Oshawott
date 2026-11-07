@@ -16,8 +16,11 @@ export class ModelMenu implements OverlayView {
 	readonly element: HTMLElement;
 	readonly #source: Source;
 	readonly #actions: Actions;
-	readonly #search = h("input", { class: "menu-search", type: "search", placeholder: t("model.search"), "aria-label": t("model.search") });
-	readonly #list = h("div", { class: "menu-list", role: "listbox" });
+	readonly #search = h("input", {
+		class: "menu-search", type: "search", placeholder: t("model.search"), "aria-label": t("model.search"),
+		role: "combobox", "aria-autocomplete": "list", "aria-expanded": "true", "aria-controls": "model-options",
+	});
+	readonly #list = h("div", { class: "menu-list", id: "model-options", role: "listbox", "aria-label": t("model.choose") });
 	#closed = false;
 
 	constructor(source: Source, actions: Actions) {
@@ -31,6 +34,9 @@ export class ModelMenu implements OverlayView {
 			if (event.key === "ArrowDown" || event.key === "ArrowUp") {
 				event.preventDefault();
 				this.#activate(items[Math.max(0, Math.min(items.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))]);
+			} else if (event.key === "Home" || event.key === "End") {
+				event.preventDefault();
+				this.#activate(items[event.key === "Home" ? 0 : items.length - 1]);
 			} else if (event.key === "Enter") {
 				event.preventDefault();
 				items[at]?.click();
@@ -45,6 +51,7 @@ export class ModelMenu implements OverlayView {
 		const groups = configuredProviders(this.#source.providers.value)
 			.map((provider) => ({ provider, models: provider.models.filter((model) => !query || `${model.name} ${model.id}`.toLowerCase().includes(query)) }))
 			.filter((group) => group.models.length);
+		let option = 0;
 		this.#list.replaceChildren(...(groups.length
 			? groups.flatMap(({ provider, models }) => [
 				h("div", { class: "menu-group" }, provider.name),
@@ -52,12 +59,13 @@ export class ModelMenu implements OverlayView {
 					const ref = { provider: provider.id, modelId: model.id };
 					const chosen = sameModel(selected, ref);
 					return h("button", {
-						class: "menu-item", type: "button", role: "option", "aria-selected": String(chosen),
-						"data-provider": provider.id, "data-model": model.id, onclick: () => void this.#actions.pick(ref),
+						class: "menu-item", id: `model-option-${option++}`, type: "button", role: "option", tabindex: -1,
+						"aria-selected": String(chosen), "data-provider": provider.id, "data-model": model.id,
+						onclick: () => void this.#actions.pick(ref),
 					}, h("span", { class: "menu-item-name" }, model.name),
 						model.name !== model.id ? h("span", { class: "menu-item-id" }, model.id) : null, chosen ? icon("check", 14) : null);
 				}),
-			]) : [h("div", { class: "list-empty" }, t("model.none"))]));
+			]) : [h("div", { class: "list-empty", role: "status" }, t("model.none"))]));
 		const items = this.#items();
 		this.#activate(items.find((item) => item.getAttribute("aria-selected") === "true") ?? items[0]);
 	}
@@ -76,6 +84,8 @@ export class ModelMenu implements OverlayView {
 
 	#activate(item: HTMLButtonElement | undefined) {
 		for (const other of this.#items()) other.classList.toggle("active", other === item);
+		if (item) this.#search.setAttribute("aria-activedescendant", item.id);
+		else this.#search.removeAttribute("aria-activedescendant");
 		item?.scrollIntoView({ block: "nearest" });
 	}
 }

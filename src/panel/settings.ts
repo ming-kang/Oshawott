@@ -37,9 +37,9 @@ export class SettingsSheet implements OverlayView {
 		const providers = source()?.providers.value ?? [];
 		this.#expanded = providers.some((provider) => provider.configured) ? undefined : providers[0]?.id;
 		this.element = h(
-			"section", { class: "sheet", id: "settings", "aria-label": t("settings.title") },
+			"section", { class: "sheet", id: "settings", role: "dialog", "aria-modal": "true", "aria-label": t("settings.title") },
 			h("div", { class: "panel-head" },
-				h("button", { class: "icon-btn", id: "settings-back", type: "button", "aria-label": t("settings.title"), onclick: onClose }, icon("back", 18)),
+				h("button", { class: "icon-btn", id: "settings-back", type: "button", "aria-label": t("settings.back"), onclick: onClose }, icon("back", 18)),
 				h("span", { class: "panel-title" }, t("settings.title"))),
 			h("div", { class: "sheet-body" },
 				h("section", { class: "section" }, h("h3", null, t("settings.providers")), this.#card,
@@ -52,7 +52,18 @@ export class SettingsSheet implements OverlayView {
 	}
 
 	refresh() {
-		if (!this.#closed) this.#card.replaceChildren(...(this.#source()?.providers.value ?? []).map((provider) => this.#row(provider)));
+		if (this.#closed) return;
+		const active = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+		const providerId = active?.closest<HTMLElement>(".provider")?.dataset.provider;
+		const action = active?.classList.contains("provider-head") ? ".provider-head"
+			: active?.classList.contains("danger") ? ".btn.danger"
+				: active?.classList.contains("primary") ? ".btn.primary"
+					: active?.tagName === "INPUT" ? "input" : undefined;
+		this.#card.replaceChildren(...(this.#source()?.providers.value ?? []).map((provider) => this.#row(provider)));
+		if (providerId && action) {
+			const provider = this.#card.querySelector<HTMLElement>(`[data-provider="${providerId}"]`);
+			(provider?.querySelector<HTMLElement>(action) ?? provider?.querySelector<HTMLElement>(".provider-head"))?.focus({ preventScroll: true });
+		}
 	}
 
 	close() {
@@ -64,10 +75,13 @@ export class SettingsSheet implements OverlayView {
 		const input = h("input", {
 			class: "input", type: "password", placeholder: t("settings.keyPlaceholder"), autocomplete: "off", spellcheck: "false", "aria-label": `${provider.name} API key`,
 		});
-		const save = h("button", { class: "btn primary", type: "button" }, provider.configured ? t("settings.replace") : t("settings.save"));
+		const saveLabel = provider.configured ? t("settings.replace") : t("settings.save");
+		const save = h("button", { class: "btn primary", type: "button", "aria-label": `${provider.name}: ${saveLabel}` }, saveLabel);
 		save.addEventListener("click", async () => {
 			if (!input.value.trim()) return input.focus();
 			save.disabled = true;
+			save.setAttribute("aria-busy", "true");
+			save.prepend(h("span", { class: "spinner" }));
 			try {
 				const source = this.#source();
 				if (!source) throw new Error("The workspace is not ready.");
@@ -79,12 +93,16 @@ export class SettingsSheet implements OverlayView {
 				toast(String((error as Error)?.message ?? error), "error");
 			} finally {
 				save.disabled = false;
+				save.removeAttribute("aria-busy");
+				save.querySelector(".spinner")?.remove();
 			}
 		});
 		input.addEventListener("keydown", (event) => event.key === "Enter" && save.click());
-		const remove = h("button", { class: "btn danger", type: "button" }, t("settings.remove"));
+		const remove = h("button", { class: "btn danger", type: "button", "aria-label": `${provider.name}: ${t("settings.remove")}` }, t("settings.remove"));
 		remove.addEventListener("click", async () => {
 			remove.disabled = true;
+			remove.setAttribute("aria-busy", "true");
+			remove.prepend(h("span", { class: "spinner" }));
 			try {
 				const source = this.#source();
 				if (!source) throw new Error("The workspace is not ready.");
@@ -95,6 +113,8 @@ export class SettingsSheet implements OverlayView {
 				toast(String((error as Error)?.message ?? error), "error");
 			} finally {
 				remove.disabled = false;
+				remove.removeAttribute("aria-busy");
+				remove.querySelector(".spinner")?.remove();
 			}
 		});
 		return h(
@@ -107,7 +127,7 @@ export class SettingsSheet implements OverlayView {
 					if (!open) this.#card.querySelector<HTMLInputElement>(`[data-provider="${provider.id}"] input`)?.focus();
 				},
 			},
-				h("span", { class: "provider-mark", style: `--mark:${MARKS[provider.id] ?? "var(--accent)"}` }, provider.name.slice(0, 1).toUpperCase()),
+				h("span", { class: "provider-mark", "aria-hidden": "true", style: `--mark:${MARKS[provider.id] ?? "var(--accent)"}` }, provider.name.slice(0, 1).toUpperCase()),
 				h("span", { class: "provider-name" }, provider.name),
 				h("span", { class: "pill", "data-on": provider.configured || null }, provider.configured ? t("settings.connected") : t("settings.notSet")), icon("chevron", 14)),
 			open ? h("div", { class: "provider-form" }, input, save, provider.configured ? remove : null) : null,
@@ -116,15 +136,33 @@ export class SettingsSheet implements OverlayView {
 
 	#themes() {
 		const themes: Theme[] = ["system", "light", "dark"];
-		const segmented = h("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.appearance") }, themes.map((theme) =>
-			h("button", {
+		const segmented = h("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.appearance") });
+		const choose = (theme: Theme, focus = false) => {
+			applyTheme(theme);
+			for (const button of segmented.querySelectorAll<HTMLButtonElement>("button")) {
+				const selected = button.dataset.value === theme;
+				button.setAttribute("aria-checked", String(selected));
+				button.tabIndex = selected ? 0 : -1;
+				if (selected && focus) button.focus({ preventScroll: true });
+			}
+		};
+		for (const theme of themes) {
+			const button = h("button", {
 				type: "button", role: "radio", "data-value": theme, "aria-checked": String(savedTheme() === theme),
-				onclick: () => {
-					applyTheme(theme);
-					for (const button of segmented.querySelectorAll("button")) button.setAttribute("aria-checked", String(button.dataset.value === theme));
+				tabindex: savedTheme() === theme ? 0 : -1,
+				onclick: () => choose(theme),
+				onkeydown: (event: KeyboardEvent) => {
+					const at = themes.indexOf(theme);
+					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (at + 1) % themes.length
+						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (at + themes.length - 1) % themes.length
+							: event.key === "Home" ? 0 : event.key === "End" ? themes.length - 1 : -1;
+					if (next < 0) return;
+					event.preventDefault();
+					choose(themes[next]!, true);
 				},
-			}, t(`settings.theme.${theme}`)),
-		));
+			}, t(`settings.theme.${theme}`));
+			segmented.append(button);
+		}
 		return segmented;
 	}
 }

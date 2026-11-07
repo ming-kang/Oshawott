@@ -29,7 +29,7 @@ export class ChatDrawer implements OverlayView {
 		this.#source = source;
 		this.#actions = actions;
 		this.element = h(
-			"aside", { class: "drawer", id: "chat-drawer", "aria-label": t("chat.list") },
+			"aside", { class: "drawer", id: "chat-drawer", role: "dialog", "aria-modal": "true", "aria-label": t("chat.list") },
 			h("div", { class: "panel-head" }, logo(22), h("span", { class: "panel-title" }, t("chat.list")),
 				h("button", { class: "btn small ghost", type: "button", onclick: () => actions.select(undefined) }, icon("plus", 14), t("chat.new"))),
 			this.#list,
@@ -38,8 +38,21 @@ export class ChatDrawer implements OverlayView {
 
 	refresh() {
 		if (this.#closed) return;
+		const active = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+		const focusedRow = active?.closest<HTMLElement>(".chat-item");
+		const focusedId = focusedRow?.dataset.id;
+		const focusedAction = active?.classList.contains("remove") ? ".remove" : ".chat-select";
+		const focusedIndex = focusedRow ? [...this.#list.querySelectorAll(".chat-item")].indexOf(focusedRow) : -1;
 		const items = [...(this.#source()?.chats.value ?? [])].sort((a, b) => b.createdAt - a.createdAt);
-		this.#list.replaceChildren(...(items.length ? items.map((item) => this.#row(item)) : [h("div", { class: "list-empty" }, t("chat.none"))]));
+		this.#list.replaceChildren(...(items.length ? items.map((item) => this.#row(item)) : [h("div", { class: "list-empty", role: "status" }, t("chat.none"))]));
+		if (focusedId !== undefined) {
+			const rows = [...this.#list.querySelectorAll<HTMLElement>(".chat-item")];
+			const same = rows.find((row) => row.dataset.id === focusedId);
+			const target = same?.querySelector<HTMLElement>(focusedAction)
+				?? rows[Math.min(Math.max(focusedIndex, 0), rows.length - 1)]?.querySelector<HTMLElement>(".chat-select")
+				?? this.element.querySelector<HTMLElement>(".panel-head button");
+			target?.focus({ preventScroll: true });
+		}
 	}
 
 	close() {
@@ -72,18 +85,18 @@ export class ChatDrawer implements OverlayView {
 				remove.disabled = false;
 			}
 		});
+		const title = summary.title || t("chat.untitled");
+		remove.setAttribute("aria-label", `${t("chat.delete")}: ${title}`);
 		return h(
 			"div",
-			{
-				class: "chat-item", role: "listitem", tabindex: 0, "data-id": summary.id,
-				"aria-current": summary.id === this.#actions.currentId() ? "true" : null,
-				onclick: () => this.#actions.select(summary.id),
-				onkeydown: (event: KeyboardEvent) => {
-					if (event.key === "Enter" && event.target === event.currentTarget) this.#actions.select(summary.id);
-				},
-			},
-			h("span", { class: "chat-title" }, summary.title || t("chat.untitled")),
-			h("time", { datetime: new Date(summary.createdAt).toISOString() }, when(summary.createdAt)), remove,
+			{ class: "chat-item", role: "listitem", "data-id": summary.id, "data-current": summary.id === this.#actions.currentId() ? "true" : null },
+			h(
+				"button",
+				{ class: "chat-select", type: "button", "aria-current": summary.id === this.#actions.currentId() ? "true" : null, onclick: () => this.#actions.select(summary.id) },
+				h("span", { class: "chat-title" }, title),
+				h("time", { datetime: new Date(summary.createdAt).toISOString() }, when(summary.createdAt)),
+			),
+			remove,
 		);
 	}
 }

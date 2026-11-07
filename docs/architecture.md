@@ -5,7 +5,7 @@ Oshawatt 分为四个角色，通过 chord 对象通信。对话与运行状态�
 ## 角色与连接
 
 | 角色 | 职责 | Chromium | Firefox |
-|:-:|---|---|---|
+|:-:|:-:|:-:|:-:|
 | **Engine** | Durable、模型、工具与持久状态 | offscreen `engine.html` | 事件页 `background.js` |
 | **Broker** | 标签页、脚本注入与 alarms | Service Worker | 与 Engine 同一事件页 |
 | **Panel** | 对话与文件界面 | side panel | sidebar |
@@ -14,7 +14,7 @@ Oshawatt 分为四个角色，通过 chord 对象通信。对话与运行状态�
 角色实现共用，浏览器差异集中在 `src/entries/`。Chromium 的 offscreen 文档提供 Worker 和长时间流式请求所需环境，但只有 `runtime` API，因此浏览器能力由 Broker 提供。
 
 | 连接 | 建立方式 | 暴露对象 |
-|---|---|---|
+|:-:|:-:|:-:|
 | Panel ↔ Engine | Panel 打开时连接 `oshawatt:panel`，断开后重连 | `Workspace`、`Chat({id})` |
 | Broker ↔ Engine | 需要浏览器能力或 alarm 唤醒时连接 `oshawatt:broker` | `Browser` |
 | Page ↔ Engine | Broker 按需注入后连接 `oshawatt:tab` | `Page({tabId})` |
@@ -26,7 +26,7 @@ Oshawatt 分为四个角色，通过 chord 对象通信。对话与运行状态�
 ## 状态
 
 | 存储 | 内容 |
-|---|---|
+|:-:|:-:|
 | IndexedDB `oshawatt` | Durable 对话与运行状态；`WorkspaceDoc` 保存对话列表、默认模型和待删除文件意图；`TargetDoc` 保存对话的目标标签页 |
 | IndexedDB `oshawatt-files` | 每个对话独立的目录树，元信息与字节分开，键为 `[conversationId, path]` |
 | IndexedDB `oshawatt-credentials` | 模型 API key，仅 Engine 读写 |

@@ -1,6 +1,6 @@
-# 文件与 Fetch
+# 文件
 
-每个对话有独立的持久文件区。模型通过工具和 Code Mode 处理文件，用户从 Panel 下载结果。
+每个对话有独立的持久文件区，模型通过工具和 Code Mode 处理文件，用户从 Panel 下载结果
 
 ## 工具与路径
 
@@ -13,11 +13,11 @@
 | `ls` | 递归列出目录与文件，最多 1000 项 | safe |
 | `fetch` | 请求 HTTP(S)，返回预览或保存完整响应 | unsafe |
 
-`src/engine/files.ts` 的 `ChatFiles` 实现 pi-durable `ExecutionEnv`，默认目录为 `/workspace`。路径使用 POSIX 格式，每个对话有独立根目录；没有 shell、符号链接、gitignore 或变更通知。
+`src/engine/files.ts` 实现 pi-durable `ExecutionEnv`，默认目录为 `/workspace`；路径使用 POSIX 格式，每个对话有独立根目录
 
-Code Mode 使用同一批工具。`read_text` 不直接暴露给模型，程序侧返回 `{text, offset, nextOffset, totalChars, eof}`，默认 UTF-8，可指定 TextDecoder 编码并去除 BOM。不要在分段读取期间并发改写同一文件，也不要把 `read` 的截断预览当作完整数据。
+`read_text` 不直接暴露给模型，程序侧返回 `{text, offset, nextOffset, totalChars, eof}`，默认 UTF-8，可指定 TextDecoder 编码并去除 BOM
 
-`/workspace` 中的文件显示在文件面板；Code Mode 临时输出放在 `/tmp`，不显示。Worker 退出不会删除文件。
+`/workspace` 中的文件显示在文件面板；Code Mode 临时输出放在 `/tmp`，Worker 退出不会删除文件。
 
 ## Fetch
 
@@ -28,13 +28,11 @@ Code Mode 使用同一批工具。`read_text` 不直接暴露给模型，程序�
 - 无 `saveTo` 时返回状态和文本预览，默认最多 20,000 字符；二进制响应只返回说明。HTTP 错误状态仍作为结果返回。
 - 重定向一律拒绝，避免跳到未授权站点。所有 fetch 都标为 `unsafe`，授权后不会自动重跑失败请求。
 
-## Panel 与存储
+## 面板与存储
 
 文件面板列出当前对话 `/workspace` 下的路径、大小和修改时间，支持下载、手动刷新和二次确认删除。切换对话会关闭面板，过期请求不能覆盖新列表。`Chat.files`、`readFile`、`removeFile` 仅服务 Panel，并拒绝 `/workspace` 外的路径。
 
-`src/engine/files-idb.ts` 使用数据库 `oshawatt-files`，元信息与字节分开，以 `[conversationId, path]` 为键。`MemoryFileBackend` 仅用于测试。`listFiles`、`ls` 与 Panel 列表共用 `ChatFiles.listTree` 的单事务元信息遍历，按路径段排序而非直接比较完整路径字符串。
+`src/engine/files-idb.ts` 使用数据库 `oshawatt-files`，元信息与字节分开，以 `[conversationId, path]` 为键。`MemoryFileBackend` 仅用于测试。`listFiles`、`ls` 与 Panel 列表共用 `ChatFiles.listTree` 的单事务元信息遍历，按路径段排序
 
 - 单文件最大 20 MiB，总容量受浏览器配额限制。同一扩展 ID 下，Engine 重建或浏览器重启后文件仍保留。
 - 重置对话上下文不清除文件；移除对话会清除文件，但 Durable 原始对话记录仍保留。
-- 删除先在 `WorkspaceDoc` 记录 `pendingFileDeletes`，再停止工作并清理；中断后由 Engine 启动时重试，旧引用和旧文件环境不能重新创建文件。
-- 文件事务不与 Durable 对话提交原子绑定。unsafe 调用中断时，文件可能已写入而工具结果尚未提交，模型应先检查实际状态。
