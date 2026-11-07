@@ -1,56 +1,57 @@
 # 架构
 
-Oshawott 分为四个角色，通过 chord 对象通信。对话与运行状态由 Pi Durable 持久化，文件和凭据分别保存在独立 IndexedDB 中。
+Oshawott 由四个角色组成，彼此通过 chord 远程对象通信。
 
-## 角色与连接
+## 角色
 
 | 角色 | 职责 | Chromium | Firefox |
-|:-:|:-:|:-:|:-:|
-| **Engine** | Durable、模型、工具与持久状态 | offscreen `engine.html` | 事件页 `background.js` |
-| **Broker** | 标签页、脚本注入与 alarms | Service Worker | 与 Engine 同一事件页 |
+|:-:|---|:-:|:-:|
+| **Engine** | Durable Harness、模型、工具、持久状态 | offscreen `engine.html` | 事件页 `background.js` |
+| **Broker** | 标签页、脚本注入、alarm | Service Worker | 与 Engine 同在事件页 |
 | **Panel** | 对话与文件界面 | side panel | sidebar |
 | **Page** | 页面工具的 DOM 实现 | 按需注入 `page.js` | 同左 |
 
-角色实现共用，浏览器差异集中在 `src/entries/`。Chromium 的 offscreen 文档提供 Worker 和长时间流式请求所需环境，但只有 `runtime` API，因此浏览器能力由 Broker 提供。
+角色代码两端共用，浏览器差异只出现在 `src/entries/`。Chromium 用 offscreen 文档运行 Engine，是因为那里能开 Worker、能跑长时间的流式请求；但 offscreen 文档只能用 `runtime` API，所以浏览器操作都交给 Broker 做。
 
-| 连接 | 建立方式 | 暴露对象 |
-|:-:|:-:|:-:|
-| Panel ↔ Engine | Panel 打开时连接 `oshawott:panel`，断开后重连 | `Workspace`、`Chat({id})` |
-| Broker ↔ Engine | 需要浏览器能力或 alarm 唤醒时连接 `oshawott:broker` | `Browser` |
-| Page ↔ Engine | Broker 按需注入后连接 `oshawott:tab` | `Page({tabId})` |
+## 连接
 
-契约集中在 `src/contracts/`。Engine 是唯一注册 `runtime.onConnect` 的上下文，并按 Port 名称、发送方和 frame 校验连接；`ensureEngine` 与 `wakeBroker` 两条一次性消息负责唤醒后台。
+| 连接 | 建立方式 | 对象 |
+|:-:|---|:-:|
+| Panel → Engine | Port `oshawott:panel`，断开后自动重连 | `Workspace`、`Chat({id})` |
+| Engine → Broker | 需要浏览器能力或被 alarm 唤醒时，Port `oshawott:broker` | `Browser` |
+| Engine → Page | Broker 注入脚本后，页面连接 Port `oshawott:tab` | `Page({tabId})` |
 
-`src/link/port-link.ts` 处理 Chromium Port 的 JSON/base64 帧、监听器安装前的消息排队和关闭通知。chord 独占 Link 的 `onClose`，应用通过 `done` 判断重连。
+- 所有契约都在 `src/contracts/`。
+- 只有 Engine 注册 `runtime.onConnect`，并根据 Port 名称、发送方和 frame 校验连接。
+- 后台由两条一次性消息唤醒：`ensureEngine` 和 `wakeBroker`。
+- `src/link/port-link.ts` 负责 Chromium Port 的 JSON/base64 帧，缓存监听器装好之前到达的消息，并报告关闭。
 
 ## 状态
 
 | 存储 | 内容 |
-|:-:|:-:|
-| IndexedDB `oshawott` | Durable 对话与运行状态；`WorkspaceDoc` 保存对话列表、默认模型和待删除文件意图；`TargetDoc` 保存对话的目标标签页 |
-| IndexedDB `oshawott-files` | 每个对话独立的目录树，元信息与字节分开，键为 `[conversationId, path]` |
-| IndexedDB `oshawott-credentials` | 模型 API key，仅 Engine 读写 |
+|:-:|---|
+| IndexedDB `oshawott` | Durable 对话；`WorkspaceDoc`（对话列表、默认模型、待删除的文件）；`TargetDoc`（每个对话的目标标签页） |
+| IndexedDB `oshawott-files` | 对话文件，见[文件与 Fetch](files.md) |
+| IndexedDB `oshawott-credentials` | API key，只有 Engine 读写 |
 | Panel `localStorage` | 主题 |
 
-Panel 通过 `self.follow` 直接观察 Durable state，不维护第二份对话副本。提供商列表及 key 是否配置是 Engine 内存状态，在 Panel 连接或修改 key 时刷新。
+Panel 用 `self.follow` 直接观察 Durable 状态，自己不另存一份对话。提供商列表只保存在 Engine 内存里，Panel 连接或修改 key 时刷新。
 
 ## 生命周期
 
-1. Panel 请求 `ensureEngine`，随后连接 Engine。
-2. Engine 获取 Web Lock `oshawott:engine`，打开存储并执行 `Harness.open()`、`resume()`，再接入 Panel。
-3. 页面工具需要标签页时，Engine 经 Broker 注入 Page，并等待其 Port 建立 route。
+1. Panel 发送 `ensureEngine`，然后连接 Engine。
+2. Engine 拿到 Web Lock `oshawott:engine` 后，打开存储和 Harness，执行 `resume()`，再接受 Panel 连接。
+3. 页面工具第一次用到某个标签页时，Engine 让 Broker 注入 Page，等页面的 Port 连上。
 
-Durable 通过 `onWake` 请求后续运行，Broker 用 alarm `oshawott:wake` 在后台回收后唤醒 Engine。运行中每 60 秒心跳，有定时任务时取更早时间，无任务时清除 alarm。
+Durable 通过 `onWake` 安排唤醒，Broker 用 alarm `oshawott:wake` 在后台被回收后叫醒 Engine。运行期间每 60 秒设一次心跳 alarm；有更早的定时任务就按定时任务来；没有运行也没有定时任务时清除 alarm。
 
-重启后从最后一次 Durable 提交继续。工具调用在执行前记录意图：只有 `replay: "safe"` 的调用会自动重跑，`unsafe` 调用中断后返回 `interrupted`，避免重复副作用。文件事务不与 Durable 提交原子绑定，详见[文件与 Fetch](files.md)。
+重启后从最后一次提交继续。工具执行前会先记录调用；中断后只有 `replay: "safe"` 的调用会重新执行，`unsafe` 的调用返回 `interrupted`，避免重复产生副作用。
 
-## 边界与关键约束
+## 边界
 
-- `Workspace`、`Chat` 只服务 Panel；`Browser`、`Page` 只服务 Engine。Panel 不能借 Engine route 访问浏览器或页面对象。
-- 页面脚本运行在 isolated world，按需注入。元素 `ref` 只保存在 Page 内存的 `WeakRef` 表中。
-- 页面工具规格只在 `src/tools/page-tools.ts` 声明；读操作标 `safe`，会修改页面的操作标 `unsafe`。
-- Code Mode 在独立 Worker 的 QuickJS WASM 中运行，通过受控工具访问当前对话文件，没有 shell。
-- 普通构建只静态声明模型 API 域名，其他站点由用户授权；开发构建额外声明 `<all_urls>` 供自动测试使用。
-- fetch 在请求前检查 host 权限，不携带浏览器 cookie，不跟随重定向。
-- API key 只进入 Engine。Panel 不插入模型或网页的原始 HTML，Markdown 由解析树创建 DOM，链接仅允许 `http(s):` 和 `mailto:`。
-- Panel 文件操作只能访问当前对话的 `/workspace`；不同对话的文件互相隔离。
+- `Workspace`、`Chat` 只对 Panel 开放；`Browser`、`Page` 只对 Engine 开放。
+- Page 运行在 isolated world。元素 `ref` 用 `WeakRef` 保存在页面内存里。
+- 页面工具规格只在 `src/tools/page-tools.ts` 定义：只读的标 `safe`，会改动页面的标 `unsafe`。
+- Code Mode 在 Worker 的 QuickJS WASM 中运行，只能通过工具访问当前对话的文件，没有 shell。
+- 普通构建只为模型 API 域名声明静态权限，其他站点需要用户授权；开发构建额外声明 `<all_urls>`，供自动测试使用。
+- API key 只会进入 Engine。Panel 从不插入原始 HTML：Markdown 先解析再构建 DOM，链接只允许 `http(s):` 和 `mailto:`。
