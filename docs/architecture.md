@@ -1,11 +1,13 @@
 # 架构
 
-Oshawatt 把扩展拆成四个角色。所有角色之间都用 chord 对象通信，所有需要持久化的状态都放在 Pi Durable 里。浏览器随时可能回收扩展的后台上下文，所以设计上不靠保活，而是“随时可能被回收，回来后接着做”。
+Oshawatt 把扩展拆成四个角色，角色之间用 chord 对象通信。对话、运行状态与配置由 Pi Durable 持久化；文件和凭据分别存入 Engine 管理的独立 IndexedDB。浏览器随时可能回收扩展的后台上下文，所以设计上不靠保活，而是“随时可能被回收，回来后接着做”。
+
+角色间通信见 [契约与连接](contracts.md)；各子系统见 [工具](tools.md)、[面板](panel.md)；安全边界见 [安全](security.md)；构建与开关见 [开发](development.md)。
 
 ## 角色与放置
 
 | 角色 | 职责 | Chromium | Firefox |
-|---|---|---|---|
+|:-:|---|---|---|
 | **Engine** | Durable Harness、模型调用、工具、全部持久状态 | offscreen 文档 `engine.html` | 事件页 `background.js` |
 | **Broker** | 浏览器能力：标签页、脚本注入、alarms | Service Worker `background.js` | 与 Engine 同一个事件页 |
 | **Panel** | 对话界面 | side panel | sidebar |
@@ -42,51 +44,22 @@ flowchart LR
 Port 的发起方和 chord 的调用方不一定是同一端：
 
 | 连接 | Port 发起方 | 谁调用谁 | 何时建立 |
-|---|---|---|---|
+|:-:|---|---|---|
 | 面板 ↔ Engine | 面板 | 面板调用 Engine 的 `Workspace`、`Chat`（Engine `accept` 面板为子连接） | 面板打开时；断开后指数退避重连 |
 | Broker ↔ Engine | Broker | Engine 调用 `Browser`（Engine 的 route 到 `BrokerHost`） | Engine 需要时发 `wakeBroker` 消息拉起；或 alarm 触发 |
 | 页面 ↔ Engine | 内容脚本 | Engine 调用 `Page`（Engine 的 route 到 `TabHost({tabId})`） | Engine 需要某个标签页时，由 Broker 注入 `page.js` |
 
-**Port 上的 Link**（`src/link/port-link.ts`）：
-
-- Chromium 的 Port 消息按 JSON 序列化，所以每帧用 base64 字符串传输。
-- Port 事件没有缓冲，所以 Port 一到达就包成 Link，监听器设置之前到的消息排队。
-- chord 独占 Link 的 `onClose`，所以 Link 另外暴露 `done`，供应用判断何时重连。
-
-**`onConnect` 按 Port 名分流，并校验发送方**：
-
-- `oshawatt:tab`：必须来自标签页的顶层 frame（`frameId === 0`）。
-- `oshawatt:panel`：必须来自本扩展的 `panel.html`。
-- `oshawatt:broker`：必须来自本扩展，且不能来自标签页。
-- 其他名字直接断开。
-
-两条一次性消息（`MESSAGES`）用来唤醒后台：`ensureEngine`（面板请求 Broker 确保 Engine 文档存在）和 `wakeBroker`（Chromium 上 Engine 请求 SW 连回来）。
-
-## 契约
-
-全部定义在 `src/contracts/`，chord 按契约检查参数和返回值。
-
-| 对象 | 所在宿主 | 调用方 | 内容 |
-|---|---|---|---|
-| `Workspace` | Engine | 面板 | state：`chats`、`defaultModel`、`providers`；方法：`createChat`、`deleteChat`、`setApiKey`、`clearApiKey`、`setDefaultModel` |
-| `Chat({id})` | Engine | 面板 | state：`view`（Durable 的 `ConversationView`）；方法：`send`、`abort`、`reset`、`configure`、`entries` |
-| `Browser` | Broker | Engine | `listTabs`、`activeTab`、`openTab`、`attach`、`armWake` |
-| `Page({tabId})` | Tab | Engine | `page_snapshot`、`page_click`、`page_type`、`page_scroll` |
-
-身份（`Principal`）由接收连接的一方在 `accept` / `connect` 时标记，调用方不能自报身份：
-
-- `Workspace`、`Chat` 只服务 `panel`，其他身份收到 `forbidden`。
-- `Browser`、`Page` 只服务 `engine`。
-- Engine 到 `BrokerHost`、`TabHost` 的 route 只放行 Engine 自己发起的 hold，所以面板不能借 Engine 访问标签页或浏览器 API（有单元测试覆盖）。
+Port 的命名与发送方校验、Link 的帧格式、唤醒用的两条一次性消息，见 [契约与连接](contracts.md)。
 
 ## 状态
 
-- **持久状态全部在 Durable 里**（IndexedDB 数据库 `oshawatt`），同一份存储、同一条提交线：
+- **对话与配置在 Durable 里**（IndexedDB 数据库 `oshawatt`），同一份存储、同一条提交线：
   - 对话记录和运行状态：Durable 自带。
-  - `WorkspaceDoc`（session 作用域）：对话列表、默认模型。
+  - `WorkspaceDoc`（session 作用域）：对话列表、默认模型、待完成的文件删除意图（Engine 启动时重试清理）。
   - `TargetDoc`（conversation 作用域）：这个对话的页面工具默认作用于哪个标签页，即最近一次发送时面板所在的标签页，或 `tab_open` 打开的标签页。
+- **文件**在独立数据库 `oshawatt-files`：每个对话一棵目录树，元信息与字节分开，键为 `[conversationId, path]`。文件事务不与 Durable 的对话提交原子绑定，见 [文件与 fetch](files.md)。
 - **凭据**在单独的 IndexedDB 数据库 `oshawatt-credentials`，实现 pi-ai 的 `CredentialStore`，只在 Engine 文档里读写。
-- **Broker、Page、Panel 不持有需要保留的状态**，被回收后直接重建即可。
+- **Broker、Page、Panel 不持有对话或工具的持久业务状态**，被回收后直接重建；面板仅在本地保存主题。
 - **面板看到的就是 Durable 的状态**：Engine 用 `self.follow(observeDoc / observeConversation)` 把它暴露成 chord state，先发一次全量，之后只发增量。没有第二份副本，也没有事件广播。流式中的回答、运行中的工具、失败原因都来自 `pi.live` 文档。
 - 只有提供商列表（含是否已配置 key）是 Engine 内存里的 chord state，在面板连上时和 `setApiKey` 后刷新。
 
@@ -106,51 +79,3 @@ Port 的发起方和 chord 的调用方不一定是同一端：
 - 被打断的工具调用：Durable 在 `execute()` 之前记录调用意图，重启后只有 `replay: "safe"` 的工具会重跑；有副作用的工具不会重复执行，模型会收到 `interrupted`。
 - 面板这边：Port 断开时 chord 引用变为 `loading` 并保留旧值；面板重连到新 Engine 后自动重新 hold，界面不需要特殊处理。
 - 内容脚本：Port 断开后只等待；Engine 下次需要时 Broker 会再次注入，重复注入只重连，不会在页面里起第二个宿主。
-
-## 工具
-
-- **页面工具只在 `src/tools/page-tools.ts` 声明一次**：描述、参数、返回值、`replay` 策略写在一起。`Page` 契约和 Durable 工具都从这里生成；读操作（快照、滚动）是 `safe`，有动作的（点击、输入）是 `unsafe`。
-- 每个页面工具都多一个可选参数 `tabId`。目标标签页的确定顺序：调用时指定的 `tabId` → 对话的 `TargetDoc` → 当前活动标签页。
-- 元素引用（`ref`）只存在内容脚本内存里的 `WeakRef` 表中，不写进页面 DOM，页面脚本读不到也伪造不了；下次快照或页面导航后失效。
-- 浏览器工具：`tabs_list`；`tab_open` 打开标签页并把它设为对话的目标标签页。
-- **Code Mode**：`RemoteCodemodeSandbox` 留在 Engine 里管理工具和调用记录，QuickJS 在专用 Worker 里运行，每次执行新建 Worker，结束即 terminate。不需要 SharedArrayBuffer，所以两端都能用；扩展 CSP 只额外放开 `wasm-unsafe-eval`。
-- **演示模型**（仅开发构建，`src/engine/demo.ts`）：基于 pi-ai 的 faux provider，收到问题后真实调用 `page_snapshot`，再根据快照生成 Markdown 回答。用于没有 API key 时试用界面，以及冒烟测试跑完整一轮。正式构建不包含它。
-
-## 面板
-
-面板（`src/panel/`）是 Engine 的 chord 客户端，只持有 `Workspace` 和当前打开的 `Chat`，界面全部由这两份状态推导，不监听任何消息。
-
-- **对话渲染**（`render.ts`）是增量的：已提交的条目不会再变，按条目 ID 只构建一次；工具结果条目会填进对应调用的卡片。每次变化只重建 `pi.live` 的部分：流式中的回答、运行中的工具、重试提示、上次运行的失败原因。
-- **Markdown**（`markdown.ts`）先解析成树，再由 `markdown-dom.ts` 逐个创建元素，从不拼接 HTML。链接只保留 `http(s):` 和 `mailto:`。流式输出时会补全被截断的行内代码或加粗标记，避免露出半截符号。
-- **当前标签页**（`tab.ts`）：面板在侧边栏里时取本窗口的活动标签页；面板作为普通标签页打开时，取最近使用过的其他标签页。同时检查该站点的 host 权限：未授权的 http(s) 站点显示「允许访问此站点」，点击后直接在点击事件里调用 `permissions.request`（Firefox 要求在用户手势内同步发起）。
-- **对话标题**：新对话在第一条消息发出时，由 Engine 在同一个提交里把消息的第一行（最多 48 个字符）写成标题。
-- **模型选择**：没有选过模型时，显示并使用第一个已连接服务的第一个模型；选择后同时写入默认模型和当前对话的配置。
-- 主题跟随系统，也可在设置里固定为浅色或深色（只存在面板的 `localStorage`）；界面文字按浏览器语言选择中文或英文（`i18n.ts`）。
-
-## 安全边界
-
-- 身份由连接接收方标记，各对象按身份拒绝访问（见[契约](#契约)）；`onConnect` 校验 Port 发送方。
-- API key 从面板经 `setApiKey` 写入，此后只在 Engine 文档里使用，面板只能看到“是否已配置”。key 以明文保存在扩展自己的 IndexedDB 中。
-- 面板不会把模型或网页返回的 HTML 插进界面：普通文本用文本节点，Markdown 由解析树逐个生成元素，链接只允许 `http(s):` 和 `mailto:`，并以 `noopener noreferrer` 在新标签页打开。
-- 内容脚本运行在隔离世界（isolated world），只在 Engine 需要时注入，不在清单里声明任何站点。
-- 权限：`tabs`、`scripting`、`activeTab`、`alarms`，Chromium 另加 `offscreen`、`sidePanel`。host 权限只包括五个模型 API 的域名；`<all_urls>` 只出现在 `optional_host_permissions` 中，由用户在面板里按站点授权。开发构建为方便自动测试会直接带上 `<all_urls>`。
-
-## 构建期区分
-
-- `__OSHAWATT_TARGET__`（`chromium` / `firefox`）在构建时固定，每个包只含自己浏览器的分支。
-- `__OSHAWATT_DEV__` 只在 `--dev` 构建中为真。测试钩子写在 `if (__OSHAWATT_DEV__)` 块里，正式构建会把整块删掉。
-- 清单由 `src/manifest.ts` 按目标生成。
-- chord 只从 `src/lib/chord.ts` 引入。当前 chord 1.5.0 的新版 API 在 `@earendil-works/chord/next`，上游后续版本会移到根入口，届时只改这一个文件。
-
-## 已知限制
-
-- **还没有用真实模型做端到端验证**：真实的流式请求、跨域请求、带页面工具的多轮对话都待验证。
-- **站点授权流程没有自动化测试**：自动测试无法点击浏览器的权限弹窗，冒烟测试用的是带全站权限的开发构建。正式构建的授权需要手动验证。
-- 没有 OAuth 登录，只支持 API key。
-- 面板不分页加载更早的历史，只显示 Durable view 窗口内的记录。
-- 移除对话只是从列表中去掉（并停止运行），Durable 里的记录仍保留，因为 pi-durable 1.5 没有删除对话的接口。
-- Chromium 上 offscreen 文档空闲时不会自动关闭。
-- 未验证：Firefox 侧边栏关闭后长时间运行的任务；chord 的心跳是否会让 SW 一直不休眠。
-- 没有 Linux 沙箱：Firefox 扩展页没有跨源隔离，计算类任务交给 Code Mode。
-- Firefox 附加组件 ID `oshawatt@example.org` 是占位值；AMO 要求的 `data_collection_permissions` 未填写。
-- 界面只支持中文和英文；还不支持图片输入和附件。
