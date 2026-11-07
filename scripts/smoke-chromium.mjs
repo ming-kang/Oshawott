@@ -2,8 +2,11 @@
 //   1. the panel reaches the Engine (the service worker creates the offscreen document; the panel's port lands there);
 //   2. page tools act on a tab (the Engine pulls the Broker, which injects the page bundle; the page connects back);
 //   3. a prompt runs: the dev build's demo model calls page_snapshot on the tab, and its answer streams into the panel;
-//   4. the offscreen document is closed (an eviction): the panel goes on with the next Engine by itself.
-import { launchExtension, testSite, until } from "./lib/smoke.mjs";
+//   4. fetch saves a file; Code Mode reads and writes it; the file sheet refreshes, downloads and removes files;
+//   5. the offscreen document is closed (an eviction): files stay and the panel goes on with the next Engine.
+import { mkdir, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { launchExtension, root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
 
 const steps = [];
 const step = (name, ok, detail = "") => {
@@ -11,9 +14,16 @@ const step = (name, ok, detail = "") => {
 	console.log(`${ok ? "✔" : "✖"} ${name}${detail ? ` — ${detail}` : ""}`);
 };
 
+const downloads = join(root, "dist", "smoke-downloads");
+await rm(downloads, { recursive: true, force: true });
+await mkdir(downloads, { recursive: true });
 const site = await testSite();
 const { browser, worker, id, evaluateIn } = await launchExtension();
+let downloadSession;
 try {
+	// Chromium resets a CDP client's download policy when it detaches; keep this session until the test ends.
+	downloadSession = await browser.target().createCDPSession();
+	await downloadSession.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads, eventsEnabled: true });
 	const tab = await browser.newPage();
 	await tab.goto(site.url);
 	const panel = await browser.newPage();
@@ -67,16 +77,95 @@ try {
 		`tool ${tool[0]?.join(": ")}; title “${title}”`,
 	);
 
-	// 4. Eviction: close the offscreen document from the service worker; the panel goes on with the next Engine.
+	// Open the sheet while the model is busy: it must refresh when fetch and Code Mode finish, not poll per delta.
+	await ask(`Download and measure ${site.url}items.json`);
+	await panel.click("#files-toggle");
+	await until("fetch and Code Mode finished", () => panel.evaluate(() => {
+		const fetch = document.querySelector('.tool[data-tool="fetch"]');
+		const code = document.querySelector('.tool[data-tool="codemode"]');
+		return document.body.dataset.busy === "false" && fetch?.dataset.status === "done" && code?.dataset.status === "done" || undefined;
+	}), 30_000);
+	const files = await until("the file sheet refreshed after the run", () => panel.$$eval(".file-row", (rows) => rows.length === 2 ? rows.map((r) => r.dataset.path) : undefined));
+	step("fetch → Code Mode file read/write → file sheet refresh", files.includes("items.json") && files.includes("items.json.stats.json"), files.join(", "));
+
+	await panel.click('.file-row[data-path="items.json"] .file-download');
+	const downloaded = await until("a real browser download", () => readFile(join(downloads, "items.json"), "utf8"));
+	step("download through Chat.readFile and a Blob URL", downloaded === TEST_DOWNLOAD, `${Buffer.byteLength(downloaded)} UTF-8 bytes`);
+	await panel.screenshot({ path: "dist/smoke-chromium-files.png" });
+	await panel.click("#files-back");
+
+	// 5. Eviction: close the offscreen document; the same chat and its files remain usable on a new Engine.
 	await evaluateIn(worker, "chrome.offscreen.closeDocument()");
 	await until("the old Engine gone", async () => !(await browser.targets()).some((t) => t.url().endsWith("/engine.html")) || undefined, 5_000);
 	await until("a new Engine", async () => (await browser.targets()).some((t) => t.url().endsWith("/engine.html")) || undefined);
+	await panel.click("#files-toggle");
+	await until("files on the new Engine", () => panel.$$eval(".file-row", (rows) => rows.length === 2 || undefined));
+	await panel.click('.file-row[data-path="items.json.stats.json"] .file-download');
+	const stats = JSON.parse(await until("the Code Mode file after eviction", () => readFile(join(downloads, "items.json.stats.json"), "utf8")));
+	step("files survive Engine eviction, including Code Mode writes", stats.characters === TEST_DOWNLOAD.length && stats.path === "/workspace/items.json", JSON.stringify(stats));
+
+	const remove = '.file-row[data-path="items.json.stats.json"] .file-remove';
+	await panel.click(remove);
+	await panel.click(remove);
+	const remaining = await until("the file removed", () => panel.$$eval(".file-row", (rows) => rows.length === 1 ? rows[0]?.dataset.path : undefined));
+	step("file removal refreshes the sheet", remaining === "items.json", remaining);
+	await panel.click("#files-back");
+	await until("the file sheet closed", async () => !(await panel.$("#files")) || undefined);
+	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawattTest.toolCards())) step(name, ok, detail);
 	await panel.click("#new-chat");
+	await until("the new chat ready", () => panel.$eval("#files-toggle", (button) => button.hidden || undefined));
 	await ask("And again?");
 	await until("the second answer", () => panel.$$eval(".msg.assistant .md :is(h2, h3)", (h) => h.length === 1 || undefined), 20_000);
+	await panel.click("#files-toggle");
+	const empty = await until("the new chat has no files", () => panel.$("#files .files-empty"));
+	step("new chats have independent file trees", Boolean(empty));
+	await panel.click("#files-back");
 	await panel.click("#chats-toggle");
 	const chats = await until("the chat list", () => panel.$$eval(".chat-item", (items) => (items.length ? items.length : undefined)));
 	step("after the offscreen document closed, the panel works on the next Engine", chats === 2, `${chats} chats kept`);
+	await panel.keyboard.press("Escape");
+
+	const fresh = async (text) => {
+		await panel.click("#new-chat");
+		await until("a fresh chat", () => panel.$eval("#files-toggle", (button) => button.hidden || undefined));
+		await ask(text);
+		await until("the fresh chat opened", () => panel.$("#files-toggle:not([hidden]):not([disabled])"));
+	};
+	await fresh(`Download ${site.url}large.json`);
+	await panel.click("#files-toggle");
+	await until("large text processed in Code Mode", () => panel.evaluate(() =>
+		document.body.dataset.busy === "false" && document.querySelector('.tool[data-tool="codemode"][data-status="done"]') && document.querySelector('.file-row[data-path="large.json.stats.json"]') || undefined,
+	), 30_000);
+	await panel.click('.file-row[data-path="large.json"] .file-download');
+	const large = await until("the large file downloaded", () => readFile(join(downloads, "large.json"), "utf8"));
+	await panel.click('.file-row[data-path="large.json.stats.json"] .file-download');
+	const measured = JSON.parse(await until("the large file statistics", () => readFile(join(downloads, "large.json.stats.json"), "utf8")));
+	step("Code Mode reads a >1M-character single line in chunks, without the preview limit", large === TEST_LARGE_DOWNLOAD && measured.characters === TEST_LARGE_DOWNLOAD.length && measured.firstLine.length <= 160, `${measured.characters} characters`);
+	await panel.click("#files-back");
+	await until("large file sheet closed", async () => !(await panel.$("#files")) || undefined);
+	const layouts = [];
+	for (const width of [280, 420]) {
+		await panel.setViewport({ width, height: 820 });
+		layouts.push(await panel.evaluate(() => ({
+			viewport: innerWidth, document: document.documentElement.scrollWidth,
+			files: document.querySelector("#files-toggle").getBoundingClientRect().right,
+		})));
+	}
+	step("long URLs and JSON do not push controls outside a narrow panel", layouts.every((size) => size.document <= size.viewport + 1 && size.files <= size.viewport + 1), JSON.stringify(layouts));
+
+	for (const [method, path] of [["GET", "redirect-302"], ["POST", "redirect-307"]]) {
+		await fresh(`${method === "POST" ? "POST" : "Download"} ${site.url}${path}`);
+		const error = await until(`${method} redirect refused`, () => panel.evaluate(() =>
+			document.body.dataset.busy === "false" && document.querySelector('.tool[data-tool="fetch"][data-status="error"] .tool-body')?.textContent || undefined,
+		), 20_000);
+		await panel.click("#files-toggle");
+		const empty = await until("no file from the redirect", () => panel.$("#files .files-empty"));
+		step(`${method} ${path} refused without saving`, error.includes("Redirects are not followed") && Boolean(empty));
+		await panel.click("#files-back");
+		await until("redirect file sheet closed", async () => !(await panel.$("#files")) || undefined);
+	}
+	const redirects = site.redirectHits();
+	step("redirect destinations receive no request", redirects.get302 === 1 && redirects.post307 === 1 && redirects.target === 0, JSON.stringify(redirects));
 } catch (error) {
 	// What the panel showed when a step gave up: dist/smoke-chromium-failure.png and its text.
 	const panel = (await browser.pages()).find((p) => p.url().endsWith("/panel.html"));
@@ -86,6 +175,7 @@ try {
 	}
 	throw error;
 } finally {
+	await downloadSession?.detach().catch(() => {});
 	await browser.close();
 	site.close();
 }

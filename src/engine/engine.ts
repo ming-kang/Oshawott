@@ -6,12 +6,16 @@
 // when a process is needed again. The Engine forwards `onWake` to the Broker, which arms an alarm; the alarm brings the
 // Engine back. Nothing else keeps it alive.
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
+import { FileError } from "@earendil-works/pi-durable/env";
 import { createRegistry, type Extension, Harness, type Storage, type Wake } from "@earendil-works/pi-durable";
 import { Browser } from "../contracts/browser.ts";
 import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/hosts.ts";
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
 import { WorkspaceDoc } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
+import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
+import { resumeFileDeletes } from "./files-lifecycle.ts";
+import { filesExtension } from "./files-tools.ts";
 import { browserExtension, using } from "./tools.ts";
 
 export interface EngineOptions {
@@ -22,6 +26,10 @@ export interface EngineOptions {
 	readonly broker: (context: Context) => Promise<Link>;
 	/** The link to the page host of `tabId`; the platform injects the page bundle when the tab has none. */
 	readonly tab: (tabId: number, context: Context) => Promise<Link>;
+	/** Where the chats' files are kept (IndexedDB in the browser). */
+	readonly files: FileBackend;
+	/** The network for the `fetch` tool; default the global `fetch`. */
+	readonly fetch?: typeof fetch;
 	/** More extensions, such as code mode with the platform's sandbox. */
 	readonly extensions?: readonly Extension[];
 	readonly now?: () => number;
@@ -64,6 +72,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 
 	const registry = createRegistry();
 	registry.install(browserExtension(host));
+	registry.install(filesExtension({ host, fetch: options.fetch ?? ((input, init) => fetch(input, init)) }));
 	for (const extension of options.extensions ?? []) registry.install(extension);
 
 	let closing = false;
@@ -76,11 +85,25 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		);
 	};
 
-	const harness = await Harness.open(
+	const harness: Harness = await Harness.open(
 		options.storage,
 		{
 			models: options.models,
 			registry,
+			// Authorize against the current workspace, not a task's possibly older phase snapshot. Old tool handles
+			// check again at each filesystem operation; a removed chat cannot write after its files are cleared.
+			env: async ({ conversationId, cwd }, ctx) => {
+				const requireActive = async (ctx: Context) => {
+					const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+					if (!workspace?.chats.some((chat) => chat.id === conversationId)) {
+						throw new FileError("permission_denied", `No chat ${conversationId}`);
+					}
+				};
+				await requireActive(ctx);
+				const files = new ChatFiles(options.files, conversationId, now, requireActive);
+				if (cwd !== undefined) files.cwd = resolvePath(WORKSPACE, cwd);
+				return files;
+			},
 			identity: { attribution: { name: "Oshawatt", url: "https://github.com/" } },
 			onWake: armWake,
 			onReport: (report) => onError(report),
@@ -92,8 +115,14 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		await tx.doc(WorkspaceDoc);
 	}, context);
 
+	await resumeFileDeletes(harness, options.files, context, onError);
 	await host.load(
-		[{ name: "oshawatt.panel", facet: panelFacet({ harness, models: options.models, credentials: options.credentials, now }) }],
+		[
+			{
+				name: "oshawatt.panel",
+				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, files: options.files, now }),
+			},
+		],
 		context,
 	);
 	harness.resume();
@@ -108,7 +137,11 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 			// Links first: holders go `loading` and re-hold on the next Engine, instead of seeing their objects fail.
 			closing = true;
 			await host.close(context);
-			await harness.close(context);
+			try {
+				await harness.close(context);
+			} finally {
+				options.files.close?.();
+			}
 		},
 	};
 }

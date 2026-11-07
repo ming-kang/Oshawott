@@ -1,8 +1,9 @@
 // A dev build's self-test, run by the panel when it is opened as `panel.html?selftest=<origin>` (Firefox's WebDriver
 // cannot reach extension pages, so the extension drives itself and reports to the test's server). The same steps as
 // scripts/smoke-chromium.mjs, through the panel's UI: Engine state in Settings, page tools on the test tab, and a turn
-// of the demo model (page_snapshot on the tab, then its answer).
+// of the demo model (page_snapshot on the tab, then its answer), and fetch → Code Mode → the chat's files.
 import { ext } from "../platform/webext.ts";
+import { testToolCards } from "./tool-selftest.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 
@@ -21,6 +22,23 @@ export async function selftest(origin: string) {
 	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, ...(detail ? { detail } : {}) });
 	const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
 	const click = (selector: string) => document.querySelector<HTMLElement>(selector)!.click();
+	const capture = (ext.tabs as unknown as { captureVisibleTab?(): Promise<string> }).captureVisibleTab;
+	const shot = () => capture?.call(ext.tabs).catch(() => undefined);
+	const download = async (path: string) => {
+		const original = URL.createObjectURL;
+		let blob: Blob | undefined;
+		try {
+			URL.createObjectURL = (object) => {
+				if (object instanceof Blob) blob = object;
+				return original.call(URL, object);
+			};
+			click(`.file-row[data-path="${path}"] .file-download`);
+			return await until(() => blob);
+		} finally {
+			URL.createObjectURL = original;
+		}
+	};
+	let filesScreenshot: string | undefined;
 	try {
 		click("#settings-toggle");
 		const providers = await until(() => {
@@ -71,11 +89,78 @@ export async function selftest(origin: string) {
 			heading === "Oshawatt test page" && tool?.dataset.status === "done",
 			`“${heading}”; tool ${tool?.dataset.status}: ${tool?.querySelector(".tool-meta")?.textContent ?? ""}`,
 		);
+
+		prompt.value = `Download and measure ${origin}/items.json`;
+		prompt.dispatchEvent(new Event("input"));
+		click("#send");
+		click("#files-toggle");
+		await until(() => document.body.dataset.busy === "false" && all('.tool[data-tool="fetch"][data-status="done"], .tool[data-tool="codemode"][data-status="done"]').length === 2, 30_000);
+		const paths = await until(() => {
+			const rows = all(".file-row");
+			return rows.length === 2 ? rows.map((row) => row.dataset.path) : undefined;
+		});
+		step("fetch → Code Mode file read/write → file sheet refresh", paths.includes("items.json") && paths.includes("items.json.stats.json"), paths.join(", "));
+
+		// Capture the Blob prepared by the button. The Node driver also verifies what Firefox saves to disk.
+		const file = await download("items.json");
+		const downloaded = await file.text();
+		step("download through Chat.readFile and an octet-stream Blob", file.type === "application/octet-stream" && JSON.parse(downloaded).items.join(",") === "1,2,3", `${file.size} bytes`);
+		filesScreenshot = await shot();
+
+		const first = await storedFile("/workspace/items.json");
+		const again = await storedFile("/workspace/items.json");
+		const stats = JSON.parse(new TextDecoder().decode(await storedFile("/workspace/items.json.stats.json")));
+		step("files are persisted when IndexedDB is reopened", new TextDecoder().decode(first) === downloaded && new TextDecoder().decode(again) === downloaded && stats.characters === downloaded.length, JSON.stringify(stats));
+		click('.file-row[data-path="items.json.stats.json"] .file-remove');
+		click('.file-row[data-path="items.json.stats.json"] .file-remove');
+		await until(() => all(".file-row").length === 1);
+		step("file removal refreshes the sheet and deletes the stored bytes", all(".file-row")[0]?.dataset.path === "items.json" && await storedFile("/workspace/items.json.stats.json") === undefined);
+		click("#files-back");
+		steps.push(...await testToolCards());
+
+		const fresh = async (text: string) => {
+			click("#new-chat");
+			prompt.value = text;
+			prompt.dispatchEvent(new Event("input"));
+			click("#send");
+			await until(() => { const button = document.querySelector<HTMLButtonElement>("#files-toggle"); return button && !button.hidden && !button.disabled; });
+		};
+		await fresh(`Download ${origin}/large.json`);
+		click("#files-toggle");
+		await until(() => document.body.dataset.busy === "false" && document.querySelector('.tool[data-tool="codemode"][data-status="done"]') && document.querySelector('.file-row[data-path="large.json.stats.json"]'), 30_000);
+		const large = await (await download("large.json")).text();
+		const measured = JSON.parse(await (await download("large.json.stats.json")).text());
+		step("Code Mode reads a >1M-character single line in chunks, without the preview limit", large.length > 1_000_000 && JSON.parse(large).ending === "complete" && measured.characters === large.length && measured.firstLine.length <= 160, `${measured.characters} characters`);
+		click("#files-back");
+		for (const [method, path] of [["GET", "redirect-302"], ["POST", "redirect-307"]]) {
+			await fresh(`${method === "POST" ? "POST" : "Download"} ${origin}/${path}`);
+			const error = await until(() => document.body.dataset.busy === "false" ? document.querySelector('.tool[data-tool="fetch"][data-status="error"] .tool-body')?.textContent : undefined, 20_000);
+			click("#files-toggle");
+			await until(() => document.querySelector("#files .files-empty"));
+			step(`${method} ${path} refused without saving`, error.includes("Redirects are not followed"));
+			click("#files-back");
+		}
 	} catch (error) {
 		step("self-test", false, String(error));
 	}
 	// What the panel looks like here, for a person to check (dist/smoke-firefox-panel.png).
-	const capture = (ext.tabs as unknown as { captureVisibleTab?(): Promise<string> }).captureVisibleTab;
-	const screenshot = await capture?.call(ext.tabs).catch(() => undefined);
-	await fetch(`${origin}/report`, { method: "POST", body: JSON.stringify({ steps, screenshot }) });
+	const screenshot = await shot();
+	await fetch(`${origin}/report`, { method: "POST", body: JSON.stringify({ steps, screenshot, filesScreenshot }) });
+}
+
+/** An independent connection each time: ensure the download really landed in IndexedDB, not just Engine memory. */
+async function storedFile(path: string): Promise<Uint8Array | undefined> {
+	const request = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+		req.onsuccess = () => resolve(req.result);
+		req.onerror = () => reject(req.error);
+	});
+	const db = await request(indexedDB.open("oshawatt-files"));
+	try {
+		const store = db.transaction("data", "readonly").objectStore("data");
+		const keys = await request(store.getAllKeys());
+		const key = keys.find((key) => Array.isArray(key) && key[1] === path);
+		return key === undefined ? undefined : await request(store.get(key)) as Uint8Array;
+	} finally {
+		db.close();
+	}
 }

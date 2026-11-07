@@ -3,13 +3,19 @@ import { defineDoc } from "@earendil-works/pi-durable";
 
 export type ModelRef = { provider: string; modelId: string };
 export type ChatSummary = { id: number; title: string; createdAt: number };
+export type WorkspaceState = {
+	chats: ChatSummary[];
+	defaultModel: ModelRef | null;
+	/** Optional for older v1 documents. An intent survives eviction between removing a chat and clearing its files. */
+	pendingFileDeletes?: number[];
+};
 
-/** The workspace: the chats in creation order and the model new chats start with. */
-export const WorkspaceDoc = defineDoc<{ chats: ChatSummary[]; defaultModel: ModelRef | null }>({
+/** The workspace: the chats, default model, and recoverable file deletion intents. */
+export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	kind: "oshawatt.workspace",
 	version: 1,
 	scope: "session",
-	initial: () => ({ chats: [], defaultModel: null }),
+	initial: () => ({ chats: [], defaultModel: null, pendingFileDeletes: [] }),
 	checkpointWhen: () => true,
 });
 

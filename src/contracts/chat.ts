@@ -4,10 +4,15 @@
 // documents, `pi.live` streaming included), rendered by `src/panel/render.ts`; `entries` pages in what lies before the
 // window (the panel does not page yet). Nothing is mirrored into a second store, and nothing is broadcast per event.
 import type { ConversationView } from "@earendil-works/pi-durable";
-import { arr, bool, int, method, num, obj, oneOf, opt, remote, str, typed, unknown } from "../lib/chord.ts";
+import { arr, bool, bytes, int, method, num, obj, oneOf, opt, remote, str, typed, unknown } from "../lib/chord.ts";
 import { EngineHost } from "./hosts.ts";
 
 const ModelRef = obj({ provider: str(), modelId: str() });
+
+/** The largest file a chat keeps (`src/engine/files.ts`), and so the largest a panel downloads. */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+export const ChatFile = obj({ path: str(), size: int(), mtimeMs: num() });
 
 export const ChatSummary = obj({ id: int(), title: str(), createdAt: num() });
 
@@ -32,7 +37,7 @@ export const Workspace = remote("oshawatt.workspace", {
 			methods: {
 				/** `title` empty or absent: the chat takes its first message's beginning when it is sent. */
 				createChat: method(obj({ title: opt(str()) }), int()),
-				/** Removes the chat from the list (stopping its run); its record stays in storage. */
+				/** Removes the chat from the list (stopping its run) and deletes its files; its record stays in storage. */
 				deleteChat: method(obj({ id: int() })),
 				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
 				clearApiKey: method(obj({ provider: str() })),
@@ -71,6 +76,10 @@ export const Chat = remote("oshawatt.chat", {
 				configure: method(ModelRef),
 				/** Older entries than the view's window, for `ConversationTranscript`. */
 				entries: method(obj({ query: unknown(), limit: int({ min: 1, max: 200 }) }), unknown()),
+				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */
+				files: method(undefined, arr(ChatFile)),
+				readFile: method(obj({ path: str() }), bytes({ max: MAX_FILE_BYTES })),
+				removeFile: method(obj({ path: str() })),
 			},
 		},
 	},

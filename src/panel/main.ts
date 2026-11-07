@@ -11,10 +11,12 @@ import { BACKGROUND_CONTEXT, createHost, type Reference } from "../lib/chord.ts"
 import { portLink } from "../link/port-link.ts";
 import "../platform/target.ts";
 import { ext } from "../platform/webext.ts";
+import { FilesSheet } from "./files.ts";
 import { LANG, t } from "./i18n.ts";
 import { EMPTY_VIEW, Transcript } from "./render.ts";
 import { selftest } from "./selftest.ts";
 import { TabTracker, type TargetTab } from "./tab.ts";
+import { testToolCards } from "./tool-selftest.ts";
 import { h, icon, logo, toast } from "./ui.ts";
 
 type ModelRef = { provider: string; modelId: string };
@@ -51,6 +53,7 @@ const $ = {
 	chats: iconButton("chats-toggle", "menu", t("chat.list")),
 	title: h("button", { class: "title-btn", id: "title", type: "button" }),
 	newChat: iconButton("new-chat", "compose", t("chat.new")),
+	files: iconButton("files-toggle", "folder", t("files.title")),
 	settings: iconButton("settings-toggle", "sliders", t("settings.title")),
 	banner: h("div", { class: "banner", role: "status", hidden: true }, h("span", { class: "spinner" }), t("reconnecting")),
 	scroller: h("div", { class: "scroller", id: "scroller" }),
@@ -62,7 +65,7 @@ const $ = {
 };
 
 document.body.append(
-	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.settings),
+	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.files, $.settings),
 	h("main", { class: "main" }, $.banner, $.scroller, $.jump),
 	h(
 		"footer",
@@ -135,6 +138,7 @@ function renderHeader() {
 	const summary = chats().find((c) => c.id === chatId);
 	$.title.replaceChildren(h("span", null, summary?.title || t("chat.untitled")), icon("chevron", 14));
 	$.title.title = summary?.title || t("chat.untitled");
+	$.files.hidden = chatId === undefined;
 }
 
 const nearBottom = () => $.scroller.scrollHeight - $.scroller.scrollTop - $.scroller.clientHeight < 72;
@@ -150,7 +154,10 @@ $.jump.addEventListener("click", () => toBottom(true));
 function renderView() {
 	const stick = nearBottom();
 	const height = $.scroller.scrollHeight;
+	const wasBusy = transcript.busy;
 	transcript.update(view(), { ready: connected().length > 0 });
+	$.files.disabled = !chat;
+	if (wasBusy && !transcript.busy) void filesSheet?.refresh();
 	if (stick) toBottom();
 	else if ($.scroller.scrollHeight > height) $.jump.hidden = false;
 	renderComposer();
@@ -210,6 +217,7 @@ function grant() {
 
 async function open(id: number | undefined) {
 	if (id === chatId && loaded && (id === undefined || chat)) return;
+	closeOverlay?.();
 	chat?.release();
 	chat = undefined;
 	chatId = id;
@@ -302,12 +310,14 @@ $.newChat.addEventListener("click", () => {
 });
 $.chats.addEventListener("click", () => openChats());
 $.title.addEventListener("click", () => openChats());
+$.files.addEventListener("click", () => openFiles());
 $.settings.addEventListener("click", () => openSettings());
 $.model.addEventListener("click", () => openModelMenu());
 
-// ── Overlays: chats drawer, settings sheet ───────────────────────────────────────────────────────────────────────────
+// ── Overlays: chats drawer, files and settings sheets ────────────────────────────────────────────────────────────────
 
 let closeOverlay: (() => void) | undefined;
+let filesSheet: FilesSheet | undefined;
 let renderChatList: (() => void) | undefined;
 let renderSettings: (() => void) | undefined;
 
@@ -377,12 +387,18 @@ function openChats() {
 
 function chatItem(summary: ChatSummary) {
 	const remove = h("button", { class: "icon-btn small remove", type: "button", title: t("chat.delete"), "aria-label": t("chat.delete") }, icon("trash", 14));
-	remove.addEventListener("click", (event) => {
+	remove.addEventListener("click", async (event) => {
 		event.stopPropagation();
 		if (remove.dataset.confirm !== undefined) {
-			void workspace?.deleteChat({ id: summary.id }, context).then(() => {
-				if (summary.id === chatId) void open(undefined);
-			});
+			remove.disabled = true;
+			try {
+				await workspace?.deleteChat({ id: summary.id }, context);
+				if (summary.id === chatId) await open(undefined);
+			} catch (error) {
+				toast(String((error as Error)?.message ?? error), "error");
+			} finally {
+				remove.disabled = false;
+			}
 			return;
 		}
 		remove.dataset.confirm = "";
@@ -413,6 +429,18 @@ function chatItem(summary: ChatSummary) {
 		h("time", { datetime: new Date(summary.createdAt).toISOString() }, when(summary.createdAt)),
 		remove,
 	);
+}
+
+function openFiles() {
+	if (!chat) return;
+	const sheet = new FilesSheet(chat, () => close());
+	const close = overlay("sheet", sheet.element, () => {
+		sheet.close();
+		filesSheet = undefined;
+		$.files.focus();
+	});
+	filesSheet = sheet;
+	void sheet.refresh();
 }
 
 const MARKS: Record<string, string> = {
@@ -662,9 +690,15 @@ async function main() {
 	const held = await host.get(Workspace, {}, context);
 	if (held.variant !== "owner") throw new Error("The Engine refused the panel.");
 	workspace = held;
+	let knownChats = new Set(chats().map((chat) => chat.id));
 	for (const member of [held.chats, held.providers, held.defaultModel]) {
 		const watch = await member.watch(context);
 		watch.start(async () => {
+			if (member === held.chats) {
+				const current = new Set(chats().map((chat) => chat.id));
+				if (chatId !== undefined && knownChats.has(chatId) && !current.has(chatId)) await open(undefined);
+				knownChats = current;
+			}
 			renderHeader();
 			renderChatList?.();
 			renderSettings?.();
@@ -679,6 +713,7 @@ async function main() {
 	$.prompt.focus();
 
 	if (__OSHAWATT_DEV__) {
+		(globalThis as { __oshawattTest?: unknown }).__oshawattTest = { toolCards: testToolCards };
 		const origin = new URLSearchParams(location.search).get("selftest");
 		if (origin) void selftest(origin);
 	}

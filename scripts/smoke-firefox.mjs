@@ -1,13 +1,13 @@
 // Loads dist/firefox (a --dev build) into Firefox as a temporary add-on (WebDriver BiDi) and checks what the Chromium
 // smoke test checks, where the Broker and the Engine share the event page:
 //   1. the panel reaches the Engine over a Port; 2. page tools act on a tab; 3. a prompt's run (the demo model reading
-//   the tab) streams into the panel.
+//   the tab) streams into the panel; 4. fetch and Code Mode write files that the panel downloads and removes.
 // The steps run inside the extension (src/panel/selftest.ts) and are reported here.
 // OSHAWATT_FIREFOX names the browser; by default the installed Firefox.
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
-import { root, testSite } from "./lib/smoke.mjs";
+import { root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
 
 const extension = join(root, "dist", "firefox");
 const executablePath = process.env.OSHAWATT_FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe";
@@ -32,7 +32,19 @@ const step = (name, ok, detail = "") => {
 	console.log(`${ok ? "✔" : "✖"} ${name}${detail ? ` — ${detail}` : ""}`);
 };
 
-const browser = await puppeteer.launch({ browser: "firefox", executablePath, headless: true });
+const downloads = join(root, "dist", "smoke-firefox-downloads");
+await rm(downloads, { recursive: true, force: true });
+await mkdir(downloads, { recursive: true });
+const browser = await puppeteer.launch({
+	browser: "firefox", executablePath, headless: true,
+	extraPrefsFirefox: {
+		"browser.download.folderList": 2,
+		"browser.download.dir": downloads,
+		"browser.helperApps.neverAsk.saveToDisk": "application/octet-stream",
+		"browser.download.alwaysOpenPanel": false,
+	},
+});
+let deadline;
 try {
 	// The extension drives itself: installed next to this tab, a dev build opens its panel in self-test mode, which
 	// runs the steps and posts them to /report (WebDriver BiDi cannot reach extension pages in Firefox).
@@ -41,14 +53,25 @@ try {
 	await browser.installExtension(extension);
 	const results = await Promise.race([
 		report,
-		new Promise((_, reject) => setTimeout(() => reject(new Error("no self-test report within 60 s")), 60_000)),
+		new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("no self-test report within 60 s")), 60_000); }),
 	]);
 	for (const { name, ok, detail } of results.steps) step(name, ok, detail);
-	if (results.screenshot) {
-		await writeFile(join(root, "dist", "smoke-firefox-panel.png"), Buffer.from(results.screenshot.split(",")[1], "base64"));
-		console.log("  panel screenshot: dist/smoke-firefox-panel.png");
+	for (const [key, name] of [["screenshot", "panel"], ["filesScreenshot", "files"]]) {
+		if (!results[key]) continue;
+		await writeFile(join(root, "dist", `smoke-firefox-${name}.png`), Buffer.from(results[key].split(",")[1], "base64"));
+		console.log(`  screenshot: dist/smoke-firefox-${name}.png`);
+	}
+	if (!steps.some((s) => !s.ok)) {
+		const downloaded = await until("a real Firefox download", () => readFile(join(downloads, "items.json"), "utf8"));
+		step("Firefox saves the downloaded file", downloaded === TEST_DOWNLOAD, `${Buffer.byteLength(downloaded)} UTF-8 bytes`);
+		const large = await until("a large Firefox download", () => readFile(join(downloads, "large.json"), "utf8"));
+		const measured = JSON.parse(await until("the large file statistics", () => readFile(join(downloads, "large.json.stats.json"), "utf8")));
+		step("Firefox saves the complete large file and its Code Mode result", large === TEST_LARGE_DOWNLOAD && measured.characters === TEST_LARGE_DOWNLOAD.length, `${measured.characters} characters`);
+		const redirects = site.redirectHits();
+		step("redirect destinations receive no request", redirects.get302 === 1 && redirects.post307 === 1 && redirects.target === 0, JSON.stringify(redirects));
 	}
 } finally {
+	clearTimeout(deadline);
 	await browser.close();
 	site.close();
 }

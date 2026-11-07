@@ -4,6 +4,7 @@
 import { Browser } from "../contracts/browser.ts";
 import { BrokerHost, type Principal } from "../contracts/hosts.ts";
 import { type Context, createHost, defineFacet, type Host } from "../lib/chord.ts";
+import { sitePattern } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
 export const WAKE_ALARM = "oshawatt:wake";
@@ -66,6 +67,10 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 								attach: async ({ tabId }) => {
 									await injectPage(tabId);
 									return null;
+								},
+								hasAccess: async ({ url }) => {
+									const pattern = sitePattern(url);
+									return pattern !== undefined && (await ext.permissions.contains({ origins: [pattern] }));
 								},
 								armWake: async (wake) => {
 									await armWake(wake);

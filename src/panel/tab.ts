@@ -2,6 +2,7 @@
 // panel opened as a page), the user's most recently used other tab. With it, whether page tools may run there:
 // `granted` (the site's host permission is held), `grantable` (an http(s) site; the user can allow it), or `unavailable`
 // (browser and extension pages, where no extension may inject).
+import { sitePattern } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
 export type Access = "granted" | "grantable" | "unavailable";
@@ -27,13 +28,7 @@ async function pick(): Promise<TabInfo | undefined> {
 
 async function describe(tab: TabInfo): Promise<TargetTab> {
 	const url = tab.url ?? "";
-	let pattern: string | undefined;
-	try {
-		const parsed = new URL(url);
-		if (parsed.protocol === "http:" || parsed.protocol === "https:") pattern = `${parsed.origin}/*`;
-	} catch {
-		pattern = undefined;
-	}
+	const pattern = sitePattern(url);
 	const access: Access = !pattern ? "unavailable" : (await ext.permissions.contains({ origins: [pattern] })) ? "granted" : "grantable";
 	return {
 		id: tab.id!,

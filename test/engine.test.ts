@@ -10,6 +10,7 @@ import { Chat, Workspace } from "../src/contracts/chat.ts";
 import { BrokerHost, type Principal, TabHost } from "../src/contracts/hosts.ts";
 import { Page } from "../src/contracts/page.ts";
 import { startEngine } from "../src/engine/engine.ts";
+import { MemoryFileBackend } from "../src/engine/files.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../src/lib/chord.ts";
 import { portLink } from "../src/link/port-link.ts";
 import { fakePortPair } from "./fake-port.ts";
@@ -48,6 +49,7 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 								activeTab: async () => tab,
 								openTab: async () => tab,
 								attach: async () => null,
+								hasAccess: async () => false,
 								armWake: async (wake) => {
 									wakes.push(wake);
 									return null;
@@ -114,6 +116,7 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 			storage: new MemoryStorage(),
 			models,
 			credentials: new InMemoryCredentialStore(),
+			files: new MemoryFileBackend(),
 			broker: async () => linkTo(broker),
 			tab: async (tabId) => {
 				tabResolves.push(tabId);

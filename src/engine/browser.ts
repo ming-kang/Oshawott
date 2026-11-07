@@ -21,6 +21,8 @@ import type { PageToolName } from "../tools/page-tools.ts";
 import { workerCodemodeSandbox } from "./codemode.ts";
 import { IndexedDbCredentialStore } from "./credentials.ts";
 import { type Engine, startEngine } from "./engine.ts";
+import { ChatFiles } from "./files.ts";
+import { IndexedDbFileBackend } from "./files-idb.ts";
 import { using } from "./tools.ts";
 
 const ATTACH_TIMEOUT_MS = 10_000;
@@ -118,11 +120,13 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	if (__OSHAWATT_DEV__) models.setProvider((await import("./demo.ts")).demoProvider());
 
 	const sandbox = workerCodemodeSandbox(new URL("codemode-worker.js", location.href));
+	const files = await IndexedDbFileBackend.open();
 	engine = await startEngine(
 		{
 			storage: await IndexedDbStorage.open("oshawatt"),
 			models,
 			credentials,
+			files,
 			broker: (ctx) => options.broker(ctx, brokers),
 			tab: async (tabId, ctx) => {
 				const ready = tabs.take(tabId);
@@ -138,11 +142,12 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	for (const panel of panels.splice(0)) engine.acceptPanel(panel.link, panel.instance);
 
 	// A handle for the document's devtools (and the smoke tests): `await oshawatt.page(tabId, "page_snapshot", {})`,
-	// `await oshawatt.codemode("return 1 + 1")`.
+	// `await oshawatt.codemode("return 1 + 1")`, `await oshawatt.files(chatId).listDir(".", BACKGROUND_CONTEXT)`.
 	const started = engine;
 	(globalThis as { oshawatt?: unknown }).oshawatt = {
 		engine: started,
 		codemode: (code: string) => sandbox.execute(code),
+		files: (chat: number) => new ChatFiles(files, chat),
 		page: (tabId: number, tool: PageToolName, args: Record<string, unknown>) =>
 			using(started.host, Page, { tabId }, context, (page) =>
 				(page[tool] as unknown as (args: unknown, context: Context) => Promise<unknown>).call(page, args, context),

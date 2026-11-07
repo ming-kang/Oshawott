@@ -1,6 +1,7 @@
 // A scripted model for `--dev` builds: the panel can be tried, and the smoke tests can run a whole turn, without a key.
 // Asked anything, it reads the user's tab with `page_snapshot`, then answers from what it read, streamed at a readable
-// pace, in the Markdown the panel renders (a heading, a list, a table, code).
+// pace, in the Markdown the panel renders (a heading, a list, a table, code). Given a web address, it downloads it into
+// the chat's files with `fetch`, reads the full text in code mode (`tools.read_text`), writes statistics, and answers.
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import type { FauxResponseFactory, Message } from "@earendil-works/pi-ai";
 
@@ -70,6 +71,60 @@ function answer(snapshot: Snapshot | undefined, error: string | undefined, zh: b
 	).join("\n");
 }
 
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'）)\]]+/i;
+
+/** The file a download lands in: the address's last path segment, or `page.html`. */
+function fileFor(url: string): string {
+	const name = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "";
+	return /^[\w.-]{1,64}$/.test(name) && name.includes(".") ? name : "page.html";
+}
+
+/** A code mode script that reads the download, measures it, and writes a JSON summary beside it. */
+function measureScript(path: string): string {
+	const summary = `${path}.stats.json`;
+	return [
+		`const chunks = [];`,
+		`for (let offset = 0; ; ) {`,
+		`  const part = await tools.read_text({ path: ${JSON.stringify(path)}, offset });`,
+		`  chunks.push(part.text);`,
+		`  if (part.eof) break;`,
+		`  offset = part.nextOffset;`,
+		`}`,
+		`const text = chunks.join("");`,
+		String.raw`const lines = text.split("\n");`,
+		`const measured = {`,
+		`  path: ${JSON.stringify(path)},`,
+		`  characters: text.length,`,
+		`  lines: lines.length,`,
+		String.raw`  words: text.split(/\s+/).filter(Boolean).length,`,
+		`  firstLine: (lines.find((line) => line.trim()) ?? "").slice(0, 160),`,
+		`};`,
+		`await tools.write({ path: ${JSON.stringify(summary)}, content: JSON.stringify(measured, null, 2) });`,
+		`return { ...measured, summary: ${JSON.stringify(summary)} };`,
+	].join("\n");
+}
+
+function fetchFailed(error: string, zh: boolean) {
+	const denied = error.includes("No access to");
+	if (zh) {
+		return denied
+			? "我还不能访问这个网站。点上面卡片里的 **允许访问此站点**，然后再发一次。"
+			: `下载失败：${error}`;
+	}
+	return denied
+		? "I can't reach this site yet. Use **Allow this site** on the card above, then send again."
+		: `The download failed: ${error}`;
+}
+
+function measured(text: string, zh: boolean) {
+	const block = ["```", text.trim(), "```"];
+	return (
+		zh
+			? ["## 已下载", "", "文件在这个对话的文件里（右上角的文件按钮），代码模式量出来的结果：", "", ...block, "", "> 这是开发版的演示模型。"]
+			: ["## Downloaded", "", "The file is in this chat's files (the Files button above). What the code mode script measured:", "", ...block, "", "> This is the dev build's demo model."]
+	).join("\n");
+}
+
 /** Registers the demo provider on `models`; it answers every request, as many as are made. */
 export function demoProvider() {
 	const handle = fauxProvider({
@@ -81,7 +136,36 @@ export function demoProvider() {
 		handle.appendResponses([respond]);
 		const last = lastOf(context.messages);
 		const asked = [...context.messages].reverse().find((message) => message.role === "user");
-		const zh = CJK.test(asked ? JSON.stringify(asked.content) : "");
+		const requested = asked ? typeof asked.content === "string" ? asked.content : asked.content.map((block) => block.type === "text" ? block.text : "").join(" ") : "";
+		const zh = CJK.test(requested);
+		const url = URL_IN_TEXT.exec(requested)?.[0]?.replace(/[.,，。;；!?！？]+$/, "");
+		const method = /^\s*POST\s+https?:\/\//i.test(requested) ? "POST" : "GET";
+		if (last?.role === "toolResult" && last.toolName === "fetch") {
+			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			if (last.isError) return fauxAssistantMessage(fetchFailed(text, zh));
+			const saved = /Saved the body to (\S+)\.$/m.exec(text)?.[1] ?? "page.html";
+			return fauxAssistantMessage(
+				[
+					fauxText(zh ? "下载好了，我用代码模式读一下这个文件。" : "Downloaded. Let me measure the file in code mode."),
+					fauxToolCall("codemode", { code: measureScript(saved) }),
+				],
+				{ stopReason: "toolUse" },
+			);
+		}
+		if (last?.role === "toolResult" && last.toolName === "codemode") {
+			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			return fauxAssistantMessage(last.isError ? fetchFailed(text, zh) : measured(text, zh));
+		}
+		if (last?.role === "user" && url) {
+			return fauxAssistantMessage(
+				[
+					fauxThinking(zh ? "用户给了一个网址。先下载到对话的文件里，再用代码模式处理。" : "The user gave an address. I download it into the chat's files, then process it in code mode."),
+					fauxText(zh ? "我先把它下载下来。" : "Let me download it first."),
+					fauxToolCall("fetch", { url, method, saveTo: fileFor(url) }),
+				],
+				{ stopReason: "toolUse" },
+			);
+		}
 		if (last?.role === "toolResult") {
 			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 			let snapshot: Snapshot | undefined;

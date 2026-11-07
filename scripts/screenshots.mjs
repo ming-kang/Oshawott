@@ -30,6 +30,8 @@ try {
 	const shoot = async (name, scheme) => {
 		await panel.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
 		await new Promise((r) => setTimeout(r, 350));
+		const width = await panel.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+		if (width.document > width.viewport + 1) throw new Error(`${name}: horizontal layout overflow (${width.document} > ${width.viewport})`);
 		const path = join(out, `${name}-${scheme}.png`);
 		await panel.screenshot({ path });
 		shots.push(path);
@@ -73,6 +75,18 @@ try {
 	await until("the providers", () => panel.$('.provider[data-provider="anthropic"] .provider-head'));
 	await panel.click('.provider[data-provider="anthropic"] .provider-head');
 	await both("settings");
+	await panel.click("#settings-back");
+	await until("the settings closed", async () => !(await panel.$("#settings")) || undefined);
+	await panel.click("#new-chat");
+	await panel.type("#prompt", zh ? `下载并统计 ${site.url}items.json` : `Download and measure ${site.url}items.json`);
+	await panel.click("#send");
+	await until("the files processed", () => panel.evaluate(() =>
+		document.body.dataset.busy === "false" && document.querySelector('.tool[data-tool="fetch"][data-status="done"]') && document.querySelector('.tool[data-tool="codemode"][data-status="done"]') || undefined,
+	), 30_000);
+	await both("file-chat");
+	await panel.click("#files-toggle");
+	await until("the file sheet", () => panel.$$eval(".file-row", (rows) => rows.length === 2 || undefined));
+	await both("files");
 } finally {
 	await browser.close();
 	site.close();

@@ -9,6 +9,7 @@ import { Browser } from "../src/contracts/browser.ts";
 import { Chat, Workspace } from "../src/contracts/chat.ts";
 import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
 import { type Engine, startEngine } from "../src/engine/engine.ts";
+import { MemoryFileBackend } from "../src/engine/files.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../src/lib/chord.ts";
 import { portLink } from "../src/link/port-link.ts";
 import { fakePortPair } from "./fake-port.ts";
@@ -42,6 +43,7 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 								throw new Error("unused");
 							},
 							attach: async () => null,
+							hasAccess: async () => false,
 							armWake: async () => null,
 						},
 					}));
@@ -78,12 +80,14 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 		},
 	});
 
+	const files = new MemoryFileBackend();
 	const open = () =>
 		startEngine(
 			{
 				storage,
 				models,
 				credentials: new InMemoryCredentialStore(),
+				files,
 				broker: async () => {
 					const [engineEnd, brokerEnd] = fakePortPair();
 					broker.accept(portLink(brokerEnd), { principal: { kind: "engine" } }, context);

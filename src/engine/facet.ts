@@ -4,15 +4,19 @@
 // is Durable's committed state, sent once and then as deltas: no event bus, no snapshot polling, no second copy.
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationId, ConversationView, Harness } from "@earendil-works/pi-durable";
+import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { Chat, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { ChordError, type Context, defineFacet, defineState, arr, bool, obj, str } from "../lib/chord.ts";
 import { TargetDoc, WorkspaceDoc } from "./docs.ts";
+import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
+import { deleteChatFiles } from "./files-lifecycle.ts";
 
 export interface EngineServices {
 	readonly harness: Harness;
 	readonly models: MutableModels;
 	readonly credentials: CredentialStore;
+	readonly files: FileBackend;
 	/** The Engine's clock (tests pass a fixed one). */
 	readonly now: () => number;
 }
@@ -84,11 +88,7 @@ export function panelFacet(services: EngineServices) {
 						return conversation.id;
 					},
 					deleteChat: async ({ id }, ctx) => {
-						await (await harness.conversation(id as ConversationId, ctx))?.abort(ctx);
-						await harness.commit(async (tx) => {
-							const doc = await tx.doc(WorkspaceDoc);
-							doc.chats = doc.chats.filter((chat) => chat.id !== id);
-						}, ctx);
+						await deleteChatFiles(harness, services.files, id, ctx);
 						return null;
 					},
 					setApiKey: async ({ provider, key }, ctx) => {
@@ -114,12 +114,22 @@ export function panelFacet(services: EngineServices) {
 		host.serve(Chat, ({ id }, principal, self) => {
 			if (principal.kind !== "panel") forbidden();
 			const conversationId = id as ConversationId;
+			const gone = () => new ChordError({ code: "gone", message: `No chat ${id}` });
 			const conversation = async (ctx: Context) => {
+				const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+				if (!workspace?.chats.some((chat) => chat.id === id)) throw gone();
 				const found = await harness.conversation(conversationId, ctx);
 				if (found === undefined) throw new ChordError({ code: "gone", message: `No chat ${id}` });
 				return found;
 			};
 			const view = self.follow((observer, ctx) => harness.observeConversation(conversationId, observer, ctx));
+			const files = new ChatFiles(services.files, id, services.now);
+			/** A path the panel names, below `/workspace`; nothing outside it. */
+			const inWorkspace = (path: string) => {
+				const resolved = resolvePath(WORKSPACE, path);
+				if (!resolved.startsWith(`${WORKSPACE}/`)) throw new ChordError({ code: "forbidden", message: `Not a file of this chat: ${path}` });
+				return resolved;
+			};
 			return {
 				variant: "owner",
 				members: {
@@ -127,11 +137,12 @@ export function panelFacet(services: EngineServices) {
 					send: async ({ text, requestId, tabId, whenBusy }, ctx) => {
 						const target = await conversation(ctx);
 						await target.commit(async (tx) => {
+							// Check on the admission line too: another panel may remove this chat after the lookup above.
+							const summary = (await tx.doc(WorkspaceDoc)).chats.find((chat) => chat.id === id);
+							if (!summary) throw gone();
 							await target.submit(tx, { type: "input", content: text, requestId, ...(whenBusy ? { whenBusy } : {}) });
 							if (tabId !== undefined) (await tx.doc(TargetDoc, target.id)).tabId = tabId;
-							// An untitled chat is named after its first message.
-							const summary = (await tx.doc(WorkspaceDoc)).chats.find((chat) => chat.id === id);
-							if (summary && !summary.title) summary.title = titleOf(text);
+							if (!summary.title) summary.title = titleOf(text);
 						}, ctx);
 						return null;
 					},
@@ -150,6 +161,19 @@ export function panelFacet(services: EngineServices) {
 					entries: async ({ query, limit }, ctx) => {
 						const page = await (await conversation(ctx)).entries(query as never, limit, undefined, ctx);
 						return page as never;
+					},
+					files: async (ctx) => {
+						await conversation(ctx);
+						return [...getOrThrow(await files.workspaceFiles(ctx))];
+					},
+					readFile: async ({ path }, ctx) => {
+						await conversation(ctx);
+						return getOrThrow(await files.readBinaryFile(inWorkspace(path), ctx));
+					},
+					removeFile: async ({ path }, ctx) => {
+						await conversation(ctx);
+						getOrThrow(await files.remove(inWorkspace(path), undefined, ctx));
+						return null;
 					},
 				},
 			};

@@ -3,6 +3,9 @@
 import { arr, bool, int, method, nul, num, obj, opt, remote, str, union } from "../lib/chord.ts";
 import { BrokerHost } from "./hosts.ts";
 
+/** The file tool's permission failure marker, also recognized by the panel's fetch card. */
+export const NO_ACCESS = "No access to";
+
 export const TabSchema = obj({
 	tabId: int(),
 	windowId: int(),
@@ -27,6 +30,8 @@ export const Browser = remote("oshawatt.browser", {
 				 * its Port and the Engine's route to `TabHost({ tabId })` completes.
 				 */
 				attach: method(obj({ tabId: int() })),
+				/** Whether the user has allowed the extension on `url`'s site (its host permission), for `fetch`. */
+				hasAccess: method(obj({ url: str() }), bool()),
 				/**
 				 * Arms the Engine's wakeup from Durable's `Wake` (`onWake`): an alarm at `at`, a recovery heartbeat while
 				 * `active`, none when both are absent. The alarm brings the Engine back, which reopens and resumes.

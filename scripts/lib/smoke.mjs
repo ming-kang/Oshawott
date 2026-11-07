@@ -25,15 +25,32 @@ export const TEST_PAGE = `<!doctype html><title>Oshawatt test page</title>
 <input id="q" placeholder="Search"><button id="go" onclick="out.textContent='searched: '+q.value">Go</button>
 <p id="out">nothing yet</p>`;
 
+/** A small UTF-8 download for the file tools and the Code Mode → files flow. */
+export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawatt 文件" })}\n`;
+export const TEST_LARGE_DOWNLOAD = JSON.stringify({ padding: "x".repeat(1_100_000), ending: "complete" });
+
 /** Serves `page` (the test page by default); `routes` adds handlers by method and path. */
 export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
+	const redirects = { get302: 0, post307: 0, target: 0 };
 	const server = createServer((req, res) => {
 		const route = routes[`${req.method} ${req.url}`];
 		if (route) return route(req, res);
+		if (req.method === "GET" && (req.url === "/items.json" || req.url === "/large.json")) {
+			return res.writeHead(200, { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" }).end(req.url === "/items.json" ? TEST_DOWNLOAD : TEST_LARGE_DOWNLOAD);
+		}
+		if (req.url === "/redirect-302" || req.url === "/redirect-307") {
+			if (req.method === "GET" && req.url === "/redirect-302") redirects.get302++;
+			if (req.method === "POST" && req.url === "/redirect-307") redirects.post307++;
+			return res.writeHead(req.url.endsWith("302") ? 302 : 307, { location: `http://127.0.0.1:${server.address().port}/redirect-target`, "access-control-allow-origin": "*" }).end();
+		}
+		if (req.url === "/redirect-target") {
+			redirects.target++;
+			return res.writeHead(200, { "access-control-allow-origin": "*" }).end("must not be requested");
+		}
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(page);
 	});
 	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-	return { url: `http://127.0.0.1:${server.address().port}/`, close: () => server.close() };
+	return { url: `http://127.0.0.1:${server.address().port}/`, redirectHits: () => ({ ...redirects }), close: () => server.close() };
 }
 
 /** Chromium with dist/chromium loaded: the browser, the service worker's target, the extension id, `evaluateIn`. */
