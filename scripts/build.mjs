@@ -10,6 +10,8 @@ import { manifestFor } from "../src/manifest.ts";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const dev = args.includes("--dev");
+const unknownOption = args.find((arg) => arg.startsWith("--") && arg !== "--dev");
+if (unknownOption) throw new Error(`Unknown option ${unknownOption}`);
 const targets = args.filter((a) => !a.startsWith("--"));
 const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 

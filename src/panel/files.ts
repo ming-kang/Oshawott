@@ -5,6 +5,7 @@ import type { Chat } from "../contracts/chat.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { LANG, t } from "./i18n.ts";
+import type { OverlayView } from "./overlays.ts";
 import { h, icon, toast } from "./ui.ts";
 
 type FileSource = Pick<Extract<Reference<typeof Chat>, { variant: "owner" }>, "files" | "readFile" | "removeFile">;
@@ -13,7 +14,7 @@ const context = BACKGROUND_CONTEXT;
 const dateFormat = new Intl.DateTimeFormat(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const errorText = (error: unknown) => String((error as Error)?.message ?? error);
 
-export class FilesSheet {
+export class FilesSheet implements OverlayView {
 	readonly element: HTMLElement;
 	readonly #source: FileSource;
 	readonly #list = h("div", { class: "card file-list", id: "file-list", role: "list" });

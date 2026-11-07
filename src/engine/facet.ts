@@ -3,11 +3,11 @@
 // Every state member follows Durable through `self.follow` (Durable's synchronous observers), so a panel's reference
 // is Durable's committed state, sent once and then as deltas: no event bus, no snapshot polling, no second copy.
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
-import type { ConversationId, ConversationView, Harness } from "@earendil-works/pi-durable";
+import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { Chat, Workspace } from "../contracts/chat.ts";
+import { Chat, ProviderSummary, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
-import { ChordError, type Context, defineFacet, defineState, arr, bool, obj, str } from "../lib/chord.ts";
+import { arr, ChordError, type Context, defineFacet, defineState, obj } from "../lib/chord.ts";
 import { TargetDoc, WorkspaceDoc } from "./docs.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
 import { deleteChatFiles } from "./files-lifecycle.ts";
@@ -21,9 +21,7 @@ export interface EngineServices {
 	readonly now: () => number;
 }
 
-const ProviderList = obj({
-	list: arr(obj({ id: str(), name: str(), configured: bool(), models: arr(obj({ id: str(), name: str() })) })),
-});
+const ProviderList = obj({ list: arr(ProviderSummary) });
 const Providers = defineState("providers", { schema: ProviderList, version: 1, initial: () => ({ list: [] }) });
 
 /** A chat title from a message: its first line, whitespace folded, at most 48 characters. */
@@ -37,18 +35,16 @@ function forbidden(): never {
 	throw new ChordError({ code: "forbidden", message: "Only a panel may use the workspace." });
 }
 
-async function providerSummaries(services: EngineServices) {
-	const list = [];
-	for (const provider of services.models.getProviders()) {
+async function providerSummaries(services: EngineServices): Promise<ProviderSummary[]> {
+	return Promise.all(services.models.getProviders().map(async (provider) => {
 		const auth = await services.models.checkAuth(provider.id).catch(() => undefined);
-		list.push({
+		return {
 			id: provider.id,
 			name: provider.name ?? provider.id,
-			configured: auth !== undefined && (auth as { configured?: boolean }).configured !== false,
+			configured: auth !== undefined,
 			models: services.models.getModels(provider.id).map((model) => ({ id: model.id, name: model.name ?? model.id })),
-		});
-	}
-	return list;
+		};
+	}));
 }
 
 export function panelFacet(services: EngineServices) {
@@ -150,17 +146,9 @@ export function panelFacet(services: EngineServices) {
 						await (await conversation(ctx)).abort(ctx);
 						return null;
 					},
-					reset: async (ctx) => {
-						await (await conversation(ctx)).reset(undefined, ctx);
-						return null;
-					},
 					configure: async (model, ctx) => {
 						await (await conversation(ctx)).configure({ model }, ctx);
 						return null;
-					},
-					entries: async ({ query, limit }, ctx) => {
-						const page = await (await conversation(ctx)).entries(query as never, limit, undefined, ctx);
-						return page as never;
 					},
 					files: async (ctx) => {
 						await conversation(ctx);

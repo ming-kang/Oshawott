@@ -108,7 +108,17 @@ export function resolvePath(cwd: string, path: string): string {
 export const parentOf = (path: string) => path.slice(0, path.lastIndexOf("/")) || "/";
 const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const prefixOf = (dir: string) => (dir === "/" ? "/" : `${dir}/`);
+const relativeTo = (dir: string, path: string) => path.slice(prefixOf(dir).length);
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Compare path segments, not whole paths: a directory's descendants precede its next sibling (a/ before a.txt). */
+function bySegments(a: readonly string[], b: readonly string[]): number {
+	for (let i = 0; i < Math.min(a.length, b.length); i++) {
+		const order = byName(a[i]!, b[i]!);
+		if (order) return order;
+	}
+	return a.length - b.length;
+}
 
 const encoder = new TextEncoder();
 const bytesOf = (content: string | Uint8Array) => (typeof content === "string" ? encoder.encode(content) : content);
@@ -125,6 +135,9 @@ const aborted = <T>(context: Context, path?: string) =>
 const isCount = (value: number) => Number.isSafeInteger(value) && value >= 0;
 
 const DIRECTORY: Entry = { kind: "directory", size: 0, mtimeMs: 0 };
+
+/** Detailed descendants with paths relative to the requested directory. */
+type TreeEntry = Entry & { readonly path: string };
 
 /** A file of a chat as the panel lists it: its path below `/workspace`. */
 export type WorkspaceFile = { readonly path: string; readonly size: number; readonly mtimeMs: number };
@@ -459,6 +472,25 @@ export class ChatFiles implements ExecutionEnv {
 		});
 	}
 
+	/** One metadata transaction, in depth-first order; the public listing surfaces only filter and project it. */
+	async listTree(path: string, context: Context): Promise<Result<TreeEntry[], FileError>> {
+		const target = this.#resolve(path);
+		return this.#run("readonly", context, target, async (tx) => {
+			const root = await this.#get(tx, target);
+			if (!root) return notFound(target);
+			if (root.kind !== "directory") return fail("not_directory", `Not a directory: ${target}`, target);
+			const items = await this.#below(tx, target);
+			const stop = aborted<TreeEntry[]>(context, target);
+			if (stop) return stop;
+			const entries = items.map(([path, entry]) => {
+				const relative = relativeTo(target, path);
+				return { parts: relative.split("/"), info: { path: relative, ...entry } };
+			});
+			entries.sort((a, b) => bySegments(a.parts, b.parts));
+			return ok(entries.map(({ info }) => info));
+		});
+	}
+
 	async listFiles(path: string, options: ListFilesOptions | undefined, context: Context): Promise<Result<FileListing, FileError>> {
 		const target = this.#resolve(path);
 		const maxEntries = options?.maxEntries ?? 50_000;
@@ -470,46 +502,22 @@ export class ChatFiles implements ExecutionEnv {
 		const skip = new Set([".git", ...(options?.exclude ?? [])]);
 		const hidden = options?.hidden ?? true;
 		const deadline = performance.now() + timeoutMs;
-		const expired = () => performance.now() >= deadline;
-		return this.#run("readonly", context, target, async (tx) => {
-			const root = await this.#get(tx, target);
-			if (!root) return notFound(target);
-			if (root.kind !== "directory") return fail("not_directory", `Not a directory: ${target}`, target);
-			const stop = aborted<FileListing>(context, target);
-			if (stop) return stop;
-			if (expired()) return ok({ entries: [], truncated: true });
-			const items = await this.#below(tx, target);
-			const afterRead = aborted<FileListing>(context, target);
-			if (afterRead) return afterRead;
-			if (expired()) return ok({ entries: [], truncated: true });
-			const below = new Map<string, (readonly [string, Entry])[]>();
-			for (const item of items) {
-				if (expired()) return ok({ entries: [], truncated: true });
-				const parent = parentOf(item[0]);
-				let bucket = below.get(parent);
-				if (!bucket) below.set(parent, bucket = []);
-				bucket.push(item);
-			}
-			const entries: FileListEntry[] = [];
-			let bytes = 0;
-			const walk = (dir: string): boolean => {
-				const children = (below.get(dir) ?? []).sort((a, b) => byName(nameOf(a[0]), nameOf(b[0])));
-				for (const [childPath, entry] of children) {
-					if (expired()) return false;
-					const name = nameOf(childPath);
-					if (skip.has(name) || (!hidden && name.startsWith("."))) continue;
-					const relative = childPath.slice(prefixOf(target).length);
-					const cost = encoder.encode(relative).length + 2;
-					if (entries.length >= maxEntries || bytes + cost > maxBytes) return false;
-					entries.push({ path: relative, kind: entry.kind });
-					bytes += cost;
-					if (entry.kind === "directory" && !walk(childPath)) return false;
-				}
-				return true;
-			};
-			const complete = walk(target);
-			return ok({ entries, truncated: !complete });
-		});
+		const listed = await this.listTree(target, context);
+		if (!listed.ok) return err(listed.error);
+		const stop = aborted<FileListing>(context, target);
+		if (stop) return stop;
+		const entries: FileListEntry[] = [];
+		let bytes = 0;
+		if (performance.now() >= deadline) return ok({ entries, truncated: true });
+		for (const entry of listed.value) {
+			if (performance.now() >= deadline) return ok({ entries, truncated: true });
+			if (entry.path.split("/").some((name) => skip.has(name) || (!hidden && name.startsWith(".")))) continue;
+			const cost = encoder.encode(entry.path).length + 2;
+			if (entries.length >= maxEntries || bytes + cost > maxBytes) return ok({ entries, truncated: true });
+			entries.push({ path: entry.path, kind: entry.kind });
+			bytes += cost;
+		}
+		return ok({ entries, truncated: false });
 	}
 
 	async watch(): Promise<Result<FileWatcher, FileError>> {
@@ -579,13 +587,11 @@ export class ChatFiles implements ExecutionEnv {
 
 	/** Every file below `/workspace`, by path relative to it. */
 	async workspaceFiles(context: Context): Promise<Result<WorkspaceFile[], FileError>> {
-		return this.#run("readonly", context, WORKSPACE, async (tx) =>
-			ok(
-				(await tx.below(WORKSPACE))
-					.filter(([, entry]) => entry.kind === "file")
-					.map(([path, entry]) => ({ path: path.slice(WORKSPACE.length + 1), size: entry.size, mtimeMs: entry.mtimeMs }))
-					.sort((a, b) => byName(a.path, b.path)),
-			),
-		);
+		const listed = await this.listTree(WORKSPACE, context);
+		return listed.ok
+			? ok(listed.value.filter((entry) => entry.kind === "file")
+				.map(({ path, size, mtimeMs }) => ({ path, size, mtimeMs }))
+				.sort((a, b) => byName(a.path, b.path)))
+			: err(listed.error);
 	}
 }

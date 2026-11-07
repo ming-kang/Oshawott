@@ -1,8 +1,7 @@
 // The Engine's own state, stored in Durable next to the transcripts: one storage, one owner, one commit line.
 import { defineDoc } from "@earendil-works/pi-durable";
+import type { ChatSummary, ModelRef } from "../contracts/chat.ts";
 
-export type ModelRef = { provider: string; modelId: string };
-export type ChatSummary = { id: number; title: string; createdAt: number };
 export type WorkspaceState = {
 	chats: ChatSummary[];
 	defaultModel: ModelRef | null;

@@ -17,7 +17,7 @@ const until = async <T>(read: () => T | undefined | null | Promise<T | undefined
 	}
 };
 
-export async function selftest(origin: string) {
+export async function selftest(origin: string, panelTests: () => Promise<Step[]>) {
 	const steps: Step[] = [];
 	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, ...(detail ? { detail } : {}) });
 	const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
@@ -116,7 +116,7 @@ export async function selftest(origin: string) {
 		await until(() => all(".file-row").length === 1);
 		step("file removal refreshes the sheet and deletes the stored bytes", all(".file-row")[0]?.dataset.path === "items.json" && await storedFile("/workspace/items.json.stats.json") === undefined);
 		click("#files-back");
-		steps.push(...await testToolCards());
+		steps.push(...await testToolCards(), ...await panelTests());
 
 		const fresh = async (text: string) => {
 			click("#new-chat");

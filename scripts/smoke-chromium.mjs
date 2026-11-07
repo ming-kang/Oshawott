@@ -112,6 +112,7 @@ try {
 	await panel.click("#files-back");
 	await until("the file sheet closed", async () => !(await panel.$("#files")) || undefined);
 	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawattTest.toolCards())) step(name, ok, detail);
+	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawattTest.panel())) step(name, ok, detail);
 	await panel.click("#new-chat");
 	await until("the new chat ready", () => panel.$eval("#files-toggle", (button) => button.hidden || undefined));
 	await ask("And again?");

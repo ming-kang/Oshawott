@@ -2,31 +2,17 @@
 // each is built once, keyed by its ID; a tool result fills in the card of its call. Only what `pi.live` holds (the
 // answer streaming in, running tools, a retry, the last run's failure) is rebuilt on every change. Text is always set
 // as text; model Markdown goes through `markdown.ts`, which builds elements, never HTML.
-import type { ConversationView } from "@earendil-works/pi-durable";
+import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureReason } from "@earendil-works/pi-durable";
 import { t } from "./i18n.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
 import { copyText, h, type IconName, icon, logo } from "./ui.ts";
 
-type Content =
-	| { type: "text"; text: string }
-	| { type: "thinking"; thinking: string; redacted?: boolean }
-	| { type: "toolCall"; id: string; name: string; arguments?: Record<string, unknown> }
-	| { type: "image"; mimeType: string; data: string };
-type UserMessage = { role: "user"; content: string | Content[] };
-type AssistantMessage = { role: "assistant"; content: Content[]; stopReason?: string; errorMessage?: string };
-type ToolResultMessage = { role: "toolResult"; toolCallId: string; toolName: string; content: Content[]; isError: boolean };
-type Message = UserMessage | AssistantMessage | ToolResultMessage | { role: "system" };
-type Entry = { id: number | string; kind: string; model?: Message[] };
-
-type ToolSlot = { callId: string; name: string; status: "pending" | "running" | "done"; output?: string };
-type Live = {
-	run?: object;
-	generation?: { attempt: number; message?: AssistantMessage; retry?: { at: number; error: string } };
-	tools?: ToolSlot[];
-	compactions?: unknown[];
-	runFailure?: { reason: string; detail?: string };
-};
+const FAILURE_LABELS = {
+	no_model: "failure.no_model", model_error: "failure.model_error", interrupted: "failure.interrupted", turn_limit: "failure.turn_limit",
+	aborted: "failure.aborted", reset: null, faulted: null, orphaned: null, restart_limit: null, nothing_to_answer: null,
+} as const satisfies Record<RunFailureReason, string | null>;
 
 export interface TranscriptActions {
 	/** A suggestion of the empty state was picked. */
@@ -35,14 +21,13 @@ export interface TranscriptActions {
 	chooseModel(): void;
 }
 
-export interface TranscriptState {
-	/** Some provider is connected, so a prompt can be answered. */
-	readonly ready: boolean;
-}
+/** A new chat is not a fabricated ConversationView; loading and empty are explicit UI states. */
+export type TranscriptState =
+	| { kind: "loading" }
+	| { kind: "empty"; ready: boolean }
+	| { kind: "conversation"; view: ConversationView; ready: boolean };
 
-export const EMPTY_VIEW = { entries: [], docs: {} } as unknown as ConversationView;
-
-const textOf = (content: UserMessage["content"] | Content[]) =>
+const textOf = (content: UserMessage["content"]) =>
 	typeof content === "string" ? content : content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
 function divider(text: string, live = false) {
@@ -96,13 +81,18 @@ export class Transcript {
 		this.#busy = false;
 	}
 
-	/** `null`: the chat's view is not there yet (connecting). */
-	update(view: ConversationView | null, state: TranscriptState) {
-		if (!view) {
+	update(state: TranscriptState) {
+		if (state.kind === "loading") {
 			this.#live.replaceChildren(h("div", { class: "connecting" }, h("span", { class: "spinner" }), t("connecting")));
 			return;
 		}
-		const entries = view.entries as unknown as Entry[];
+		if (state.kind === "empty") {
+			this.clear();
+			this.#renderLive(undefined, state);
+			return;
+		}
+		const { view } = state;
+		const entries = view.entries;
 		const keep = new Set<string>();
 		let index = 0;
 		let visible = 0;
@@ -126,12 +116,12 @@ export class Transcript {
 		}
 		for (const [id, card] of this.#cards) if (!card.element.isConnected) this.#cards.delete(id);
 
-		const live = view.docs["pi.live"] as Live | undefined;
+		const live = view.docs["pi.live"] as LiveState | undefined;
 		this.#busy = Boolean(live?.run);
 		this.#renderLive(live, visible === 0 && !this.#busy ? state : undefined);
 	}
 
-	#entry(entry: Entry): HTMLElement {
+	#entry(entry: EntryRecord): HTMLElement {
 		const message = entry.model?.[0];
 		switch (entry.kind) {
 			case "pi.user":
@@ -162,7 +152,7 @@ export class Transcript {
 
 	#assistant(message: AssistantMessage, live: boolean): HTMLElement {
 		const root = h("div", { class: "msg assistant", "data-live": live || null });
-		const blocks = message.content ?? [];
+		const blocks = message.content;
 		let tools: HTMLElement | undefined;
 		blocks.forEach((block, i) => {
 			const last = i === blocks.length - 1;
@@ -175,7 +165,7 @@ export class Transcript {
 					{ class: "thinking", "data-live": thinking || null },
 					h("summary", null, icon("bulb", 14), h("span", null, thinking ? t("thinking.live") : t("thinking.title")), icon("chevron", 14)),
 					markdown(block.thinking),
-				) as HTMLDetailsElement;
+				);
 				if (live) {
 					details.open = this.#thinkingOpen;
 					details.addEventListener("toggle", () => (this.#thinkingOpen = details.open));
@@ -186,7 +176,7 @@ export class Transcript {
 				root.append(markdown(block.text, live && last));
 			} else if (block.type === "toolCall") {
 				tools ??= root.appendChild(h("div", { class: "tools" }));
-				const card = new ToolCard(block.name, block.arguments ?? {});
+				const card = new ToolCard(block.name, block.arguments);
 				if (live) card.setStatus("streaming");
 				else this.#cards.set(block.id, card);
 				tools.append(card.element);
@@ -195,7 +185,7 @@ export class Transcript {
 		if (!live) {
 			if (message.stopReason === "error" && message.errorMessage) root.append(notice("error", t("failure.model_error"), message.errorMessage));
 			const text = blocks
-				.filter((block): block is Extract<Content, { type: "text" }> => block.type === "text")
+				.filter((block) => block.type === "text")
 				.map((block) => block.text)
 				.join("\n\n")
 				.trim();
@@ -206,7 +196,7 @@ export class Transcript {
 		return root;
 	}
 
-	#renderLive(live: Live | undefined, empty: TranscriptState | undefined) {
+	#renderLive(live: LiveState | undefined, empty: { ready: boolean } | undefined) {
 		const busy = this.#busy;
 		const slots = new Map((live?.tools ?? []).map((slot) => [slot.callId, slot]));
 		for (const [id, card] of this.#cards) {
@@ -237,11 +227,10 @@ export class Transcript {
 		this.#live.replaceChildren(...parts);
 	}
 
-	#failure(failure: NonNullable<Live["runFailure"]>): Node {
+	#failure(failure: RunFailure): Node {
 		if (failure.reason === "aborted") return divider(t("failure.aborted"));
-		const known = ["no_model", "model_error", "interrupted", "turn_limit"] as const;
-		const reason = known.find((k) => k === failure.reason);
-		const node = notice("error", reason ? t(`failure.${reason}`) : t("failure.other", failure.reason), failure.detail);
+		const label = FAILURE_LABELS[failure.reason];
+		const node = notice("error", label ? t(label) : t("failure.other", failure.reason), failure.detail);
 		node.dataset.reason = failure.reason;
 		if (failure.reason === "no_model") {
 			node.querySelector(".notice-body")!.append(
@@ -251,7 +240,7 @@ export class Transcript {
 		return node;
 	}
 
-	#empty(state: TranscriptState) {
+	#empty(state: { ready: boolean }) {
 		const suggestions: [IconName, string][] = [
 			["eye", t("suggest.summarize")],
 			["list", t("suggest.links")],

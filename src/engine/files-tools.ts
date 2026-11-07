@@ -5,13 +5,13 @@
 // `fetch` runs in the Engine's document, without cookies, and only on sites the user has allowed (the Broker checks the
 // host permission): the permission that lets page tools act on a site lets the model read it from the network too.
 import { defineExtension, defineTool, type Extension, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
-import { type ExecutionEnv, getOrThrow } from "@earendil-works/pi-durable/env";
+import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
 import { Browser, NO_ACCESS } from "../contracts/browser.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { arr, bool, int, map, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import type { Host } from "../lib/chord.ts";
-import { MAX_FILE_BYTES } from "./files.ts";
+import { ChatFiles, MAX_FILE_BYTES } from "./files.ts";
 import { using } from "./tools.ts";
 
 export { NO_ACCESS };
@@ -22,8 +22,8 @@ export const MAX_READ_CHARS = 1_000_000;
 
 const text = (value: string) => [{ type: "text" as const, text: value }];
 
-function envOf(api: ToolExecutionApi): ExecutionEnv {
-	if (!api.env) throw new Error("This chat has no files.");
+function envOf(api: ToolExecutionApi): ChatFiles {
+	if (!(api.env instanceof ChatFiles)) throw new Error("This chat has no files.");
 	return api.env;
 }
 
@@ -37,16 +37,8 @@ const lsTool = defineTool({
 	execute: async (args, api, context) => {
 		const env = envOf(api);
 		const root = getOrThrow(await env.absolutePath(args.path ?? ".", context));
-		const listed: { path: string; kind: "file" | "directory"; size: number }[] = [];
-		const walk = async (dir: string) => {
-			for (const info of getOrThrow(await env.listDir(dir, context))) {
-				if (listed.length >= MAX_LISTED) return;
-				const kind = info.kind === "directory" ? "directory" : "file";
-				listed.push({ path: info.path.slice(root === "/" ? 1 : root.length + 1), kind, size: kind === "file" ? info.size : 0 });
-				if (kind === "directory") await walk(info.path);
-			}
-		};
-		await walk(root);
+		const listed = getOrThrow(await env.listTree(root, context)).slice(0, MAX_LISTED)
+			.map(({ path, kind, size }) => ({ path, kind, size }));
 		const lines = listed.map((entry) => (entry.kind === "directory" ? `${entry.path}/` : `${entry.path}  (${entry.size} bytes)`));
 		if (listed.length >= MAX_LISTED) lines.push(`[Stopped at ${MAX_LISTED} entries.]`);
 		return { output: text(lines.length ? lines.join("\n") : `${root} is empty.`), structuredOutput: listed };

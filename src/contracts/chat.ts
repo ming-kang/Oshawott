@@ -1,13 +1,13 @@
 // What a panel uses: the workspace (chats, models, keys) and one chat. Served by the Engine.
 //
-// A chat's state is Durable's conversation view itself (`Conversation.watch`'s value: a window of entries plus the
-// documents, `pi.live` streaming included), rendered by `src/panel/render.ts`; `entries` pages in what lies before the
-// window (the panel does not page yet). Nothing is mirrored into a second store, and nothing is broadcast per event.
-import type { ConversationView } from "@earendil-works/pi-durable";
-import { arr, bool, bytes, int, method, num, obj, oneOf, opt, remote, str, typed, unknown } from "../lib/chord.ts";
+// A chat's state is Durable's conversation view itself: a window of entries and documents, streaming included.
+// Nothing is mirrored into a second store or broadcast per event.
+import type { ConversationView, ModelRef as DurableModelRef } from "@earendil-works/pi-durable";
+import { arr, bool, bytes, int, method, nul, num, obj, oneOf, opt, remote, type Static, str, typed, union, unknown } from "../lib/chord.ts";
 import { EngineHost } from "./hosts.ts";
 
-const ModelRef = obj({ provider: str(), modelId: str() });
+export const ModelRef = obj({ provider: str(), modelId: str() });
+export type ModelRef = DurableModelRef;
 
 /** The largest file a chat keeps (`src/engine/files.ts`), and so the largest a panel downloads. */
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -15,6 +15,7 @@ export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const ChatFile = obj({ path: str(), size: int(), mtimeMs: num() });
 
 export const ChatSummary = obj({ id: int(), title: str(), createdAt: num() });
+export type ChatSummary = Static<typeof ChatSummary>;
 
 export const ProviderSummary = obj({
 	id: str(),
@@ -22,6 +23,7 @@ export const ProviderSummary = obj({
 	configured: bool(),
 	models: arr(obj({ id: str(), name: str() })),
 });
+export type ProviderSummary = Static<typeof ProviderSummary>;
 
 export const Workspace = remote("oshawatt.workspace", {
 	version: 1,
@@ -31,7 +33,7 @@ export const Workspace = remote("oshawatt.workspace", {
 		owner: {
 			state: {
 				chats: arr(ChatSummary),
-				defaultModel: typed<{ provider: string; modelId: string } | null>(unknown()),
+				defaultModel: union([ModelRef, nul()]),
 				providers: arr(ProviderSummary),
 			},
 			methods: {
@@ -72,10 +74,7 @@ export const Chat = remote("oshawatt.chat", {
 					}),
 				),
 				abort: method(),
-				reset: method(),
 				configure: method(ModelRef),
-				/** Older entries than the view's window, for `ConversationTranscript`. */
-				entries: method(obj({ query: unknown(), limit: int({ min: 1, max: 200 }) }), unknown()),
 				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */
 				files: method(undefined, arr(ChatFile)),
 				readFile: method(obj({ path: str() }), bytes({ max: MAX_FILE_BYTES })),

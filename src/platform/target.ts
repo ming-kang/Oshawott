@@ -7,8 +7,8 @@ declare const __OSHAWATT_TARGET__: Target | undefined;
 
 declare global {
 	/**
-	 * A `--dev` build: test hooks on (see `scripts/smoke-*.mjs`), never in a release. Defined by the build only, and used
-	 * as the bare identifier, so a release build drops the hooks' code (`if (false)`); bundles only, never in tests.
+	 * A `--dev` build: test hooks on (see `scripts/smoke-*.mjs`). Defined by the build only, and used as the bare
+	 * identifier, so a non-dev build drops the hooks' code (`if (false)`); bundles only, never in tests.
 	 */
 	const __OSHAWATT_DEV__: boolean;
 }
