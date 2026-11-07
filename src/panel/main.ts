@@ -148,6 +148,16 @@ function renderComposer() {
 	$.stop.hidden = !busy || !text;
 	$.sendMode.hidden = !busy || !text;
 	if ((!busy || !text) && overlays.current instanceof SendModeMenu) overlays.close();
+	if (overlays.current instanceof StopConfirmMenu && stopConfirm?.menu === overlays.current) {
+		// The confirmation names this run's queue size; it is stale once the run ends, the chat or count changes, or its Stop control goes away.
+		const anchorShown = stopConfirm.anchor === $.send ? stop : !$.stop.hidden;
+		if (!busy || stopConfirm.chat !== chat || !anchorShown || queue.count !== stopConfirm.count) {
+			// Its anchor may now be hidden; return focus to the prompt only if the confirmation held it.
+			const focused = stopConfirm.menu.element.contains(document.activeElement);
+			overlays.close(false);
+			if (focused) $.prompt.focus({ preventScroll: true });
+		}
+	}
 	const deliveryLabel = t(whenBusy === "steer" ? "queue.steer" : "queue.followUp");
 	if ($.sendMode.dataset.mode !== whenBusy) {
 		$.sendMode.dataset.mode = whenBusy;
@@ -263,6 +273,7 @@ $.prompt.addEventListener("keydown", (event) => {
 	event.preventDefault();
 	void send();
 });
+let stopConfirm: { menu: StopConfirmMenu; chat: ChatRef; anchor: HTMLElement; count: number } | undefined;
 function abort(target: ChatRef) {
 	void target.abort(context).catch((error) => toast(String((error as Error)?.message ?? error), "error"));
 }
@@ -274,6 +285,7 @@ function stop(anchor: HTMLElement) {
 		overlays.close();
 		abort(target);
 	}, () => overlays.close());
+	stopConfirm = { menu, chat: target, anchor, count: queue.count };
 	overlays.open(menu, { kind: "popover", anchor });
 	menu.focus();
 }
