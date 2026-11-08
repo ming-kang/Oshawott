@@ -587,7 +587,7 @@ function openThinkingMenu() {
 			if (overlays.current === menu) overlays.close();
 		},
 	});
-	overlays.open(menu, { kind: "popover", anchor: $.thinking });
+	overlays.open(menu, { kind: "popover", anchor: $.thinking, align: "end" });
 	menu.focus();
 }
 

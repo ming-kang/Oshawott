@@ -21,7 +21,7 @@ async function until(read: () => boolean) {
 	}
 }
 const click = (selector: string) => {
-	const element = document.querySelector<HTMLElement>(selector);
+	const element = document.querySelector<HTMLElement>(`.overlay:not(.leaving) ${selector}`) ?? document.querySelector<HTMLElement>(selector);
 	if (!element) throw new Error(`No panel control ${selector}`);
 	element.click();
 };
@@ -34,22 +34,36 @@ export async function testPanel(source: Source, origin?: string) {
 	// These keys are only saved and cleared locally; all model requests still use the demo provider.
 	click("#settings-toggle");
 	step("settings opens as a named modal and receives focus", document.querySelector("#settings")?.getAttribute("aria-modal") === "true" && document.activeElement?.id === "settings-back" && document.querySelector("#settings-back")?.hasAttribute("aria-label") === true);
+	const savedRows = [...document.querySelectorAll<HTMLElement>(".provider[data-provider]")];
+	step("settings lists only saved providers as text rows", savedRows.length > 0 && savedRows.every((row) => {
+		const provider = source.providers.value.find((item) => item.id === row.dataset.provider);
+		return (provider?.kind === "custom" || provider?.configured === true) && !row.querySelector(".provider-mark");
+	}), savedRows.map((row) => row.dataset.provider).join(", "));
+	click("#add-provider");
 	const builtinPicker = document.querySelector<HTMLSelectElement>("#builtin-provider-picker")!;
 	builtinPicker.value = "groq";
 	builtinPicker.dispatchEvent(new Event("change", { bubbles: true }));
-	await until(() => Boolean(document.querySelector('.provider[data-provider="groq"] input')));
-	step("the built-in provider dropdown reveals additional Pi-AI providers", document.querySelector('.provider[data-provider="groq"] .provider-name')?.textContent === "Groq");
-	click('.provider[data-provider="anthropic"] .provider-head');
-	const input = document.querySelector<HTMLInputElement>('.provider[data-provider="anthropic"] input')!;
+	step("the built-in provider dropdown reveals additional Pi-AI providers", builtinPicker.selectedOptions[0]?.textContent === "Groq"
+		&& !document.querySelector('.provider[data-provider="groq"]'));
+	click("#provider-kind-custom");
+	const customOrder = [...document.querySelectorAll(".provider-editor-form .provider-field > :last-child")].map((field) => field.id);
+	step("custom fields and model sections follow the requested order", customOrder.join(",") === "provider-name,provider-base-url,provider-api,provider-key"
+		&& document.querySelector("#provider-discovery")!.compareDocumentPosition(document.querySelector("#provider-custom-models")!) === Node.DOCUMENT_POSITION_FOLLOWING);
+	click("#provider-kind-builtin");
+	builtinPicker.value = "anthropic";
+	builtinPicker.dispatchEvent(new Event("change", { bubbles: true }));
+	const input = document.querySelector<HTMLInputElement>("#provider-key")!;
 	input.value = "panel-smoke-key";
-	click('.provider[data-provider="anthropic"] .btn.primary');
-	await until(() => document.querySelector('.provider[data-provider="anthropic"] .pill')?.hasAttribute("data-on") === true
-		&& !document.querySelector('.provider[data-provider="anthropic"]')?.hasAttribute("data-open"));
+	click("#provider-save");
+	await until(() => source.providers.value.find((provider) => provider.id === "anthropic")?.configured === true
+		&& Boolean(document.querySelector('.provider[data-provider="anthropic"] .pill[data-on]')));
+	step("saving a built-in provider adds a configured text row", !document.querySelector('.provider[data-provider="anthropic"] .provider-mark'));
 	click('.provider[data-provider="anthropic"] .provider-head');
-	step("settings refresh after saving a key without exposing it", document.querySelector<HTMLInputElement>('.provider[data-provider="anthropic"] input')?.value === "");
-	await until(() => Boolean(document.querySelector('.provider[data-provider="anthropic"] .btn.danger')));
-	click('.provider[data-provider="anthropic"] .btn.danger');
-	await until(() => document.querySelector('.provider[data-provider="anthropic"] .pill')?.hasAttribute("data-on") === false);
+	step("settings refresh after saving a key without exposing it", document.querySelector<HTMLInputElement>("#provider-key")?.value === "");
+	click("#provider-delete");
+	await until(() => source.providers.value.find((provider) => provider.id === "anthropic")?.configured === false
+		&& !document.querySelector('.provider[data-provider="anthropic"]'));
+	step("removing a built-in key hides its row", true);
 	const defaultDelivery = source.busyMode.value === "steer" && document.querySelector('#settings-delivery [data-value="steer"]')?.getAttribute("aria-checked") === "true";
 	click('#settings-delivery [data-value="followUp"]');
 	await until(() => source.busyMode.value === "followUp" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "followUp");
@@ -62,6 +76,10 @@ export async function testPanel(source: Source, origin?: string) {
 	document.querySelector('#settings [data-value="dark"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
 	step("appearance radios support arrow keys and roving focus", document.documentElement.dataset.theme === "system" && (document.activeElement as HTMLElement)?.dataset.value === "system" && document.querySelector('#settings [data-value="system"]')?.getAttribute("aria-checked") === "true");
 	click(`#settings [data-value="${theme}"]`);
+	const languages = [...document.querySelectorAll<HTMLElement>("#settings-language [data-value]")];
+	step("settings offers system language, Chinese and English with the current preference selected", languages.map((item) => item.dataset.value).join(",") === "system,zh-CN,en"
+		&& languages.slice(1).map((item) => item.textContent).join(",") === "中文,English"
+		&& languages.filter((item) => item.getAttribute("aria-checked") === "true").length === 1);
 	click("#settings-back");
 	await until(() => !document.querySelector("#settings"));
 

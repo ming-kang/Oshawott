@@ -69,6 +69,10 @@ try {
 	await until("the model menu", () => panel.$("#model-menu .menu-item"));
 	await both("models");
 	await panel.keyboard.press("Escape");
+	await panel.click("#thinking");
+	await until("the Effort menu", () => panel.$("#thinking-menu .menu-item"));
+	await both("thinking");
+	await panel.keyboard.press("Escape");
 
 	await panel.click("#chats-toggle");
 	await until("the drawer", () => panel.$(".chat-item"));
@@ -77,10 +81,26 @@ try {
 	await new Promise((r) => setTimeout(r, 300));
 
 	await panel.click("#settings-toggle");
-	await until("the providers", () => panel.$('.provider[data-provider="anthropic"] .provider-head'));
-	await panel.click('.provider[data-provider="anthropic"] .provider-head');
+	await until("the saved providers", () => panel.$('.provider[data-provider="demo"] .provider-head'));
 	await panel.$eval(".about", (about) => about.scrollIntoView({ block: "end" }));
 	await both("settings");
+	await panel.click("#add-provider");
+	await both("provider-builtin");
+	await panel.click("#provider-kind-custom");
+	for (const width of [280, 400, 640]) {
+		await panel.setViewport({ width, height: 760, deviceScaleFactor: 2 });
+		const layout = await panel.evaluate(() => ({
+			viewport: innerWidth,
+			document: document.documentElement.scrollWidth,
+			heights: [...document.querySelectorAll(".provider-editor-form .input")].map((input) => input.getBoundingClientRect().height),
+		}));
+		if (layout.document > layout.viewport + 1 || layout.heights.some((height) => height > 40)) {
+			throw new Error(`provider editor is not responsive at ${width}px: ${JSON.stringify(layout)}`);
+		}
+	}
+	await panel.setViewport({ width: 400, height: 760, deviceScaleFactor: 2 });
+	await both("provider-custom");
+	await panel.click("#provider-back");
 	await panel.click("#settings-back");
 	await until("the settings closed", async () => !(await panel.$("#settings")) || undefined);
 	await panel.click("#new-chat");

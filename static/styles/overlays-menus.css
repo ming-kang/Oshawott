@@ -78,6 +78,7 @@
 	padding: 0 14px;
 	border: 0;
 	border-bottom: 1px solid var(--line);
+	border-radius: 11px 11px 0 0;
 	outline: 0;
 	background: transparent;
 	font-size: 13px;
@@ -138,7 +139,8 @@
 }
 
 .thinking-menu {
-	max-width: 240px;
+	width: 240px;
+	max-width: calc(100vw - 24px);
 }
 
 .menu-item-id {

@@ -30,11 +30,11 @@ Oshawott 由四个角色组成，彼此通过 chord 远程对象通信。
 
 | 存储 | 内容 |
 |:-:|---|
-| IndexedDB `oshawott` | Durable 对话；`WorkspaceDoc`（对话列表、默认模型与思考档位、待删除的文件）；`ProvidersDoc`（非秘密的自定义服务与手填模型）；`TargetDoc`（每个对话的目标标签页） |
+| IndexedDB `oshawott` | Durable 对话；`WorkspaceDoc`（对话列表、默认模型与思考档位、待删除的文件）；`ProvidersDoc`（非秘密的自定义服务与自定义模型）；`TargetDoc`（每个对话的目标标签页） |
 | IndexedDB `oshawott-files` | 对话文件，见[文件与 Fetch](files.md) |
-| IndexedDB `oshawott-models` | Pi-AI `ModelsStore` 保存的已发现模型目录；手填覆盖在读取时应用，不改写原始目录 |
+| IndexedDB `oshawott-models` | Pi-AI `ModelsStore` 保存的已发现模型目录；自定义覆盖在读取时应用，不改写原始目录 |
 | IndexedDB `oshawott-credentials` | API key，只有 Engine 读写 |
-| Panel `localStorage` | 主题 |
+| Panel `localStorage` | 主题、语言 |
 
 Panel 用 `self.follow` 直接观察 Durable 状态，自己不另存一份对话。Provider 摘要由 Engine 从运行时注册表派生，只包含配置状态和模型能力，不包含 Key。自定义 Profile 与发现目录分别在 Engine 启动、恢复模型工作前加载。
 

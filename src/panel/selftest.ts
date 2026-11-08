@@ -43,7 +43,7 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 			return ids.length ? ids : undefined;
 		});
 		click("#settings-back");
-		step("panel ↔ Engine over a Port", providers.includes("anthropic") && providers.includes("demo"), providers.join(", "));
+		step("panel ↔ Engine over a Port", providers.includes("demo") && !providers.includes("anthropic"), providers.join(", "));
 
 		// The Engine's devtools handle, in the event page (Firefox lets an extension page reach it).
 		const background = (await (ext.runtime as unknown as { getBackgroundPage(): Promise<Window> }).getBackgroundPage()) as Window & {

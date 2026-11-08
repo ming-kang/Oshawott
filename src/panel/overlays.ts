@@ -6,7 +6,7 @@ export interface OverlayView {
 	close(): void;
 }
 
-type Placement = { kind: "drawer" | "sheet" | "popover"; anchor: HTMLElement };
+type Placement = { kind: "drawer" | "sheet" | "popover"; anchor: HTMLElement; align?: "end" };
 type ActiveOverlay = Placement & { view: OverlayView; root: HTMLElement };
 
 const FOCUSABLE = "a[href], button, input, select, textarea, summary, [contenteditable='true'], [tabindex]";
@@ -39,7 +39,12 @@ export class OverlayController {
 		const { kind, anchor } = placement;
 		let root = view.element;
 		if (kind === "popover") {
-			root.style.bottom = `${innerHeight - anchor.getBoundingClientRect().top + 8}px`;
+			const rect = anchor.getBoundingClientRect();
+			root.style.bottom = `${innerHeight - rect.top + 8}px`;
+			if (placement.align === "end") {
+				root.style.left = "auto";
+				root.style.right = `${Math.max(8, innerWidth - rect.right)}px`;
+			}
 			document.addEventListener("pointerdown", this.#outside, true);
 		} else {
 			view.element.setAttribute("role", view.element.getAttribute("role") ?? "dialog");

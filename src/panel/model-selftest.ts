@@ -39,28 +39,29 @@ export async function testModelManagement(source: Source, origin: string): Promi
 	try {
 		click("#settings-toggle");
 		click("#add-provider");
+		click("#provider-kind-custom");
 		input("#provider-name", "Local test service");
 		input("#provider-base-url", `${origin.replace(/\/+$/, "")}/v1`);
 		const api = control<HTMLSelectElement>("#provider-api")!;
 		api.value = "openai-completions";
 		api.dispatchEvent(new Event("change", { bubbles: true }));
 		input("#provider-key", "local-key");
-		click("#provider-save");
+		click("#provider-refresh");
 		phase = "adding and discovering the custom provider";
 		const local = await until(() => {
 			const provider = source.providers.value.find((item) => item.name === "Local test service" && item.configured);
 			return provider && (provider.models.length || provider.discoveryError) ? provider : undefined;
 		});
 		customId = local.id;
-		step("custom provider discovers visual and reasoning models", local.models.some((model) => model.id === "local-reasoning" && model.vision && model.thinkingLevels.includes("high")), `${local.models.map((model) => model.id).join(", ")} ${local.discoveryError ?? ""}`);
+		step("custom provider discovers visual and reasoning models", local.models.some((model) => model.id === "local-reasoning" && model.vision && model.thinkingLevels.includes("high"))
+			&& Boolean(control(`#provider-discovered-models [data-model="local-reasoning"]`)), `${local.models.map((model) => model.id).join(", ")} ${local.discoveryError ?? ""}`);
 
-		await until(() => document.querySelector(`.provider[data-provider="${customId}"] .provider-head`) ? true : undefined);
-		click(`.provider[data-provider="${customId}"] .provider-head`);
 		input("#provider-name", "Local edited draft");
 		click("#provider-refresh");
-		await until(() => !control<HTMLButtonElement>("#provider-refresh")?.getAttribute("aria-busy"));
+		await until(() => !control<HTMLButtonElement>("#provider-refresh")?.getAttribute("aria-busy")
+			&& source.providers.value.find((provider) => provider.id === customId)?.name === "Local edited draft");
 		const draft = control<HTMLInputElement>("#provider-name")?.value;
-		step("model refresh preserves the provider draft", draft === "Local edited draft", draft);
+		step("model discovery uses and saves the current provider draft", draft === "Local edited draft", draft);
 		await until(() => control<HTMLElement>("#provider-editor")?.dataset.busy === "false" && control<HTMLButtonElement>("#provider-save")?.disabled === false);
 		click("#provider-save");
 		phase = "saving the edited provider";
@@ -73,9 +74,20 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		click('#model-menu .menu-item[data-model="local-reasoning"]');
 		await until(() => !document.querySelector("#model-menu"));
 		click("#thinking");
+		const effortOptions = [...document.querySelectorAll<HTMLElement>("#thinking-menu [data-level]")];
+		step("Effort options use the raw Pi-AI level IDs", effortOptions.length > 0
+			&& effortOptions.every((option) => option.textContent?.trim() === option.dataset.level));
+		const effortAlignment = await until(() => {
+			const menu = control<HTMLElement>("#thinking-menu")!.getBoundingClientRect();
+			const button = document.querySelector<HTMLElement>("#thinking")!.getBoundingClientRect();
+			return Math.abs(menu.right - button.right) <= 1 && menu.bottom <= button.top
+				? `menu right=${menu.right}; button right=${button.right}` : undefined;
+		});
+		step("Effort menu aligns with its button", true, effortAlignment);
 		click('#thinking-menu [data-level="high"]');
 		await until(() => !document.querySelector("#thinking-menu"));
-		await until(() => source.defaultModel.value?.provider === customId && document.querySelector<HTMLElement>("#thinking")?.dataset.level === "high");
+		await until(() => source.defaultModel.value?.provider === customId && document.querySelector<HTMLElement>("#thinking")?.dataset.level === "high"
+			&& document.querySelector("#thinking .model-name")?.textContent === "high");
 		step("model and thinking selections target the custom provider", true,
 			`${JSON.stringify(source.defaultModel.value)}; ${document.querySelector("#model")?.textContent}; ${document.querySelector("#thinking")?.textContent}`);
 		input("#prompt", "local protocol check");
@@ -101,6 +113,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		customId = undefined;
 
 		click("#add-provider");
+		click("#provider-kind-custom");
 		input("#provider-name", "Denied draft");
 		input("#provider-base-url", "https://denied.example/v1");
 		input("#provider-key", "denied-secret");

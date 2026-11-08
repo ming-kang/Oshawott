@@ -33,7 +33,7 @@ try {
 	);
 	await panel.click("#settings-back");
 	const offscreen = await browser.waitForTarget((t) => t.url().endsWith("/engine.html"), { timeout: 5_000 });
-	step("panel ↔ Engine (offscreen) over a Port", providers.includes("anthropic") && providers.includes("demo"), providers.join(", "));
+	step("panel ↔ Engine (offscreen) over a Port", providers.includes("demo") && !providers.includes("anthropic"), providers.join(", "));
 
 	const chip = await until("the tab chip", () => panel.$eval("#tab-chip .name", (n) => n.textContent || undefined));
 	const tabId = await panel.evaluate(async (url) => (await chrome.tabs.query({ url: `${url}*` }))[0]?.id, site.url);
@@ -180,6 +180,33 @@ try {
 	}
 	const redirects = site.redirectHits();
 	step("redirect destinations receive no request", redirects.get302 === 1 && redirects.post307 === 1 && redirects.target === 0, JSON.stringify(redirects));
+
+	const initialLanguage = await panel.evaluate(() => document.documentElement.lang);
+	const initialPreference = await panel.evaluate(() => localStorage.getItem("oshawott:language") ?? "system");
+	const nextLanguage = initialLanguage === "en" ? "zh-CN" : "en";
+	const settingsTitle = (language) => language === "en" ? "Settings" : "设置";
+	const languageState = (language, preference) => panel.evaluate((expected, expectedPreference, title) => {
+		const stored = localStorage.getItem("oshawott:language");
+		const preferenceApplied = expectedPreference === "system" ? stored === null : stored === expectedPreference;
+		const applied = document.documentElement.lang === expected && preferenceApplied
+			&& document.querySelector("#settings-toggle")?.getAttribute("aria-label") === title;
+		return applied ? expected : undefined;
+	}, language, preference, settingsTitle(language));
+	await panel.click("#settings-toggle");
+	await Promise.all([
+		panel.waitForNavigation({ waitUntil: "domcontentloaded" }),
+		panel.click(`#settings-language [data-value="${nextLanguage}"]`),
+	]);
+	const switched = await until("the new language after a panel reload", () => languageState(nextLanguage, nextLanguage));
+	await panel.click("#settings-toggle");
+	await until("the language control after a panel reload", () => panel.$(`#settings-language [data-value="${initialPreference}"]`));
+	await Promise.all([
+		panel.waitForNavigation({ waitUntil: "domcontentloaded" }),
+		panel.click(`#settings-language [data-value="${initialPreference}"]`),
+	]);
+	const languageRestored = await until("the restored language preference after a second panel reload", () => languageState(initialLanguage, initialPreference));
+	step("system and explicit language selections persist and apply across panel reloads", switched === nextLanguage && languageRestored === initialLanguage,
+		`${initialPreference} → ${nextLanguage} → ${initialPreference}`);
 } catch (error) {
 	const panel = (await browser.pages()).find((p) => p.url().endsWith("/panel.html"));
 	if (panel) {

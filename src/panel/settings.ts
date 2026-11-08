@@ -1,13 +1,12 @@
 import { DEFAULT_BUSY_MODE, type BusyMode, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";
-import { t } from "./i18n.ts";
-import { requestModelAccess } from "./model-permissions.ts";
+import { saveLanguage, savedLanguagePreference, t, type LanguagePreference } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon, logo, toast } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
-	"providers" | "setApiKey" | "clearApiKey" | "refreshProvider" | "busyMode" | "setBusyMode"
+	"providers" | "busyMode" | "setBusyMode"
 >;
 type Theme = "system" | "light" | "dark";
 const context = BACKGROUND_CONTEXT;
@@ -23,33 +22,18 @@ function applyTheme(theme: Theme) {
 }
 export const initializeTheme = () => applyTheme(savedTheme());
 
-const MARKS: Record<string, string> = {
-	anthropic: "#c96442", openai: "#10a37f", google: "#3b78e7", openrouter: "#6366f1", deepseek: "#4d6bfe",
-};
-const COMMON_PROVIDERS = new Set(["anthropic", "openai", "google", "openrouter", "deepseek", "demo"]);
-
 export class SettingsSheet implements OverlayView {
 	readonly element: HTMLElement;
 	readonly #source: () => Source | undefined;
 	readonly #card = h("div", { class: "card providers", id: "providers" });
-	readonly #builtinPicker = h("select", { class: "input", id: "builtin-provider-picker", "aria-label": t("settings.builtinProvider") });
 	readonly #delivery = h("div", { class: "segmented", id: "settings-delivery", role: "radiogroup", "aria-label": t("settings.messaging") });
 	readonly #onEditProvider: (id?: string) => void;
-	readonly #keyDrafts = new Map<string, string>();
-	#expanded: string | undefined;
 	#closed = false;
 	#deliveryPending = false;
 
 	constructor(source: () => Source | undefined, onClose: () => void, onEditProvider: (id?: string) => void) {
 		this.#source = source;
 		this.#onEditProvider = onEditProvider;
-		this.#builtinPicker.addEventListener("change", () => {
-			this.#expanded = this.#builtinPicker.value;
-			this.refresh();
-			this.#card.querySelector<HTMLInputElement>(`[data-provider="${this.#expanded}"] input`)?.focus();
-		});
-		const providers = source()?.providers.value ?? [];
-		this.#expanded = providers.some((provider) => provider.configured) ? undefined : providers[0]?.id;
 		this.#buildDelivery();
 		this.element = h(
 			"section", { class: "sheet", id: "settings", role: "dialog", "aria-modal": "true", "aria-label": t("settings.title") },
@@ -60,11 +44,13 @@ export class SettingsSheet implements OverlayView {
 				h("section", { class: "section" },
 					h("div", { class: "section-heading" }, h("h3", null, t("settings.providers")),
 						h("button", { class: "btn small", id: "add-provider", type: "button", onclick: () => this.#onEditProvider() }, icon("plus", 14), t("settings.addProvider"))),
-					h("div", { class: "provider-connect" }, this.#builtinPicker), this.#card,
+					this.#card,
 					h("p", { class: "section-hint" }, icon("lock", 12), h("span", null, t("settings.providersHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.messaging")), this.#delivery,
 					h("p", { class: "section-hint" }, h("span", null, t("settings.messagingHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.appearance")), this.#themes()),
+				h("section", { class: "section" }, h("h3", null, t("settings.language")), this.#languages(),
+					h("p", { class: "section-hint" }, h("span", null, t("settings.languageHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.about")),
 					h("div", { class: "card about" }, logo(34), h("div", null, h("strong", null, "Oshawott"), h("span", null, t("settings.version", ext.runtime.getManifest().version))))),
 			),
@@ -76,115 +62,26 @@ export class SettingsSheet implements OverlayView {
 		this.#refreshDelivery();
 		const active = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
 		const providerId = active?.closest<HTMLElement>(".provider")?.dataset.provider;
-		const action = active?.classList.contains("provider-head") ? ".provider-head"
-			: active?.classList.contains("danger") ? ".btn.danger"
-				: active?.classList.contains("primary") ? ".btn.primary"
-					: active?.tagName === "INPUT" ? "input" : undefined;
-		const providers = this.#source()?.providers.value ?? [];
-		const selected = this.#builtinPicker.value;
-		this.#builtinPicker.replaceChildren(...providers.filter((provider) => provider.kind === "builtin")
-			.map((provider) => h("option", { value: provider.id }, provider.name)));
-		if (providers.some((provider) => provider.id === selected && provider.kind === "builtin")) this.#builtinPicker.value = selected;
-		this.#card.replaceChildren(...providers.filter((provider) => provider.kind === "custom" || provider.configured
-			|| COMMON_PROVIDERS.has(provider.id) || provider.id === this.#expanded).map((provider) => this.#row(provider)));
-		if (providerId && action) {
-			const provider = this.#card.querySelector<HTMLElement>(`[data-provider="${providerId}"]`);
-			(provider?.querySelector<HTMLElement>(action) ?? provider?.querySelector<HTMLElement>(".provider-head"))?.focus({ preventScroll: true });
-		}
+		const providers = (this.#source()?.providers.value ?? []).filter((provider) => provider.kind === "custom" || provider.configured);
+		this.#card.replaceChildren(...(providers.length
+			? providers.map((provider) => this.#row(provider))
+			: [h("div", { class: "list-empty", id: "providers-empty" }, t("settings.noProviders"))]));
+		if (providerId) this.#card.querySelector<HTMLElement>(`[data-provider="${providerId}"] .provider-head`)?.focus({ preventScroll: true });
 	}
 
 	close() {
 		this.#closed = true;
-		this.#keyDrafts.clear();
-		for (const input of this.#card.querySelectorAll<HTMLInputElement>('input[type="password"]')) input.value = "";
 	}
 
 	#row(provider: ProviderSummary) {
-		const open = provider.kind === "builtin" && this.#expanded === provider.id;
-		const input = h("input", {
-			class: "input", type: "password", placeholder: t("settings.keyPlaceholder"), autocomplete: "off", spellcheck: "false", "aria-label": `${provider.name} API key`,
-			value: this.#keyDrafts.get(provider.id) ?? "",
-		});
-		input.addEventListener("input", () => this.#keyDrafts.set(provider.id, input.value));
-		const saveLabel = provider.configured ? t("settings.replace") : t("settings.save");
-		const save = h("button", { class: "btn primary", type: "button", "aria-label": `${provider.name}: ${saveLabel}` }, saveLabel);
-		save.addEventListener("click", async () => {
-			if (!input.value.trim()) return input.focus();
-			const asked = requestModelAccess(provider.baseUrl);
-			save.disabled = true;
-			save.setAttribute("aria-busy", "true");
-			save.prepend(h("span", { class: "spinner" }));
-			try {
-				if (!await asked) throw new Error(t("settings.permissionDenied"));
-				const source = this.#source();
-				if (!source) throw new Error("The workspace is not ready.");
-				await source.setApiKey({ provider: provider.id, key: input.value }, context);
-				input.value = "";
-				this.#keyDrafts.delete(provider.id);
-				this.#expanded = undefined;
-				this.refresh();
-				toast(t("settings.saved"));
-			} catch (error) {
-				toast(String((error as Error)?.message ?? error), "error");
-			} finally {
-				save.disabled = false;
-				save.removeAttribute("aria-busy");
-				save.querySelector(".spinner")?.remove();
-			}
-		});
-		input.addEventListener("keydown", (event) => event.key === "Enter" && save.click());
-		const remove = h("button", { class: "btn danger", type: "button", "aria-label": `${provider.name}: ${t("settings.remove")}` }, t("settings.remove"));
-		remove.addEventListener("click", async () => {
-			remove.disabled = true;
-			remove.setAttribute("aria-busy", "true");
-			remove.prepend(h("span", { class: "spinner" }));
-			try {
-				const source = this.#source();
-				if (!source) throw new Error("The workspace is not ready.");
-				await source.clearApiKey({ provider: provider.id }, context);
-				this.#keyDrafts.delete(provider.id);
-				this.refresh();
-				toast(t("settings.removed"));
-			} catch (error) {
-				toast(String((error as Error)?.message ?? error), "error");
-			} finally {
-				remove.disabled = false;
-				remove.removeAttribute("aria-busy");
-				remove.querySelector(".spinner")?.remove();
-			}
-		});
-		const refresh = h("button", { class: "btn", type: "button", disabled: provider.refreshing }, provider.refreshing ? t("settings.discovering") : t("settings.refreshModels"));
-		refresh.addEventListener("click", async () => {
-			const asked = requestModelAccess(provider.baseUrl);
-			refresh.disabled = true;
-			try {
-				if (!await asked) throw new Error(t("settings.permissionDenied"));
-				const source = this.#source();
-				if (!source) throw new Error("The workspace is not ready.");
-				await source.refreshProvider({ provider: provider.id }, context);
-			} catch (error) {
-				toast(String((error as Error)?.message ?? error), "error");
-			} finally {
-				refresh.disabled = false;
-			}
-		});
-		return h(
-			"div", { class: "provider", "data-provider": provider.id, "data-open": open || null },
-				h("button", {
-					class: "provider-head", type: "button", "aria-expanded": String(open),
-					onclick: () => {
-						if (provider.kind === "custom") return this.#onEditProvider(provider.id);
-						this.#expanded = open ? undefined : provider.id;
-						this.refresh();
-						if (!open) this.#card.querySelector<HTMLInputElement>(`[data-provider="${provider.id}"] input`)?.focus();
-					},
-				},
-				h("span", { class: "provider-mark", "aria-hidden": "true", style: `--mark:${MARKS[provider.id] ?? "var(--accent)"}` }, provider.name.slice(0, 1).toUpperCase()),
-				h("span", { class: "provider-name" }, provider.name),
-				h("span", { class: "pill", "data-on": provider.configured || null }, provider.configured ? t("settings.connected") : t("settings.notSet")), icon("chevron", 14)),
-			open ? h("div", null,
-				h("div", { class: "provider-form" }, input, save, provider.configured ? refresh : null, provider.configured ? remove : null),
-				provider.discoveryError ? h("p", { class: "section-hint provider-error" }, provider.discoveryError) : null) : null,
+		const status = provider.configured ? t("settings.configured") : t("settings.notConfigured");
+		return h("div", { class: "provider", "data-provider": provider.id },
+			h("button", {
+				class: "provider-head", type: "button", "aria-haspopup": "dialog", "aria-label": `${provider.name}: ${status}`,
+				onclick: () => this.#onEditProvider(provider.id),
+			},
+			h("span", { class: "provider-name" }, provider.name),
+			h("span", { class: "pill", "data-on": provider.configured || null }, status), icon("chevron", 14)),
 		);
 	}
 
@@ -239,6 +136,43 @@ export class SettingsSheet implements OverlayView {
 			button.tabIndex = active ? 0 : -1;
 			button.disabled = this.#deliveryPending;
 		}
+	}
+
+	#languages() {
+		const languages: { value: LanguagePreference; label: string }[] = [
+			{ value: "system", label: t("settings.theme.system") },
+			{ value: "zh-CN", label: "中文" },
+			{ value: "en", label: "English" },
+		];
+		const preference = savedLanguagePreference();
+		const segmented = h("div", { class: "segmented", id: "settings-language", role: "radiogroup", "aria-label": t("settings.language") });
+		const choose = (language: LanguagePreference, focus = false) => {
+			for (const button of segmented.querySelectorAll<HTMLButtonElement>("button")) {
+				const selected = button.dataset.value === language;
+				button.setAttribute("aria-checked", String(selected));
+				button.tabIndex = selected ? 0 : -1;
+				if (selected && focus) button.focus({ preventScroll: true });
+			}
+			if (language === savedLanguagePreference()) return;
+			saveLanguage(language);
+			location.reload();
+		};
+		for (const [index, language] of languages.entries()) {
+			segmented.append(h("button", {
+				type: "button", role: "radio", "data-value": language.value, "aria-checked": String(preference === language.value),
+				tabindex: preference === language.value ? 0 : -1,
+				onclick: () => choose(language.value),
+				onkeydown: (event: KeyboardEvent) => {
+					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (index + 1) % languages.length
+						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (index + languages.length - 1) % languages.length
+							: event.key === "Home" ? 0 : event.key === "End" ? languages.length - 1 : -1;
+					if (next < 0) return;
+					event.preventDefault();
+					choose(languages[next]!.value, true);
+				},
+			}, language.label));
+		}
+		return segmented;
 	}
 
 	#themes() {
