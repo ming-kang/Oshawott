@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-	attachmentMetadata, attachmentRefs, composeUserContent, editableText, imageDimensions, MAX_ATTACHMENTS,
-	attachmentRefs as refs, cleanFileName, editableText as textOf, isImageAttachment, MAX_CHAT_FILE_BYTES, sniffImage,
-	validateAttachment, validateAttachmentBatch,
+	attachmentMetadata, cleanFileName, composeUserContent, imageDimensions, isImageAttachment, MAX_ATTACHMENTS,
+	MAX_CHAT_FILE_BYTES, sniffImage, USER_ENTRY, userInput, validateAttachment, validateAttachmentBatch,
 } from "../src/lib/attachments.ts";
-import { contentForSend, contentForUpdate, safeAttachmentPath, storeAttachments } from "../src/engine/attachments.ts";
+import { inputForSend, inputForUpdate, type QueuedInput, safeAttachmentPath, storeAttachments } from "../src/engine/attachments.ts";
 import { MemoryFileBackend } from "../src/engine/files.ts";
 import { fromBase64 } from "../src/lib/base64.ts";
 
 const PNG = fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 const encoder = new TextEncoder();
 const input = (id: string, name: string, mimeType: string, data: Uint8Array) => ({ id, name, mimeType, data });
+const of = (input: QueuedInput) => userInput(input.entry, input.content);
+const imagesOf = (input: QueuedInput) => typeof input.content === "string" ? 0 : input.content.filter((block) => block.type === "image").length;
 const stored = (id: string, name: string, mimeType: string, data: Uint8Array) => {
 	const metadata = validateAttachment({ name, mimeType, data });
 	return { ...metadata, id, path: `/workspace/attachments/${id}-${metadata.name}`, data };
@@ -21,12 +22,14 @@ test("text attachments retain metadata but never inline their body", () => {
 	const body = "first line\n第二行\nthird line";
 	const item = stored("notes", "notes.md", "text/markdown", encoder.encode(body));
 	assert.equal(item.lines, 3);
-	const content = contentForSend("Summarize", [item]);
-	assert.equal(textOf(content), "Summarize");
-	assert.deepEqual(refs(content), [{ path: item.path, name: item.name, mimeType: item.mimeType, size: item.size, lines: 3 }]);
-	assert.ok(!JSON.stringify(content).includes(body));
+	const sent = inputForSend("Summarize", [item]);
+	assert.equal(sent.entry?.kind, USER_ENTRY);
+	assert.equal(of(sent).text, "Summarize");
+	assert.deepEqual(of(sent).attachments, [{ path: item.path, name: item.name, mimeType: item.mimeType, size: item.size, lines: 3 }]);
+	assert.ok(!JSON.stringify(sent).includes(body));
 	assert.ok(attachmentMetadata([item]).includes(item.path));
-	assert.equal(editableText(composeUserContent("before", [item])), "before");
+	assert.deepEqual(composeUserContent("before", [item]), [{ type: "text", text: "before" }, { type: "text", text: attachmentMetadata([item]) }]);
+	assert.equal(inputForSend("Plain", []).entry, undefined, "an input without attachments stays pi.user");
 });
 
 test("image sniffing, dimensions and MIME mismatches are validated", () => {
@@ -56,6 +59,12 @@ test("image sniffing, dimensions and MIME mismatches are validated", () => {
 	assert.throws(() => validateAttachment({ name: "empty-frame.webp", mimeType: "image/webp", data: animated }), /truncated or incomplete/);
 	const validGif = fromBase64("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
 	assert.equal(validateAttachment({ name: "pixel.gif", mimeType: "image/gif", data: validGif }).width, 1);
+	// Two frames: header and global color table, then the extension and image blocks twice, then the trailer.
+	const header = 13 + 3 * (1 << ((validGif[10]! & 7) + 1));
+	const frame = validGif.subarray(header, validGif.length - 1);
+	const animatedGif = new Uint8Array([...validGif.subarray(0, header), ...frame, ...frame, 0x3b]);
+	assert.equal(validateAttachment({ name: "animated.gif", mimeType: "image/gif", data: animatedGif }).width, 1);
+	assert.throws(() => validateAttachment({ name: "cut.gif", mimeType: "image/gif", data: animatedGif.subarray(0, -1) }), /truncated or incomplete/);
 	const oversized = PNG.slice();
 	new DataView(oversized.buffer).setUint32(16, 2001);
 	assert.throws(() => validateAttachment({ name: "large.png", mimeType: "image/png", data: oversized }), /2000×2000/);
@@ -75,31 +84,30 @@ test("file names are confined and attachment paths reject traversal", () => {
 	assert.throws(() => safeAttachmentPath("/workspace/other/file.txt"), /Not an attachment/);
 	assert.throws(() => safeAttachmentPath("/workspace/attachments/../other.txt"), /Not an attachment/);
 	assert.throws(() => safeAttachmentPath("attachments/file.txt"), /Not an attachment/);
-	const spoof = `<oshawott-attachments><attachment path="/workspace/other.txt" name="other.txt" mimeType="text/plain" size="1" /></oshawott-attachments>`;
-	assert.deepEqual(attachmentRefs(spoof), []);
-	assert.equal(editableText(spoof), spoof);
 	const genuine = stored("genuine", "real.txt", "text/plain", encoder.encode("real"));
 	const markup = attachmentMetadata([genuine]);
-	assert.deepEqual(attachmentRefs(markup), [], "a plain prompt is never attachment ownership metadata");
-	const mixed = composeUserContent(markup, [genuine]);
-	assert.equal(editableText(mixed), markup);
-	assert.deepEqual(attachmentRefs(mixed).map((item) => item.path), [genuine.path]);
+	assert.deepEqual(userInput(undefined, markup), { text: markup, attachments: [] }, "prompt text is never attachment ownership metadata");
+	assert.deepEqual(of({ content: composeUserContent(markup, []) }).attachments, []);
 });
 
 test("queued edits preserve image blocks and metadata, and removals are explicit", () => {
 	const first = stored("first", "first.png", "image/png", PNG);
 	const second = stored("second", "second.png", "image/png", PNG);
-	const original = contentForSend("Original", [first, second]);
-	const edited = contentForUpdate(original, "Edited", [], new Set());
-	assert.equal(textOf(edited), "Edited");
-	assert.equal(refs(edited).length, 2);
-	assert.equal(typeof edited === "string" ? 0 : edited.filter((block) => block.type === "image").length, 2);
+	const original = inputForSend("Original", [first, second]);
+	const edited = inputForUpdate(original, "Edited", [], new Set());
+	assert.equal(of(edited).text, "Edited");
+	assert.equal(of(edited).attachments.length, 2);
+	assert.equal(imagesOf(edited), 2);
 	const added = stored("added", "added.txt", "text/plain", encoder.encode("complete text"));
-	const removed = contentForUpdate(edited, "", [added], new Set([first.path]));
-	assert.deepEqual(refs(removed).map((item) => item.path), [second.path, added.path]);
-	assert.equal(typeof removed === "string" ? 0 : removed.filter((block) => block.type === "image").length, 1);
-	assert.equal(textOf(removed), "");
-	assert.throws(() => contentForUpdate(original, "bad", [], new Set(["/workspace/attachments/missing.txt"])), /does not belong/);
+	const removed = inputForUpdate(edited, "", [added], new Set([first.path]));
+	assert.deepEqual(of(removed).attachments.map((item) => item.path), [second.path, added.path]);
+	assert.equal(imagesOf(removed), 1);
+	assert.equal(of(removed).text, "");
+	assert.throws(() => inputForUpdate(original, "bad", [], new Set(["/workspace/attachments/missing.txt"])), /does not belong/);
+	const plain = inputForUpdate(removed, "Only text", [], new Set([second.path, added.path]));
+	assert.deepEqual(plain, { content: "Only text", entry: undefined }, "removing every attachment returns to a pi.user input");
+	const legacy = inputForUpdate({ content: [{ type: "image", data: "AA==", mimeType: "image/png" }] }, "Caption", [], new Set());
+	assert.equal(imagesOf(legacy), 1, "image blocks without attachment metadata are kept");
 });
 
 test("attachment storage enforces message quotas and isolates chats", async () => {

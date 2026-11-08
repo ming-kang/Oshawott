@@ -1,14 +1,13 @@
-import { InboxDoc, type ConversationId, type Harness, type UserInput } from "@earendil-works/pi-durable";
+import { type Harness, type InputEntry, type Tx, type UserInput } from "@earendil-works/pi-durable";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AttachmentInput, ModelRef } from "../contracts/chat.ts";
 import {
-	ATTACHMENTS_DIR, attachmentRefs, cleanFileName, composeUserContent, editableText, isImageAttachment,
-	MAX_ATTACHMENTS, MAX_CHAT_FILE_BYTES, MAX_MESSAGE_ATTACHMENT_BYTES, type AttachmentRef, type StoredAttachment,
-	validateAttachmentBatch,
+	ATTACHMENTS_DIR, cleanFileName, composeUserContent, isImageAttachment, MAX_ATTACHMENTS, MAX_CHAT_FILE_BYTES,
+	MAX_MESSAGE_ATTACHMENT_BYTES, type StoredAttachment, userEntry, userInput, validateAttachmentBatch,
 } from "../lib/attachments.ts";
 import { toBase64 } from "../lib/base64.ts";
 import { ChordError, type Context } from "../lib/chord.ts";
-import { RequestDoc, WorkspaceDoc } from "./docs.ts";
+import { AttachmentDeletesDoc } from "./docs.ts";
 import type { FileBackend } from "./files.ts";
 import { resolvePath, WORKSPACE } from "./files.ts";
 import type { EngineServices } from "./facet.ts";
@@ -94,87 +93,72 @@ export async function discardAttachments(files: FileBackend, chat: number, paths
 export const rollbackAttachments = (files: FileBackend, chat: number, prepared: readonly PreparedAttachment[]) =>
 	discardAttachments(files, chat, prepared.filter((item) => item.created).map((item) => item.path)).catch(() => undefined);
 
-/** Post-commit deletion is retryable and, importantly, never rolls back files the committed message still references. */
-export async function cleanupAttachments(harness: Harness, files: FileBackend, chat: number, paths: readonly string[], context: Context) {
-	const unique = [...new Set(paths)];
-	const key = JSON.stringify(unique);
+/**
+ * Record, inside the commit that drops their last reference, attachment files to delete once it has committed. Callers
+ * run `completeAttachmentDeletes` after the commit; an intent a crash interrupts is completed by the next Engine.
+ */
+export async function intendAttachmentDeletes(tx: Tx, chat: number, paths: readonly string[]): Promise<void> {
+	const unique = [...new Set(paths)].map(safeAttachmentPath);
 	if (!unique.length) return;
-	await harness.commit(async (tx) => {
-		const pending = (await tx.doc(RequestDoc, chat as ConversationId)).pendingAttachmentDeletes ??= [];
-		if (!pending.some((item) => item.paths.length === unique.length && item.paths.every((path, index) => path === unique[index]))) {
-			pending.push({ chat, paths: unique });
-		}
-	}, context);
-	try {
-		await discardAttachments(files, chat, unique);
-	} catch {
-		return; // The durable intent is retried on the next Engine.
-	}
-	await harness.commit(async (tx) => {
-		const requests = await tx.doc(RequestDoc, chat as ConversationId);
-		requests.pendingAttachmentDeletes = (requests.pendingAttachmentDeletes ?? []).filter((item) => JSON.stringify(item.paths) !== key);
-	}, context);
+	(await tx.doc(AttachmentDeletesDoc)).pending.push({ id: crypto.randomUUID(), chat, paths: unique });
 }
 
-export async function resumeAttachmentDeletes(harness: Harness, files: FileBackend, context: Context, onError: (error: unknown) => void) {
-	const workspace = await harness.snapshot(WorkspaceDoc, context);
-	for (const chat of workspace?.chats ?? []) {
-		const requests = await harness.snapshot(RequestDoc, chat.id as ConversationId, context);
-		for (const pending of requests?.pendingAttachmentDeletes ?? []) {
-			try {
-				await discardAttachments(files, chat.id, pending.paths);
-				await harness.commit(async (tx) => {
-					const doc = await tx.doc(RequestDoc, chat.id as ConversationId);
-					doc.pendingAttachmentDeletes = (doc.pendingAttachmentDeletes ?? []).filter((item) => JSON.stringify(item.paths) !== JSON.stringify(pending.paths));
-				}, context);
-			} catch (error) {
-				onError(error);
-			}
+/** Delete every recorded intent's files, clearing each intent once its files are gone. Idempotent and retryable. */
+export async function completeAttachmentDeletes(harness: Harness, files: FileBackend, context: Context, onError: (error: unknown) => void) {
+	for (const intent of (await harness.snapshot(AttachmentDeletesDoc, context))?.pending ?? []) {
+		try {
+			await discardAttachments(files, intent.chat, intent.paths);
+			await harness.commit(async (tx) => {
+				const doc = await tx.doc(AttachmentDeletesDoc);
+				doc.pending = doc.pending.filter((item) => item.id !== intent.id);
+			}, context);
+		} catch (error) {
+			onError(error);
 		}
 	}
 }
 
 const imageOf = (item: StoredAttachment): ImageContent => ({ type: "image", data: toBase64(item.data), mimeType: item.mimeType });
 
-export function contentForSend(text: string, attachments: readonly StoredAttachment[]): UserInput {
-	return composeUserContent(text, attachments, attachments.filter(isImageAttachment).map(imageOf));
+export type QueuedInput = { content: UserInput; entry?: InputEntry };
+
+/** The model content and entry of a new input: the entry carries the attachments, the content projects them. */
+export function inputForSend(text: string, attachments: readonly StoredAttachment[]): QueuedInput {
+	const entry = userEntry(text, attachments);
+	return { content: composeUserContent(text, attachments, attachments.filter(isImageAttachment).map(imageOf)), ...(entry ? { entry } : {}) };
 }
 
-export function contentForUpdate(
-	content: UserInput,
+export function inputForUpdate(
+	input: QueuedInput,
 	text: string | undefined,
 	added: readonly StoredAttachment[],
 	removed: ReadonlySet<string>,
-): UserInput {
-	const existing = attachmentRefs(content);
+): QueuedInput {
+	const current = userInput(input.entry, input.content);
 	for (const path of removed) {
 		safeAttachmentPath(path);
-		if (!existing.some((item) => item.path === path)) invalid(`Attachment ${path} does not belong to this queued message.`);
+		if (!current.attachments.some((item) => item.path === path)) invalid(`Attachment ${path} does not belong to this queued message.`);
 	}
 	const addedPaths = new Set(added.map((item) => item.path));
-	const refs = [...existing.filter((item) => !removed.has(item.path) && !addedPaths.has(item.path)), ...added];
+	const refs = [...current.attachments.filter((item) => !removed.has(item.path) && !addedPaths.has(item.path)), ...added];
 	if (refs.length > MAX_ATTACHMENTS) invalid(`A message can have at most ${MAX_ATTACHMENTS} attachments.`);
 	if (refs.reduce((sum, item) => sum + item.size, 0) > MAX_MESSAGE_ATTACHMENT_BYTES) {
 		invalid("Attachments in one message are limited to 24 MiB in total.");
 	}
-	const oldImages = typeof content === "string" ? [] : content.filter((block): block is ImageContent => block.type === "image");
-	const byPath = new Map<string, ImageContent>();
-	let oldIndex = 0;
-	for (const item of existing.filter(isImageAttachment)) {
-		const image = oldImages[oldIndex++];
-		if (image) byPath.set(item.path, image);
-	}
+	// Image blocks follow the entry's image attachments in order; any beyond them (image-only input without an entry) stay.
+	const oldImages = typeof input.content === "string" ? [] : input.content.filter((block): block is ImageContent => block.type === "image");
+	const currentImages = current.attachments.filter(isImageAttachment);
+	const byPath = new Map(currentImages.map((item, index) => [item.path, oldImages[index]] as const));
 	const addedByPath = new Map(added.map((item) => [item.path, imageOf(item)] as const));
 	const images = refs.filter(isImageAttachment).map((item) => {
 		const image = addedByPath.get(item.path) ?? byPath.get(item.path);
 		if (!image) invalid(`The image content for ${item.path} is unavailable.`);
 		return image;
 	});
-	// Image-only submissions from older versions have no metadata; editing their text must not discard them.
-	images.push(...oldImages.slice(oldIndex));
-	const nextText = text ?? editableText(content);
+	images.push(...oldImages.slice(currentImages.length));
+	const nextText = text ?? current.text;
 	if (!nextText.trim() && !refs.length && !images.length) invalid("The message cannot be empty.");
-	return composeUserContent(nextText, refs, images);
+	return { content: composeUserContent(nextText, refs, images), entry: userEntry(nextText, refs) };
 }
 
 export function requireContentVision(services: EngineServices, ref: ModelRef | null | undefined, content: UserInput) {
@@ -185,11 +169,5 @@ export function requireContentVision(services: EngineServices, ref: ModelRef | n
 	if (!model.input.includes("image")) invalid(`${model.name ?? model.id} cannot process images. Choose a vision-capable model before sending.`);
 }
 
-export async function queuedContent(harness: Harness, id: ConversationId, submissionId: number, context: Context): Promise<UserInput | undefined> {
-	const inbox = await harness.snapshot(InboxDoc, id, context);
-	const item = inbox?.items.find((item) => item.id === submissionId && (item.mode === "steer" || item.mode === "followUp"));
-	return item && item.mode !== "write" ? item.content : undefined;
-}
-
-/** Kept for tests and callers that only need metadata from a raw inbox item. */
-export const refsOfQueued = attachmentRefs;
+/** Attachment paths an input's entry owns. */
+export const attachmentPaths = (input: QueuedInput) => userInput(input.entry, input.content).attachments.map((item) => item.path);

@@ -1,4 +1,4 @@
-import { defineDoc, type SubmissionId } from "@earendil-works/pi-durable";
+import { defineDoc } from "@earendil-works/pi-durable";
 import { DEFAULT_BUSY_MODE, type BusyMode, type ChatSummary, type ModelRef } from "../contracts/chat.ts";
 
 export type WorkspaceState = {
@@ -18,20 +18,17 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	checkpointWhen: () => true,
 });
 
-export type RequestRecord = { submissionId: SubmissionId; attachments: string[] };
-export type RequestState = {
-	requests: (RequestRecord & { requestId: string })[];
-	pendingAttachmentDeletes?: { chat: number; paths: string[] }[];
-};
+export type AttachmentDelete = { id: string; chat: number; paths: string[] };
 
-/** Admission and attachment ownership live together; a retry never needs to guess whether its files were committed. */
-export const RequestDoc = defineDoc<RequestState>({
-	kind: "oshawott.requests",
+/**
+ * Attachment files whose last reference a commit removed, recorded in that same commit: a crash or eviction between it
+ * and the deletion leaves the intent, which the next Engine completes.
+ */
+export const AttachmentDeletesDoc = defineDoc<{ pending: AttachmentDelete[] }>({
+	kind: "oshawott.attachment-deletes",
 	version: 1,
-	scope: "conversation",
-	history: "latest",
-	fork: "current",
-	initial: () => ({ requests: [], pendingAttachmentDeletes: [] }),
+	scope: "session",
+	initial: () => ({ pending: [] }),
 	checkpointWhen: () => true,
 });
 

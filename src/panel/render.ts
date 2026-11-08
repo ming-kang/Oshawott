@@ -1,8 +1,9 @@
 // Committed entries never change and are built once by ID; a tool result fills its call's card.
 // Only `pi.live` (streaming answer, running tools, retry, last failure) is rebuilt on every change.
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
+import { ToolResultEntry } from "@earendil-works/pi-durable";
 import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureReason } from "@earendil-works/pi-durable";
-import { attachmentRefs, editableText, isImageAttachment, type AttachmentRef } from "../lib/attachments.ts";
+import { isImageAttachment, type AttachmentRef, USER_ENTRY, userInput } from "../lib/attachments.ts";
 import { fromBase64 } from "../lib/base64.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n.ts";
@@ -104,7 +105,7 @@ export class Transcript {
 		for (const entry of entries) {
 			const key = String(entry.id);
 			keep.add(key);
-			if (entry.kind === "pi.user" || entry.kind === "pi.assistant") visible++;
+			if (entry.kind === "pi.user" || entry.kind === USER_ENTRY || entry.kind === "pi.assistant") visible++;
 			let node = this.#nodes.get(key);
 			if (!node) {
 				node = this.#entry(entry);
@@ -132,20 +133,22 @@ export class Transcript {
 		const message = entry.model?.[0];
 		switch (entry.kind) {
 			case "pi.user":
-				return message?.role === "user" ? this.#user(message, String(entry.id)) : h("div", { hidden: true });
+			case USER_ENTRY:
+				return message?.role === "user" ? this.#user(entry, message, String(entry.id)) : h("div", { hidden: true });
 			case "pi.assistant":
 				return message?.role === "assistant" ? this.#assistant(message, false) : h("div", { hidden: true });
 			case "pi.tool-result": {
 				if (message?.role !== "toolResult") return h("div", { hidden: true });
 				const text = textOf(message.content);
+				const diagnostics = ToolResultEntry.is(entry) ? entry.data?.diagnostics : undefined;
 				const card = this.#cards.get(message.toolCallId);
 				if (card) {
-					card.setResult(text, message.isError);
+					card.setResult(text, message.isError, message.details, diagnostics);
 					return h("div", { hidden: true });
 				}
 				// The call itself is before the window: a card of its own.
 				const orphan = new ToolCard(message.toolName, {});
-				orphan.setResult(text, message.isError);
+				orphan.setResult(text, message.isError, message.details, diagnostics);
 				return h("div", { class: "msg assistant" }, h("div", { class: "tools" }, orphan.element));
 			}
 			case "pi.reset":
@@ -157,16 +160,15 @@ export class Transcript {
 		}
 	}
 
-	#user(message: UserMessage, key: string): HTMLElement {
-		const refs = attachmentRefs(message.content);
-		const text = editableText(message.content);
+	#user(entry: EntryRecord, message: UserMessage, key: string): HTMLElement {
+		const { text, attachments: refs } = userInput(entry, message.content);
 		const bubble = h("div", { class: "bubble" }, text ? h("div", { class: "user-text" }, text) : null);
 		const images = typeof message.content === "string" ? [] : message.content.filter((block) => block.type === "image");
 		const referencedImages = refs.filter(isImageAttachment).length;
 		let imageIndex = 0;
 		if (refs.length) bubble.append(h("div", { class: "user-attachments" }, refs.map((ref) =>
 			this.#attachment(ref, key, isImageAttachment(ref) ? images[imageIndex++] : undefined))));
-		// Legacy image-only messages have no attachment metadata.
+		// Image blocks beyond the entry's image attachments (an image-only `pi.user` input) show on their own.
 		for (const image of images.slice(referencedImages)) {
 			bubble.append(h("img", { class: "user-image", src: `data:${image.mimeType};base64,${image.data}`, alt: t("attachments.title") }));
 		}

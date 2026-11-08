@@ -1,6 +1,6 @@
 import type { ConversationView, InboxItem, InboxState, LiveState } from "@earendil-works/pi-durable";
 import type { BusyMode, QueueCancelResult, QueueUpdateResult } from "../contracts/chat.ts";
-import { attachmentRefs, editableText, type AttachmentRef } from "../lib/attachments.ts";
+import { type AttachmentRef, userInput } from "../lib/attachments.ts";
 import type { AttachmentInput } from "../lib/attachments.ts";
 import { AttachmentPicker, pendingInput } from "./attachments.ts";
 import { t } from "./i18n.ts";
@@ -16,7 +16,7 @@ export interface MessageQueueActions {
 	continue(): Promise<unknown>;
 }
 
-const textOf = (content: UserItem["content"]) => editableText(content);
+const inputOf = (item: UserItem) => userInput(item.entry, item.content);
 const modeLabel = (mode: BusyMode) => t(mode === "steer" ? "queue.steer" : "queue.followUp");
 
 /** A projection of `pi.inbox`; editing never becomes a second durable queue. */
@@ -152,16 +152,16 @@ export class MessageQueue {
 					if (result !== "updated") toast(t("queue.unavailable"), "error");
 				}),
 			}, modeLabel(item.mode), icon("chevron", 11)),
-			h("div", { class: "queue-copy" }, h("div", { class: "queue-text" }, textOf(item.content)),
-				h("div", { class: "queue-attachments" }, attachmentRefs(item.content).map((attachment) =>
+			h("div", { class: "queue-copy" }, h("div", { class: "queue-text" }, inputOf(item).text),
+				h("div", { class: "queue-attachments" }, inputOf(item).attachments.map((attachment) =>
 					h("span", { class: "queue-attachment" }, icon(attachment.mimeType.startsWith("image/") ? "eye" : "file", 11), attachment.name)))),
 			h("button", {
 				class: "icon-btn small queue-edit", type: "button", title: t("queue.edit"), "aria-label": t("queue.edit"),
 				onclick: () => {
 					this.#editing?.picker.dispose();
 					this.#editing = {
-						id: item.id, text: textOf(item.content), mode: item.mode, requestId: crypto.randomUUID(),
-						existing: attachmentRefs(item.content), removed: new Set(), picker: new AttachmentPicker(),
+						id: item.id, text: inputOf(item).text, mode: item.mode, requestId: crypto.randomUUID(),
+						existing: inputOf(item).attachments, removed: new Set(), picker: new AttachmentPicker(),
 					};
 					this.#render();
 					const editor = this.element.querySelector<HTMLTextAreaElement>(`[data-submission-id="${item.id}"] .queue-editor`);

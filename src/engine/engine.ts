@@ -5,7 +5,7 @@ import { Browser } from "../contracts/browser.ts";
 import { PANEL_LINK_LIMITS } from "../contracts/chat.ts";
 import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/hosts.ts";
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
-import { resumeAttachmentDeletes } from "./attachments.ts";
+import { completeAttachmentDeletes } from "./attachments.ts";
 import { WorkspaceDoc } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
@@ -103,7 +103,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	}, context);
 
 	await resumeFileDeletes(harness, options.files, context, onError);
-	await resumeAttachmentDeletes(harness, options.files, context, onError);
+	await completeAttachmentDeletes(harness, options.files, context, onError);
 	await host.load(
 		[
 			{

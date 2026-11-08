@@ -1,4 +1,4 @@
-import type { ImageContent, TextContent, UserMessage } from "@earendil-works/pi-ai";
+import type { ImageContent, UserMessage } from "@earendil-works/pi-ai";
 
 export const ATTACHMENTS_DIR = "/workspace/attachments";
 export const MAX_ATTACHMENTS = 8;
@@ -110,13 +110,15 @@ function gifBlocks(data: Uint8Array, start: number): { offset: number; bytes: bo
 	return undefined;
 }
 
+/** Walk every block up to the trailer: animated GIFs hold several images, each followed by extensions or another image. */
 function completeGif(data: Uint8Array): boolean {
 	if (data.length < 15) return false;
 	const packed = data[10]!;
 	let offset = 13 + (packed & 0x80 ? 3 * (1 << ((packed & 7) + 1)) : 0);
+	let images = 0;
 	while (offset < data.length) {
 		const marker = data[offset];
-		if (marker === 0x3b) return false;
+		if (marker === 0x3b) return images > 0;
 		if (marker === 0x21) {
 			const blocks = gifBlocks(data, offset + 2);
 			if (!blocks) return false;
@@ -129,7 +131,9 @@ function completeGif(data: Uint8Array): boolean {
 		if (offset >= data.length) return false;
 		offset++; // LZW minimum code size.
 		const blocks = gifBlocks(data, offset);
-		return Boolean(blocks?.bytes && blocks.offset < data.length && data[blocks.offset] === 0x3b);
+		if (!blocks?.bytes) return false;
+		offset = blocks.offset;
+		images++;
 	}
 	return false;
 }
@@ -244,10 +248,8 @@ export function validateAttachmentBatch(inputs: readonly Pick<AttachmentInput, "
 }
 
 const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const unescape = (value: string) => value.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-const number = (value: string | undefined) => value === undefined ? undefined : Number(value);
 
-/** Model-readable metadata only: text bodies stay in the file area. */
+/** Model-readable projection only: ownership lives in the input's entry data, and text bodies stay in the file area. */
 export function attachmentMetadata(attachments: readonly AttachmentRef[]): string {
 	if (!attachments.length) return "";
 	const lines = attachments.map((item) => {
@@ -261,48 +263,40 @@ export function attachmentMetadata(attachments: readonly AttachmentRef[]): strin
 	return `<oshawott-attachments>\nThe user's attachments are saved in this chat. Read text or code from its path with read or read_text; do not ask the user to paste it. Image content is attached natively and the same bytes are available at its path.\n${lines.join("\n")}\n</oshawott-attachments>`;
 }
 
-const SECTION = /<oshawott-attachments>[\s\S]*?<\/oshawott-attachments>/g;
-const ATTRIBUTE = /(path|name|mimeType|size|lines|width|height)="([^"]*)"/g;
+/**
+ * The entry kind of an input with attachments. Its data is the source of truth for the user's text and attachments; the
+ * user message the model reads is a projection of it (`composeUserContent`). Inputs without attachments stay `pi.user`.
+ */
+export const USER_ENTRY = "oshawott.user";
+export type UserEntryData = { text: string; attachments: AttachmentRef[] };
 
-export function attachmentsInText(text: string): AttachmentRef[] {
-	const found: AttachmentRef[] = [];
-	for (const section of text.matchAll(SECTION)) {
-		for (const line of section[0].matchAll(/<attachment\s+([^>]+)\/>/g)) {
-			const attrs: Record<string, string> = {};
-			for (const match of line[1]!.matchAll(ATTRIBUTE)) attrs[match[1]!] = unescape(match[2]!);
-			const size = number(attrs.size);
-			if (!attrs.path?.startsWith(`${ATTACHMENTS_DIR}/`) || !attrs.name || !attrs.mimeType || !Number.isSafeInteger(size) || size! < 0) continue;
-			found.push({
-				path: attrs.path, name: attrs.name, mimeType: attrs.mimeType, size: size!,
-				...(attrs.lines !== undefined ? { lines: number(attrs.lines) } : {}),
-				...(attrs.width !== undefined ? { width: number(attrs.width), height: number(attrs.height) } : {}),
-			});
-		}
-	}
-	return found;
+export function userEntry(text: string, attachments: readonly AttachmentRef[]): { kind: string; data: UserEntryData } | undefined {
+	if (!attachments.length) return undefined;
+	const refs = attachments.map(({ path, name, mimeType, size, lines, width, height }) => ({
+		path, name, mimeType, size,
+		...(lines !== undefined ? { lines } : {}),
+		...(width !== undefined && height !== undefined ? { width, height } : {}),
+	}));
+	return { kind: USER_ENTRY, data: { text, attachments: refs } };
 }
 
-const metadataBlock = (content: UserContent): TextContent | undefined => {
-	if (typeof content === "string") return undefined;
-	const block = content.filter((item) => item.type === "text").at(-1);
-	const text = block?.text.trim();
-	return text?.startsWith("<oshawott-attachments>") && text.endsWith("</oshawott-attachments>") ? block : undefined;
-};
-/** Only our dedicated final text block is authoritative; literal markup in ordinary prompt text stays ordinary text. */
-export const attachmentRefs = (content: UserContent): AttachmentRef[] => attachmentsInText(metadataBlock(content)?.text ?? "");
-export const editableText = (content: UserContent): string => {
-	if (typeof content === "string") return content;
-	const metadata = metadataBlock(content);
-	return content.filter((block) => block.type === "text").map((block) => block === metadata ? "" : block.text).join("");
-};
+const plainText = (content: UserContent) =>
+	typeof content === "string" ? content : content.filter((block) => block.type === "text").map((block) => block.text).join("");
 
-/** Rebuild a user message without merging its metadata into editable text or dropping image blocks. */
+/** What the user wrote and attached, from an input's entry (queued or placed); a `pi.user` input has its text only. */
+export function userInput(entry: { kind: string; data?: unknown } | undefined, content: UserContent): UserEntryData {
+	const data = entry?.kind === USER_ENTRY ? entry.data as Partial<UserEntryData> | undefined : undefined;
+	if (typeof data?.text === "string" && Array.isArray(data.attachments)) return { text: data.text, attachments: data.attachments };
+	return { text: plainText(content), attachments: [] };
+}
+
+/** Build the model's user message: the text, a metadata block for the attachments, then native image blocks. */
 export function composeUserContent(text: string, attachments: readonly AttachmentRef[], images: readonly ImageContent[] = []): UserContent {
+	if (!attachments.length && !images.length) return text;
 	const blocks: Exclude<UserContent, string> = [];
-	if (text || (!attachments.length && !images.length)) blocks.push({ type: "text", text });
+	if (text) blocks.push({ type: "text", text });
 	if (attachments.length) blocks.push({ type: "text", text: attachmentMetadata(attachments) });
 	blocks.push(...images);
-	if (!attachments.length && !images.length) return text;
 	return blocks;
 }
 

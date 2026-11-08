@@ -5,10 +5,10 @@ import { Chat, DEFAULT_BUSY_MODE, ProviderSummary, Workspace } from "../contract
 import type { Principal } from "../contracts/hosts.ts";
 import { arr, ChordError, type Context, defineFacet, defineState, obj } from "../lib/chord.ts";
 import {
-	cleanupAttachments, contentForSend, contentForUpdate, queuedContent, refsOfQueued, requireContentVision,
-	rollbackAttachments, safeAttachmentPath, storeAttachments,
+	attachmentPaths, completeAttachmentDeletes, inputForSend, inputForUpdate, intendAttachmentDeletes, type QueuedInput,
+	requireContentVision, rollbackAttachments, safeAttachmentPath, storeAttachments,
 } from "./attachments.ts";
-import { RequestDoc, TargetDoc, WorkspaceDoc } from "./docs.ts";
+import { TargetDoc, WorkspaceDoc } from "./docs.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
 import { deleteChatFiles } from "./files-lifecycle.ts";
 
@@ -65,6 +65,10 @@ export function panelFacet(services: EngineServices) {
 		}
 	}
 
+	/** Deletion completes after the commit that recorded it; a failure leaves the intent for the next Engine. */
+	const completeDeletes = (context: Context) =>
+		completeAttachmentDeletes(harness, services.files, context, services.onError).catch(services.onError);
+
 	return defineFacet<Principal>((host) => {
 		host.serve(Workspace, (_params, principal, self) => {
 			if (principal.kind !== "panel") forbidden();
@@ -86,16 +90,13 @@ export function panelFacet(services: EngineServices) {
 					providers: self.derive([providers], ([value]) => value.list),
 					createChat: async ({ title }, ctx) => {
 						const { defaultModel } = await harness.snapshot(WorkspaceDoc, ctx) ?? { defaultModel: null };
-						const conversation = await harness.createConversation(
-							{ ownership: { kind: "ownerless" }, agent: defaultModel ? { model: defaultModel } : {} },
-							ctx,
-						);
-						await harness.commit(async (tx) => {
-							(await tx.doc(WorkspaceDoc)).chats.push({
-								id: conversation.id,
-								title: title?.trim() ?? "",
-								createdAt: services.now(),
-							});
+						const conversation = await harness.createConversation({
+							ownership: { kind: "ownerless" },
+							agent: defaultModel ? { model: defaultModel } : {},
+							// Registered in the creating commit: no conversation exists without its Workspace entry.
+							init: async (tx, conversationId) => {
+								(await tx.doc(WorkspaceDoc)).chats.push({ id: conversationId, title: title?.trim() ?? "", createdAt: services.now() });
+							},
 						}, ctx);
 						return conversation.id;
 					},
@@ -156,42 +157,33 @@ export function panelFacet(services: EngineServices) {
 					send: locked(async ({ text, requestId, tabId, whenBusy, attachments = [] }, ctx) => {
 						if (!text.trim() && !attachments.length) throw new ChordError({ code: "invalid", reason: "args", message: "The message cannot be empty." });
 						const target = await conversation(ctx);
-						const previous = await harness.snapshot(RequestDoc, conversationId, ctx);
-						const known = previous?.requests.find((item) => item.requestId === requestId);
-						if (known) return known.submissionId;
+						// Durable's request index makes a retried send land once; a known request stores nothing again.
+						const known = await harness.commit((tx) => tx.submissionByRequest(target.id, requestId), ctx);
+						if (known) return known.id;
 						const prepared = await storeAttachments(services.files, id, attachments, services.now, requestId);
-						let duplicatePaths: readonly string[] | undefined;
+						let admitted = false;
 						try {
-							const content = contentForSend(text, prepared);
-							let submissionId!: SubmissionId;
-							await target.commit(async (tx) => {
-								// Check on the admission line too: another panel may remove this chat after the lookup above.
+							const input = inputForSend(text, prepared);
+							const submissionId = await target.commit(async (tx) => {
+								// Check on the admission line too: another panel may remove this chat, or admit this request, meanwhile.
+								const existing = await tx.submissionByRequest(target.id, requestId);
+								if (existing) return existing.id;
 								const workspace = await tx.doc(WorkspaceDoc);
 								const summary = workspace.chats.find((chat) => chat.id === id);
 								if (!summary) throw gone();
-								const requests = await tx.doc(RequestDoc, target.id);
-								const existing = requests.requests.find((item) => item.requestId === requestId);
-								if (existing) {
-									submissionId = existing.submissionId;
-									duplicatePaths = existing.attachments;
-									return;
-								}
 								const agent = await tx.doc(AgentDoc, target.id);
-								requireContentVision(services, agent.model ?? workspace.defaultModel, content);
-								submissionId = await target.submit(tx, { type: "input", content, requestId, ...(whenBusy ? { whenBusy } : {}) });
-								requests.requests.push({ requestId, submissionId, attachments: prepared.map((item) => item.path) });
+								requireContentVision(services, agent.model ?? workspace.defaultModel, input.content);
+								const submitted = await target.submit(tx, { type: "input", ...input, requestId, ...(whenBusy ? { whenBusy } : {}) });
+								admitted = true;
 								if (tabId !== undefined) (await tx.doc(TargetDoc, target.id)).tabId = tabId;
 								if (!summary.title) summary.title = titleOf(text || prepared.map((item) => item.name).join(", "));
+								return submitted;
 							}, ctx);
-							if (duplicatePaths) {
-								const owned = new Set(duplicatePaths);
-								await cleanupAttachments(harness, services.files, id,
-									prepared.filter((item) => item.created && !owned.has(item.path)).map((item) => item.path), ctx).catch(services.onError);
-							}
 							return submissionId;
-						} catch (error) {
-							if (!duplicatePaths) await rollbackAttachments(services.files, id, prepared);
-							throw error;
+						} finally {
+							// Files this attempt created belong to no input unless it was admitted: an earlier admission of the
+							// same request already had its own files, which this attempt found in place (`created: false`).
+							if (!admitted) await rollbackAttachments(services.files, id, prepared);
 						}
 					}),
 					updateQueued: locked(async ({ id: submissionId, text, whenBusy, requestId, attachments = [], removeAttachments = [] }, ctx) => {
@@ -203,53 +195,51 @@ export function panelFacet(services: EngineServices) {
 						}
 						for (const path of removeAttachments) safeAttachmentPath(path);
 						const target = await conversation(ctx);
-						const before = await queuedContent(harness, conversationId, submissionId, ctx);
-						if (before === undefined) return "not_found" as const;
-						const beforeRefs = refsOfQueued(before);
-						for (const path of removeAttachments) {
-							if (!beforeRefs.some((item) => item.path === path)) {
-								throw new ChordError({ code: "invalid", reason: "args", message: `Attachment ${path} does not belong to this queued message.` });
-							}
-						}
 						const removed = new Set(removeAttachments);
 						const prepared = await storeAttachments(services.files, id, attachments, services.now,
 							requestId ?? `edit-${submissionId}`, removeAttachments);
-						let result: "updated" | "not_found";
+						let result: "updated" | "not_found" = "not_found";
 						try {
 							result = await target.commit(async (tx) => {
 								const inbox = await tx.doc(InboxDoc, target.id);
 								const item = inbox.items.find((item) => item.id === submissionId && (item.mode === "steer" || item.mode === "followUp"));
-								if (!item) return "not_found" as const;
-								const userItem = item as Exclude<typeof item, { mode: "write" }>;
+								if (!item || item.mode === "write") return "not_found" as const;
 								if (text !== undefined || prepared.length || removed.size) {
-									const content = contentForUpdate(userItem.content, text, prepared, removed);
+									const next = inputForUpdate(item as QueuedInput, text, prepared, removed);
 									const agent = await tx.doc(AgentDoc, target.id);
-									requireContentVision(services, agent.model ?? (await tx.doc(WorkspaceDoc)).defaultModel, content);
-									userItem.content = content as typeof userItem.content;
+									requireContentVision(services, agent.model ?? (await tx.doc(WorkspaceDoc)).defaultModel, next.content);
+									item.content = next.content as typeof item.content;
+									if (next.entry) item.entry = next.entry as typeof item.entry;
+									else delete item.entry;
+									const added = new Set(prepared.map((attachment) => attachment.path));
+									await intendAttachmentDeletes(tx, id, [...removed].filter((path) => !added.has(path)));
 								}
-								if (whenBusy !== undefined) userItem.mode = whenBusy;
+								if (whenBusy !== undefined) item.mode = whenBusy;
 								return "updated" as const;
 							}, ctx);
-						} catch (error) {
-							await rollbackAttachments(services.files, id, prepared);
-							throw error;
+						} finally {
+							if (result !== "updated") await rollbackAttachments(services.files, id, prepared);
 						}
-						if (result === "not_found") {
-							await rollbackAttachments(services.files, id, prepared);
-							return result;
-						}
-						const added = new Set(prepared.map((item) => item.path));
-						await cleanupAttachments(harness, services.files, id, [...removed].filter((path) => !added.has(path)), ctx).catch(services.onError);
+						await completeDeletes(ctx);
 						return result;
 					}),
 					cancelQueued: locked(async ({ id: submissionId }, ctx) => {
-						await conversation(ctx);
-						const content = await queuedContent(harness, conversationId, submissionId, ctx);
-						const result = await harness.abortSubmission(submissionId as SubmissionId, ctx, conversationId);
-						if (result === "aborted" && content) {
-							await cleanupAttachments(harness, services.files, id, refsOfQueued(content).map((item) => item.path), ctx).catch(services.onError);
-						}
-						return result;
+						const target = await conversation(ctx);
+						// Withdraw as `abortSubmission` does, recording the input's files for deletion in the same commit. An input
+						// still in the inbox is queued: placement removes it there in the commit that places it.
+						const withdrawn = await target.commit(async (tx) => {
+							const inbox = await tx.doc(InboxDoc, target.id);
+							const index = inbox.items.findIndex((item) => item.id === submissionId);
+							const item = inbox.items[index];
+							if (!item || item.mode === "write") return false;
+							await intendAttachmentDeletes(tx, id, attachmentPaths(item as QueuedInput));
+							inbox.items.splice(index, 1);
+							tx.settleSubmission(item.id, { status: "unanswered", reason: "aborted" });
+							return true;
+						}, ctx);
+						if (!withdrawn) return await harness.abortSubmission(submissionId as SubmissionId, ctx, conversationId);
+						await completeDeletes(ctx);
+						return "aborted" as const;
 					}),
 					continueQueued: lockedCall(async (ctx) => {
 						const target = await conversation(ctx);
@@ -264,17 +254,22 @@ export function panelFacet(services: EngineServices) {
 					}),
 					abort: lockedCall(async (ctx) => {
 						const target = await conversation(ctx);
-						const inbox = await harness.snapshot(InboxDoc, conversationId, ctx);
-						const queued = (inbox?.items ?? []).filter((item) => item.mode === "steer" || item.mode === "followUp");
-						await target.abort(ctx);
-						// An item may cross a tool boundary while Stop is in flight; only unanswered inputs' files are unreferenced.
-						for (const item of queued) {
-							const submission = await harness.submission(item.id as SubmissionId, ctx);
-							if ((await submission?.status(ctx))?.status === "unanswered") {
-								await cleanupAttachments(harness, services.files, id,
-									refsOfQueued((item as Exclude<typeof item, { mode: "write" }>).content).map((attachment) => attachment.path), ctx).catch(services.onError);
+						// Withdraw the queued inputs first, with their files' deletion, in one commit (as `Conversation.abort` would).
+						// An input placed before it is in the transcript, however its run ends, and keeps its files.
+						await target.commit(async (tx) => {
+							const inbox = await tx.doc(InboxDoc, target.id);
+							const paths: string[] = [];
+							for (let index = inbox.items.length - 1; index >= 0; index--) {
+								const item = inbox.items[index]!;
+								if (item.mode === "write") continue;
+								paths.push(...attachmentPaths(item as QueuedInput));
+								inbox.items.splice(index, 1);
+								tx.settleSubmission(item.id, { status: "unanswered", reason: "aborted" });
 							}
-						}
+							await intendAttachmentDeletes(tx, id, paths);
+						}, ctx);
+						await target.abort(ctx);
+						await completeDeletes(ctx);
 						return null;
 					}),
 					configure: locked(async (model, ctx) => {

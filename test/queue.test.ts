@@ -3,11 +3,12 @@ import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type Message, type UserMessage } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool, type InboxItem, type InboxState, MemoryStorage, type Storage, type SubmissionId } from "@earendil-works/pi-durable";
 import { Browser } from "../src/contracts/browser.ts";
-import { attachmentRefs, editableText } from "../src/lib/attachments.ts";
+import { USER_ENTRY, userInput } from "../src/lib/attachments.ts";
 import { fromBase64, toBase64 } from "../src/lib/base64.ts";
 import { Chat, Workspace } from "../src/contracts/chat.ts";
 import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
-import { resumeAttachmentDeletes } from "../src/engine/attachments.ts";
+import { completeAttachmentDeletes } from "../src/engine/attachments.ts";
+import { AttachmentDeletesDoc } from "../src/engine/docs.ts";
 import { startEngine } from "../src/engine/engine.ts";
 import { type FileBackend, type FileTx, MemoryFileBackend } from "../src/engine/files.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet, obj, type Reference } from "../src/lib/chord.ts";
@@ -44,8 +45,11 @@ function queued(chat: ChatRef) {
 	return (inbox?.items ?? []).filter((item): item is Extract<InboxItem, { mode: "steer" | "followUp" }> => item.mode === "steer" || item.mode === "followUp");
 }
 
+const inputOf = (item: { content: UserMessage["content"]; entry?: { kind: string; data?: unknown } } | undefined) =>
+	item ? userInput(item.entry, item.content) : { text: "", attachments: [] };
+
 function visibleUsers(chat: ChatRef): string[] {
-	return (chat.view.value?.entries ?? []).filter((entry) => entry.kind === "pi.user").flatMap((entry) =>
+	return (chat.view.value?.entries ?? []).filter((entry) => entry.kind === "pi.user" || entry.kind === USER_ENTRY).flatMap((entry) =>
 		(entry.model ?? []).filter((message) => message.role === "user").map((message) =>
 			typeof message.content === "string" ? message.content : message.content.map((block) => block.type === "text" ? block.text : "").join(""),
 		),
@@ -67,7 +71,8 @@ async function fixture(responses: FauxResponseStep[], options: { storage?: Stora
 		},
 	});
 	const onError = (error: unknown) => {
-		if (!/closed|released|aborted/i.test(JSON.stringify(error) + String(error))) throw error;
+		// Injected failures are reported through `onError` by design; anything else fails the test.
+		if (!/closed|released|aborted|injected/i.test(JSON.stringify(error) + String(error))) throw error;
 	};
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
 	await broker.load([{
@@ -319,8 +324,11 @@ test("image and text attachments reach the model and the same bytes are download
 		const blocks = content as Exclude<UserMessage["content"], string>;
 		const image = blocks.find((block) => block.type === "image");
 		assert.equal(image?.type === "image" && image.data, toBase64(PNG));
-		assert.equal(editableText(content), "");
-		assert.equal(attachmentRefs(content).length, 2);
+		assert.equal(blocks.filter((block) => block.type === "text").length, 1, "the model reads only the metadata block");
+		const placed = await until(() => f.chat.view.value?.entries.find((entry) => entry.kind === USER_ENTRY), "the attachment entry");
+		const data = userInput(placed, content);
+		assert.equal(data.text, "");
+		assert.deepEqual(data.attachments.map((item) => item.name), ["pixel.png", "notes.txt"]);
 		assert.ok(!JSON.stringify(content).includes("full private file body"), "text files are not inlined");
 		const files = await f.chat.files(context);
 		assert.equal(files.length, 2);
@@ -351,16 +359,16 @@ test("queued attachment edits preserve images, honor removals and clean cancelle
 		await until(() => queued(f.chat).length === 1 || undefined, "the queued image");
 		assert.equal(await f.chat.updateQueued({ id, text: "Edited" }, context), "updated");
 		let content = queued(f.chat)[0]!.content;
-		assert.equal(editableText(content), "Edited");
-		assert.equal(attachmentRefs(content).length, 1);
+		assert.equal(inputOf(queued(f.chat)[0]).text, "Edited");
+		assert.equal(inputOf(queued(f.chat)[0]).attachments.length, 1);
 		assert.equal(typeof content === "string" ? 0 : content.filter((block) => block.type === "image").length, 1);
 		await assert.rejects(f.chat.updateQueued({ id, removeAttachments: ["/workspace/attachments/../escape.txt"] }, context), /Not an attachment/);
 		assert.equal(await f.chat.updateQueued({
-			id, text: "Text only", requestId: "edit-attachments", removeAttachments: [attachmentRefs(content)[0]!.path],
+			id, text: "Text only", requestId: "edit-attachments", removeAttachments: [inputOf(queued(f.chat)[0]).attachments[0]!.path],
 			attachments: [{ id: "replacement", name: "replacement.txt", mimeType: "text/plain", data: utf8.encode("replacement") }],
 		}, context), "updated");
 		content = queued(f.chat)[0]!.content;
-		assert.deepEqual(attachmentRefs(content).map((item) => item.name), ["replacement.txt"]);
+		assert.deepEqual(inputOf(queued(f.chat)[0]).attachments.map((item) => item.name), ["replacement.txt"]);
 		assert.equal(typeof content === "string" ? 0 : content.filter((block) => block.type === "image").length, 0);
 		assert.equal((await f.chat.files(context)).some((file) => file.path.endsWith("pixel.png")), false);
 		assert.equal(await f.chat.cancelQueued({ id }, context), "aborted");
@@ -397,8 +405,7 @@ test("post-commit cleanup failure preserves new files and retries only the remov
 		const id = await f.chat.send({ text: "Original", requestId: "queued", whenBusy: "followUp", attachments: [
 			{ id: "old", name: "old.txt", mimeType: "text/plain", data: utf8.encode("old") },
 		] }, context);
-		await until(() => attachmentRefs(queued(f.chat)[0]?.content ?? "")[0], "the old attachment");
-		const oldPath = attachmentRefs(queued(f.chat)[0]!.content)[0]!.path;
+		const oldPath = (await until(() => inputOf(queued(f.chat)[0]).attachments[0], "the old attachment")).path;
 		files.failures.add(oldPath);
 		assert.equal(await f.chat.updateQueued({
 			id, requestId: "replacement-edit", removeAttachments: [oldPath],
@@ -406,8 +413,11 @@ test("post-commit cleanup failure preserves new files and retries only the remov
 		}, context), "updated");
 		const paths = (await f.chat.files(context)).map((file) => file.path);
 		assert.ok(paths.some((path) => path.endsWith("new.txt")), "the committed attachment is never rolled back by cleanup");
+		const intents = (await f.engine.harness.snapshot(AttachmentDeletesDoc, context))?.pending ?? [];
+		assert.deepEqual(intents.map((intent) => intent.paths), [[oldPath]], "the edit's own commit recorded the deletion");
 		files.failures.delete(oldPath);
-		await resumeAttachmentDeletes(f.engine.harness, files, context, (error) => { throw error; });
+		await completeAttachmentDeletes(f.engine.harness, files, context, (error) => { throw error; });
+		assert.deepEqual((await f.engine.harness.snapshot(AttachmentDeletesDoc, context))?.pending, []);
 		const remaining = await f.chat.files(context);
 		assert.ok(!remaining.some((file) => file.path === oldPath.slice("/workspace/".length)));
 		assert.ok(remaining.some((file) => file.path.endsWith("new.txt")));
@@ -472,6 +482,38 @@ test("abort withdraws every queued input and records it unanswered", async () =>
 		await aborting;
 		assert.deepEqual(visibleUsers(f.chat), ["Start"]);
 		assert.deepEqual(await f.chat.files(context), [], "withdrawing the queue also removes its unreferenced attachments");
+	} finally {
+		await f.close();
+	}
+});
+
+test("Stop deletes only withdrawn inputs' files; a placed steer keeps its attachment", async () => {
+	const hanging: FauxResponseStep = async (_request, options) => {
+		await new Promise((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+		return fauxAssistantMessage("unused");
+	};
+	const f = await fixture([fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }), hanging]);
+	try {
+		await f.chat.send({ text: "Start", requestId: "start" }, context);
+		await f.started.promise;
+		const steer = await f.chat.send({ text: "Placed", requestId: "steer", whenBusy: "steer", attachments: [
+			{ id: "kept", name: "kept.txt", mimeType: "text/plain", data: utf8.encode("still referenced") },
+		] }, context);
+		const keptPath = (await until(() => inputOf(queued(f.chat)[0]).attachments[0], "the queued steer")).path;
+		f.release.resolve();
+		// The steer crosses the tool boundary into the transcript while the next request is in flight.
+		await until(() => queued(f.chat).length === 0 && f.faux.state.callCount >= 2 || undefined, "the placed steer");
+		await f.chat.send({ text: "Later", requestId: "follow", whenBusy: "followUp", attachments: [
+			{ id: "dropped", name: "dropped.txt", mimeType: "text/plain", data: utf8.encode("withdrawn") },
+		] }, context);
+		const droppedPath = (await until(() => inputOf(queued(f.chat)[0]).attachments[0], "the queued follow-up")).path;
+		await f.chat.abort(context);
+		const status = await (await f.engine.harness.submission(steer as SubmissionId, context))!.status(context);
+		assert.equal(status.status, "unanswered", "the placed steer's run was stopped");
+		assert.ok(visibleUsers(f.chat).some((text) => text.startsWith("Placed")), "and its entry stays in the transcript");
+		assert.deepEqual(await f.chat.readFile({ path: keptPath }, context), utf8.encode("still referenced"));
+		await assert.rejects(f.chat.readFile({ path: droppedPath }, context));
+		assert.deepEqual((await f.engine.harness.snapshot(AttachmentDeletesDoc, context))?.pending, []);
 	} finally {
 		await f.close();
 	}
