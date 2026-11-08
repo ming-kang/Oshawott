@@ -4,7 +4,7 @@ import { Browser } from "../contracts/browser.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { Page } from "../contracts/page.ts";
 import { bool, type Context, type Contract, type Host, int, obj, opt, type ParamsOf, type Reference, str } from "../lib/chord.ts";
-import { type PageToolName, pageTools, SnapshotResult } from "../tools/page-tools.ts";
+import { InspectResult, type PageToolName, pageTools, SnapshotResult } from "../tools/page-tools.ts";
 import { TargetDoc } from "./docs.ts";
 
 type EngineHost = Host<Principal>;
@@ -33,6 +33,19 @@ function text(value: unknown) {
 	return [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value) }];
 }
 
+/** A short summary for the tool card; the model reads the full result. */
+function detailsOf(name: PageToolName, result: unknown): { details: Record<string, Record<string, string | number>> } | undefined {
+	if (name === "page_snapshot") {
+		const snapshot = result as Static<typeof SnapshotResult>;
+		return { details: { snapshot: { title: snapshot.title, elementCount: snapshot.elements.length } } };
+	}
+	if (name === "page_inspect") {
+		const inspected = result as Static<typeof InspectResult>;
+		return { details: { inspect: { matched: inspected.matched, shown: inspected.elements.length } } };
+	}
+	return undefined;
+}
+
 export function browserExtension(host: EngineHost): Extension {
 	const tabOf = async (named: number | undefined, read: () => Promise<{ tabId: number | null } | undefined>, context: Context) => {
 		if (named !== undefined) return named;
@@ -55,11 +68,7 @@ export function browserExtension(host: EngineHost): Extension {
 				const { tabId: named, ...rest } = args as { tabId?: number } & Record<string, unknown>;
 				const tabId = await tabOf(named, () => api.snapshot(TargetDoc, api.conversationId, context), context);
 				const result = await callPage(host, tabId, name, rest, context);
-				const snapshot = name === "page_snapshot" ? result as Static<typeof SnapshotResult> : undefined;
-				return {
-					output: text(result), structuredOutput: result as never,
-					...(snapshot ? { details: { snapshot: { title: snapshot.title, elementCount: snapshot.elements.length } } } : {}),
-				};
+				return { output: text(result), structuredOutput: result as never, ...detailsOf(name, result) };
 			},
 		});
 	};
@@ -95,12 +104,14 @@ export function browserExtension(host: EngineHost): Extension {
 				"browser",
 				() =>
 					"You act in the user's web browser. Read a page with page_snapshot before acting on it, and act on elements " +
-					"by the refs of the latest snapshot. Page tools act on the user's current tab unless you pass tabId.",
+					"by the refs of the latest snapshot. Use page_inspect for an element's HTML, attributes, styles or box, and " +
+					"page_snapshot with `structure` for tables and lists. Page tools act on the user's current tab unless you pass tabId.",
 				{ tag: false },
 			),
 		],
 		tools: [
 			pageTool("page_snapshot"),
+			pageTool("page_inspect"),
 			pageTool("page_click"),
 			pageTool("page_type"),
 			pageTool("page_scroll"),

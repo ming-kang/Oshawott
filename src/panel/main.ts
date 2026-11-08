@@ -13,6 +13,7 @@ import { LANG, t } from "./i18n.ts";
 import { ModelMenu } from "./model-menu.ts";
 import { clampThinking, configuredProviders, modelName, sameModel, shownModel as resolveModel, supportedThinkingLevels, supportsVision } from "./models.ts";
 import { OverlayController } from "./overlays.ts";
+import { testPageTools } from "./page-selftest.ts";
 import { testPanel } from "./panel-selftest.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
 import { Transcript } from "./render.ts";
@@ -650,7 +651,7 @@ async function main() {
 
 	if (__OSHAWOTT_DEV__) {
 		const panelTests = (origin?: string) => testPanel(held, origin);
-		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests, attachments: testAttachmentComposer };
+		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests, attachments: testAttachmentComposer, pageTools: testPageTools };
 		const origin = new URLSearchParams(location.search).get("selftest");
 		if (origin) void selftest(origin, panelTests);
 	}

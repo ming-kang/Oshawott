@@ -78,6 +78,7 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 									elements: [{ ref: "e1", role: "link", name: "More information" }],
 								};
 							},
+							page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
 							page_click: async () => ({ ok: true }),
 							page_type: async () => ({ ok: true }),
 							page_scroll: async () => ({ ok: true }),

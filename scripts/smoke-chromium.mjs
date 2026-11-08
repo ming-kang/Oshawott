@@ -46,6 +46,11 @@ try {
 	const out = await tab.$eval("#out", (p) => p.textContent);
 	step("page_type + page_click act on the page", out === "searched: otters", out);
 
+	await panel.exposeFunction("__oshawottPageTool", (target, tool, args) =>
+		evaluateIn(offscreen, `oshawott.page(${target}, ${JSON.stringify(tool)}, ${JSON.stringify(args)})`));
+	for (const { name, ok, detail } of await panel.evaluate((origin) =>
+		globalThis.__oshawottTest.pageTools(origin, globalThis.__oshawottPageTool), site.url)) step(name, ok, detail);
+
 	const run = await evaluateIn(offscreen, `oshawott.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)").then((r) => JSON.parse(JSON.stringify(r)))`);
 	step("code mode runs in a Worker", run.ok && JSON.stringify(run.value) === "[1,4,9]", `${JSON.stringify(run.value)} ${run.output?.[0]?.text ?? ""}`);
 

@@ -1,5 +1,6 @@
 import { ext } from "../platform/webext.ts";
 import { testAttachmentComposer } from "./attachment-selftest.ts";
+import { testPageTools } from "./page-selftest.ts";
 import { testToolCards } from "./tool-selftest.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
@@ -67,6 +68,8 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 		await page("page_click", { ref: button.ref });
 		const after = await page("page_snapshot", {});
 		step("page_type + page_click act on the page", after.text.includes("searched: otters"), after.text.split("\n").at(-1));
+
+		steps.push(...await testPageTools(origin, (tabId, tool, args) => background.oshawott.page(tabId, tool, args)));
 
 		const run = await background.oshawott.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)");
 		step("code mode runs in a Worker", run.ok && JSON.stringify(run.value) === "[1,4,9]", `${JSON.stringify(run.value)} ${run.output?.[0]?.text ?? ""}`);

@@ -51,7 +51,9 @@ Durable 通过 `onWake` 安排唤醒，Broker 用 alarm `oshawott:wake` 在后�
 ## 边界
 
 - `Workspace`、`Chat` 只对 Panel 开放；`Browser`、`Page` 只对 Engine 开放。
-- Page 运行在 isolated world。元素 `ref` 用 `WeakRef` 保存在页面内存里。
+- Page 运行在 isolated world：能读写 DOM，看不到页面脚本的变量和函数；不向页面主世界注入代码。元素 `ref` 用 `WeakRef` 保存在页面内存里，格式为 `<页面加载>.<快照代数>.e<n>`。新快照、整页加载或离开快照时的 URL（不含 hash，返回原 URL 也不恢复）后旧 `ref` 一律报错，不会命中其他元素。
+- 页面进入往返缓存（bfcache）时主动关闭 Port：Firefox 不会关闭冻结页面的 Port，否则 Engine 会继续调用旧文档直到超时。页面恢复后，下一次 attach 会重新连接，同一文档的 ref 不变。
+- 页面工具的输出有固定上限（`src/page/limits.ts`）：快照元素数、`page_inspect` 的元素数与 HTML 长度、属性值、表格行列和列表项。密码框的 `value`（含 `<template>` 内）会被替换为 `[redacted]`。
 - 页面工具规格只在 `src/tools/page-tools.ts` 定义：只读的标 `safe`，会改动页面的标 `unsafe`。
 - Code Mode 在 Worker 的 QuickJS WASM 中运行，只能通过工具访问当前对话的文件，没有 shell。
 - 普通构建只为内置模型 API 域名声明静态权限；自定义服务按 Base URL 的 origin 请求按需权限，不默认扩大为 `<all_urls>`。其他站点需要用户授权；开发构建额外声明 `<all_urls>`，供自动测试使用。

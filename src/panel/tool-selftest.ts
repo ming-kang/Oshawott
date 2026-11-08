@@ -56,6 +56,10 @@ export async function testToolCards() {
 	const snapshotMeta = metaOf(snapshot);
 	snapshot.setResult(snapshotText, false);
 	const legacySnapshotIgnored = metaOf(snapshot) === "";
+	const inspect = new ToolCard("page_inspect", { selector: ".item" });
+	const inspectArgs = metaOf(inspect);
+	inspect.setResult("{}", false, { inspect: { matched: 30, shown: 5 } });
+	const inspectMeta = metaOf(inspect);
 
 	const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array() });
 	const conversationId = ROOT_CONVERSATION_ID;
@@ -104,6 +108,7 @@ export async function testToolCards() {
 		},
 		{ name: "access grants require an error, no_access code and safe URL details, never prose", ok: gated },
 		{ name: "fetch metadata uses details and ignores legacy prose or malformed details", ok: httpMeta === "HTTP 201 · 1.5 KiB" && legacyHttpIgnored && malformedHttpIgnored, detail: httpMeta },
+		{ name: "inspect cards show the target, then how many elements were shown", ok: inspectArgs === ".item" && inspectMeta === t("tool.inspected", 5, 30), detail: inspectMeta },
 		{ name: "snapshot metadata uses details, not model-facing JSON", ok: snapshotMeta === `UI title · ${t("tool.elements", 3)}` && legacySnapshotIgnored, detail: snapshotMeta },
 		{ name: "Transcript forwards result details and diagnostics to running and orphaned cards", ok: forwarded },
 	];

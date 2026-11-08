@@ -52,9 +52,11 @@ export interface WebExt {
 	readonly tabs: {
 		query(query: { active?: boolean; currentWindow?: boolean; lastFocusedWindow?: boolean; windowId?: number }): Promise<TabInfo[]>;
 		create(properties: { url: string; active?: boolean }): Promise<TabInfo>;
+		update(tabId: number, properties: { url?: string; active?: boolean }): Promise<TabInfo>;
+		remove(tabId: number): Promise<void>;
 		readonly onRemoved: WebExtEvent<(tabId: number) => void>;
 		readonly onActivated: WebExtEvent<(info: { tabId: number; windowId: number }) => void>;
-		readonly onUpdated: WebExtEvent<(tabId: number, change: { status?: string }) => void>;
+		readonly onUpdated: WebExtEvent<(tabId: number, change: { status?: string }, tab: TabInfo) => void>;
 	};
 	readonly scripting: {
 		executeScript(injection: {

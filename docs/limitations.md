@@ -10,6 +10,7 @@
 
 - Panel 只显示 Durable view 窗口内的记录，不能加载更早的历史。
 - fetch 不带登录态，也不跟随重定向。
+- 页面工具只处理标签页的顶层文档，不进入 iframe 和 shadow DOM；也不读取页面脚本的变量、Console 或网络请求。
 - 移除对话后，Durable 中的原始对话记录仍会保留（pi-durable 1.5 没有删除接口）。
 - 不会定期清理临时文件。
 - Chromium 的 offscreen 文档空闲时不会自动关闭。

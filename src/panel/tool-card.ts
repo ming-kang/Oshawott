@@ -23,7 +23,9 @@ function hostOf(url: unknown) {
 function look(name: string, args: Record<string, unknown>): Look {
 	switch (name) {
 		case "page_snapshot":
-			return { icon: "eye", label: t("tool.snapshot") };
+			return { icon: "eye", label: t("tool.snapshot"), meta: String(args.ref ?? args.selector ?? "") };
+		case "page_inspect":
+			return { icon: "code", label: t("tool.inspect"), meta: String(args.ref ?? args.selector ?? "") };
 		case "page_click":
 			return { icon: "pointer", label: t("tool.click"), meta: String(args.ref ?? "") };
 		case "page_type":
@@ -69,6 +71,12 @@ function resultMeta(name: string, details: unknown): string | undefined {
 		const snapshot = record(data?.snapshot);
 		if (snapshot && typeof snapshot.title === "string" && count(snapshot.elementCount)) {
 			return [snapshot.title, t("tool.elements", snapshot.elementCount)].filter(Boolean).join(" · ");
+		}
+	}
+	if (name === "page_inspect") {
+		const inspect = record(data?.inspect);
+		if (inspect && count(inspect.matched) && count(inspect.shown)) {
+			return inspect.shown < inspect.matched ? t("tool.inspected", inspect.shown, inspect.matched) : t("tool.elements", inspect.matched);
 		}
 	}
 	return undefined;

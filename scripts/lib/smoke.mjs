@@ -23,6 +23,26 @@ export const TEST_PAGE = `<!doctype html><title>Oshawott test page</title>
 <input id="q" placeholder="Search"><button id="go" onclick="out.textContent='searched: '+q.value">Go</button>
 <p id="out">nothing yet</p>`;
 
+/** Page-inspection fixture: bounded data, a scoped region, dynamic content and same-document navigation. */
+export const INSPECT_PAGE = `<!doctype html><title>Inspect fixture</title>
+<section id="scope"><h2>Inside region</h2><button id="inside">Inside</button>
+<table id="in-table"><tr><th>Key</th></tr><tr><td>scoped-cell</td></tr></table></section>
+<section id="outside"><p>Outside region</p><button>Outside</button></section>
+<table id="scores"><caption>Scores</caption><thead><tr><th>Name</th><th>Score</th></tr></thead>
+<tbody><tr style="display:none"><td>hidden row</td><td>-1</td></tr>${Array.from({ length: 60 }, (_, i) => `<tr><td>row ${i}</td><td>${i}</td></tr>`).join("")}</tbody></table>
+<div role="grid" id="aria"><div role="row"><span role="columnheader">Col</span></div><div role="row"><span role="gridcell">aria-cell</span></div></div>
+<ul id="fruits"><li>Apple<ul><li>Green</li></ul></li><li hidden>Hidden fruit</li><li>Pear</li></ul>
+<dl id="terms"><div><dt>Term</dt><dd>Definition</dd></div><div style="display:none"><dt>Hidden term</dt><dd>Hidden definition</dd></div><dt>Other</dt><dd>Second</dd></dl>
+${Array.from({ length: 30 }, (_, i) => `<i class="many">${i}</i>`).join("")}
+<div id="long" data-long="${"v".repeat(800)}">${"long text ".repeat(100)}</div>
+<form id="login"><input id="pw" type="PassWord" value="hunter2"><template><div><template><input type="password" value="nested-secret"></template></div><input type="password" value="template-secret"></template></form>
+<div id="named"></div><script>document.getElementById("named").setAttribute("x".repeat(5000), "1")</script>
+<button id="add" onclick="document.body.insertAdjacentHTML('beforeend','<div id=dyn data-x=made style=width:120px;height:30px;color:rgb(1,2,3)>made</div>')">Add</button>
+<button id="count" onclick="n.textContent=Number(n.textContent)+1">Count</button><output id="n">0</output>
+<button id="spa" onclick="history.pushState({},'','/inspect?spa=1')">Route</button>
+<button id="bounce" onclick="const back=location.pathname+location.search;history.pushState({},'','/inspect?away=1');history.pushState({},'',back)">Bounce</button>
+<button id="hash" onclick="location.hash='part'">Hash</button>`;
+
 export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawott 文件" })}\n`;
 export const TEST_LARGE_DOWNLOAD = JSON.stringify({ padding: "x".repeat(1_100_000), ending: "complete" });
 
@@ -70,6 +90,10 @@ export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 	const server = createServer((req, res) => {
 		const route = routes[`${req.method} ${req.url}`];
 		if (route) return route(req, res);
+		if (req.url?.startsWith("/inspect")) {
+			const strict = req.url === "/inspect-csp" ? { "content-security-policy": "default-src 'none'; script-src 'none'" } : {};
+			return res.writeHead(200, { "content-type": "text/html; charset=utf-8", ...strict }).end(INSPECT_PAGE);
+		}
 		if (req.method === "GET" && (req.url === "/items.json" || req.url === "/large.json")) {
 			return res.writeHead(200, { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" }).end(req.url === "/items.json" ? TEST_DOWNLOAD : TEST_LARGE_DOWNLOAD);
 		}
