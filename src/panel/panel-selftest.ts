@@ -11,7 +11,9 @@ import { h } from "./ui.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
-	"chats" | "createChat" | "deleteChat" | "busyMode" | "setBusyMode" | "providers" | "defaultModel" | "setDefaultConfiguration"
+	"chats" | "createChat" | "deleteChat" | "renameChat" | "busyMode" | "setBusyMode" | "providers" | "defaultModel" | "setDefaultConfiguration"
+	| "autoTitle" | "autoCompaction" | "autoRetry" | "setAutoTitle" | "setAutoCompaction" | "setAutoRetry"
+	| "instructions" | "setInstructions" | "resetInstructions"
 >;
 async function until(read: () => boolean) {
 	const deadline = Date.now() + 5000;
@@ -70,6 +72,44 @@ export async function testPanel(source: Source, origin?: string) {
 	step("delivery defaults to Steer and Settings updates the composer preference", defaultDelivery && document.querySelector('#settings-delivery [data-value="followUp"]')?.getAttribute("aria-checked") === "true");
 	click('#settings-delivery [data-value="steer"]');
 	await until(() => source.busyMode.value === "steer" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "steer");
+	const defaultTitlePreference = source.autoTitle.value === false && !document.querySelector<HTMLInputElement>("#settings-autoTitle")?.checked;
+	click("#settings-autoTitle");
+	await until(() => source.autoTitle.value && document.querySelector<HTMLInputElement>("#settings-autoTitle")?.checked === true);
+	click("#settings-autoTitle");
+	await until(() => !source.autoTitle.value);
+	click("#settings-autoCompaction");
+	await until(() => !source.autoCompaction.value);
+	click("#settings-autoRetry");
+	await until(() => !source.autoRetry.value);
+	click("#settings-autoCompaction");
+	await until(() => source.autoCompaction.value);
+	click("#settings-autoRetry");
+	await until(() => source.autoRetry.value);
+	step("conversation preferences default safely and round-trip through native checkboxes", defaultTitlePreference && source.autoCompaction.value && source.autoRetry.value);
+	const originalInstructions = source.instructions.value;
+	const instructions = document.querySelector<HTMLTextAreaElement>("#settings-instructions")!;
+	instructions.value = "Panel smoke unsaved instructions";
+	instructions.dispatchEvent(new Event("input", { bubbles: true }));
+	await source.setInstructions({ instructions: "Other panel instructions" }, BACKGROUND_CONTEXT);
+	await until(() => document.querySelector<HTMLElement>("#settings-instructions-status")?.hidden === false);
+	step("external instructions changes preserve unsaved edits and offer an accessible reload", instructions.value === "Panel smoke unsaved instructions"
+		&& document.querySelector("#settings-instructions-status")?.getAttribute("role") === "status"
+		&& document.querySelector("#settings-instructions-status")?.textContent?.includes(t("settings.instructionsChangedElsewhere")) === true);
+	click("#instructions-load-latest");
+	step("loading the latest instructions explicitly discards the local draft", instructions.value === "Other panel instructions" && document.querySelector<HTMLElement>("#settings-instructions-status")?.hidden === true);
+	instructions.value = "Panel smoke instructions";
+	instructions.dispatchEvent(new Event("input", { bubbles: true }));
+	click("#instructions-save");
+	await until(() => source.instructions.value === "Panel smoke instructions" && document.querySelector<HTMLButtonElement>("#instructions-save")?.disabled === false);
+	click("#instructions-restore");
+	click("#instructions-restore");
+	await until(() => source.instructions.value === originalInstructions && instructions.value === originalInstructions);
+	step("global instructions save and restore without clobbering their editor", true);
+	instructions.value = " \n\t ";
+	instructions.dispatchEvent(new Event("input", { bubbles: true }));
+	click("#instructions-save");
+	await until(() => source.instructions.value === originalInstructions && instructions.value === originalInstructions && document.querySelector<HTMLButtonElement>("#instructions-save")?.disabled === false);
+	step("whitespace-only instructions saves settle to the built-in text", true);
 	const theme = document.documentElement.dataset.theme ?? "system";
 	click('#settings [data-value="dark"]');
 	step("appearance stays owned by Settings", document.documentElement.dataset.theme === "dark" && document.querySelector('#settings [data-value="dark"]')?.getAttribute("aria-checked") === "true");
@@ -85,6 +125,39 @@ export async function testPanel(source: Source, origin?: string) {
 
 	click("#chats-toggle");
 	step("chat rows are buttons inside a focus-managed dialog", document.querySelector("#chat-drawer")?.getAttribute("role") === "dialog" && document.querySelector(".chat-select") instanceof HTMLButtonElement && document.querySelector("#chat-drawer")?.contains(document.activeElement) === true);
+	const renamedId = source.chats.value[0]?.id;
+	const originalTitle = source.chats.value[0]?.title ?? "";
+	const renamedRow = document.querySelector(`.chat-item[data-id="${renamedId}"]`);
+	click(`.chat-item[data-id="${renamedId}"] [data-action="rename"]`);
+	const rename = document.querySelector<HTMLInputElement>(".rename-input")!;
+	rename.value = "Panel smoke title";
+	rename.dispatchEvent(new Event("input", { bubbles: true }));
+	rename.focus();
+	rename.setSelectionRange(6, 11);
+	const resetId = await source.createChat({ title: "Panel smoke reset" }, BACKGROUND_CONTEXT);
+	await until(() => document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="reset"]`) !== null);
+	await source.renameChat({ id: resetId, title: "Panel smoke reset updated" }, BACKGROUND_CONTEXT);
+	await until(() => document.querySelector(`.chat-item[data-id="${resetId}"] .chat-title`)?.textContent === "Panel smoke reset updated");
+	step("live chat updates preserve row identity, rename drafts and the caret", document.querySelector(`.chat-item[data-id="${renamedId}"]`) === renamedRow
+		&& document.querySelector(".rename-input") === rename && rename.value === "Panel smoke title"
+		&& document.activeElement === rename && rename.selectionStart === 6 && rename.selectionEnd === 11);
+	click('[data-action="save"]');
+	await until(() => source.chats.value.find((chat) => chat.id === renamedId)?.title === "Panel smoke title" && !document.querySelector(".rename-input"));
+	await source.renameChat({ id: renamedId!, title: originalTitle }, BACKGROUND_CONTEXT);
+	step("chat titles can be edited inline without leaving the drawer", document.querySelector("#chat-drawer") !== null);
+	const reset = document.querySelector<HTMLButtonElement>(`.chat-item[data-id="${resetId}"] [data-action="reset"]`)!;
+	click(`.chat-item[data-id="${resetId}"] [data-action="reset"]`);
+	const requiresConfirm = reset.hasAttribute("data-confirm") && !reset.disabled;
+	click(`.chat-item[data-id="${resetId}"] [data-action="reset"]`);
+	await until(() => !reset.disabled);
+	step("resetting a background chat keeps its row and focus-managed controls", source.chats.value.some((chat) => chat.id === resetId));
+	step("reset requires confirmation and restores its icon after completion", requiresConfirm && !reset.hasAttribute("data-confirm") && Boolean(reset.querySelector("svg"))
+		&& document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="reset"]`) === reset);
+	click(`.chat-item[data-id="${resetId}"] [data-action="rename"]`);
+	await source.deleteChat({ id: resetId }, BACKGROUND_CONTEXT);
+	await until(() => !document.querySelector(`.chat-item[data-id="${resetId}"]`));
+	step("a renamed chat removed elsewhere drops its draft and focuses a surviving control", !document.querySelector(".rename-input")
+		&& Boolean(document.activeElement?.matches(".chat-select, #chat-drawer .panel-head button")));
 	escape();
 	await until(() => !document.querySelector("#chat-drawer"));
 

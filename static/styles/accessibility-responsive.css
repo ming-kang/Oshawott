@@ -5,7 +5,7 @@
 
 @media (hover: none) {
 	.msg-actions,
-	.chat-item .remove {
+	.chat-item .chat-action {
 		opacity: 1;
 	}
 }

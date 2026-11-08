@@ -526,6 +526,24 @@ $.settings.addEventListener("click", openSettings);
 $.model.addEventListener("click", openModelMenu);
 $.thinking.addEventListener("click", openThinkingMenu);
 
+async function resetConversation(id: number) {
+	let owned: ChatRef | undefined;
+	let target = chatId === id ? chat : undefined;
+	if (!target) {
+		owned = await host.get(Chat, { id }, context);
+		if (owned.variant !== "owner") {
+			owned.release();
+			throw new Error("The Engine refused the chat.");
+		}
+		target = owned;
+	}
+	try {
+		await target.reset(context);
+	} finally {
+		owned?.release();
+	}
+}
+
 function openChats(event?: Event) {
 	const anchor = event?.currentTarget instanceof HTMLElement ? event.currentTarget : $.chats;
 	overlays.open(new ChatDrawer(() => workspace, {
@@ -535,6 +553,7 @@ function openChats(event?: Event) {
 			void open(id);
 			if (id === undefined) $.prompt.focus();
 		},
+		reset: resetConversation,
 	}), { kind: "drawer", anchor });
 }
 function openFiles() {
@@ -603,7 +622,10 @@ async function main() {
 	workspace = held;
 	whenBusy = held.busyMode.value;
 	let knownChats = new Set(chats().map((chat) => chat.id));
-	for (const member of [held.chats, held.providers, held.defaultModel, held.defaultThinkingLevel, held.busyMode]) {
+	for (const member of [
+		held.chats, held.providers, held.defaultModel, held.defaultThinkingLevel, held.busyMode,
+		held.autoTitle, held.autoCompaction, held.autoRetry, held.instructions,
+	]) {
 		const watch = await member.watch(context);
 		watch.start(async () => {
 			if (member === held.busyMode) whenBusy = held.busyMode.value;
@@ -620,7 +642,7 @@ async function main() {
 	}
 	await draftStorePromise;
 	loaded = true;
-	const newest = [...chats()].sort((a, b) => b.createdAt - a.createdAt)[0];
+	const newest = [...chats()].sort((a, b) => b.updatedAt - a.updatedAt)[0];
 	await open(newest?.id, { keepOverlays: true });
 	renderHeader();
 	renderView();

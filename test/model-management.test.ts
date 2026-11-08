@@ -8,6 +8,7 @@ import { Chat, Workspace, type ProviderProfile } from "../src/contracts/chat.ts"
 import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
 import { startEngine } from "../src/engine/engine.ts";
 import { MemoryFileBackend } from "../src/engine/files.ts";
+import { DEFAULT_INSTRUCTIONS } from "../src/engine/instructions.ts";
 import { ProviderManager } from "../src/engine/providers.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair } from "../src/lib/chord.ts";
 
@@ -120,7 +121,7 @@ test("custom providers discover, retain the last good catalog, edit and delete w
 		await f.workspace.setDefaultConfiguration({ model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high" }, context);
 		const id = await f.workspace.createChat({}, context);
 		assert.deepEqual(await f.engine.harness.snapshot(AgentDoc, id as never, context), {
-			model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high",
+			model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high", instructions: DEFAULT_INSTRUCTIONS,
 		});
 		const cachedBeforeRejectedEdits = await f.modelsStore.read(profile.id);
 		await assert.rejects(f.workspace.saveProvider({ profile: { ...profile, models: [] } }, context), /still used/, "removing a referenced manual-only model is rejected");
@@ -195,7 +196,7 @@ test("thinking levels and models are durable per conversation and reach the next
 		const secondId = await f.workspace.createChat({}, context);
 		assert.deepEqual((await f.engine.harness.snapshot(AgentDoc, firstId as never, context))?.model, { provider: "faux", modelId: "faux-a" });
 		assert.deepEqual(await f.engine.harness.snapshot(AgentDoc, secondId as never, context), {
-			model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "off",
+			model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "off", instructions: DEFAULT_INSTRUCTIONS,
 		});
 		const second = await f.chat(secondId);
 		await second.send({ text: "three", requestId: "three" }, context);

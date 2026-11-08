@@ -77,11 +77,15 @@ export const AttachmentInput = obj({
 export type AttachmentInput = Static<typeof AttachmentInput>;
 const AttachmentInputs = arr(AttachmentInput, { max: MAX_ATTACHMENTS });
 
-export const ChatSummary = obj({ id: int(), title: str(), createdAt: num() });
+export const ChatStatus = oneOf("idle", "running", "waiting", "failed");
+export type ChatStatus = Static<typeof ChatStatus>;
+export const ChatSummary = obj({ id: int(), title: str(), createdAt: num(), updatedAt: num(), status: ChatStatus });
 export type ChatSummary = Static<typeof ChatSummary>;
 
+export const MAX_INSTRUCTIONS_CHARS = 100_000;
+
 export const Workspace = remote("oshawott.workspace", {
-	version: 4,
+	version: 5,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -91,6 +95,10 @@ export const Workspace = remote("oshawott.workspace", {
 				defaultModel: union([ModelRef, nul()]),
 				defaultThinkingLevel: ThinkingLevel,
 				busyMode: BusyMode,
+				autoTitle: bool(),
+				autoCompaction: bool(),
+				autoRetry: bool(),
+				instructions: str(),
 				providers: arr(ProviderSummary),
 			},
 			methods: {
@@ -98,6 +106,14 @@ export const Workspace = remote("oshawott.workspace", {
 				createChat: method(obj({ title: opt(str()) }), int()),
 				/** Removes the chat from the list (stopping its run) and deletes its files; its record stays in storage. */
 				deleteChat: method(obj({ id: int() })),
+				/** Empty titles restore the first-message fallback but still count as a manual title decision. */
+				renameChat: method(obj({ id: int(), title: str({ max: 500 }) })),
+				setAutoTitle: method(bool()),
+				setAutoCompaction: method(bool()),
+				setAutoRetry: method(bool()),
+				/** Blank text restores the built-in instructions; both return the instructions now in effect. */
+				setInstructions: method(obj({ instructions: str({ max: MAX_INSTRUCTIONS_CHARS }) }), str()),
+				resetInstructions: method(undefined, str()),
 				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
 				clearApiKey: method(obj({ provider: str() })),
 				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
@@ -112,7 +128,7 @@ export const Workspace = remote("oshawott.workspace", {
 });
 
 export const Chat = remote("oshawott.chat", {
-	version: 4,
+	version: 5,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -149,6 +165,8 @@ export const Chat = remote("oshawott.chat", {
 				/** Continue an idle failed run, placing any inputs its `keep` policy left queued. */
 				continueQueued: method(undefined, int()),
 				abort: method(),
+				/** Cancel the old run and its queued inputs, then start a new context without deleting this chat's files. */
+				reset: method(),
 				configure: method(ChatConfiguration),
 				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */
 				files: method(undefined, arr(ChatFile)),
