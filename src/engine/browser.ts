@@ -1,10 +1,5 @@
 // This is the only `runtime.onConnect` receiver: Firefox drops a port when any receiving context unloads,
 // and a Chromium offscreen document cannot initiate `tabs.connect`.
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
-import { googleProvider } from "@earendil-works/pi-ai/providers/google";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { createModels } from "@earendil-works/pi-ai";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { IndexedDbStorage } from "@earendil-works/pi-durable/storage/indexeddb";
@@ -16,8 +11,10 @@ import { ext, type RuntimePort } from "../platform/webext.ts";
 import type { PageToolName } from "../tools/page-tools.ts";
 
 import { Arrivals } from "./arrivals.ts";
+import { browserBuiltinProviders } from "./builtin-providers.ts";
 import { workerCodemodeSandbox } from "./codemode.ts";
 import { IndexedDbCredentialStore } from "./credentials.ts";
+import { IndexedDbModelsStore } from "./models-store.ts";
 import { type Engine, startEngine } from "./engine.ts";
 import { ChatFiles } from "./files.ts";
 import { IndexedDbFileBackend } from "./files-idb.ts";
@@ -67,13 +64,13 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 	void navigator.storage?.persist?.();
 
 	const credentials = new IndexedDbCredentialStore();
+	const modelsStore = new IndexedDbModelsStore();
 	const models = createModels({
 		credentials,
+		modelsStore,
 		authContext: { env: async () => undefined, fileExists: async () => false },
 	});
-	for (const provider of [anthropicProvider(), openaiProvider(), googleProvider(), openrouterProvider(), deepseekProvider()]) {
-		models.setProvider(provider);
-	}
+	for (const provider of browserBuiltinProviders()) models.setProvider(provider);
 	if (__OSHAWOTT_DEV__) models.setProvider((await import("./demo.ts")).demoProvider());
 
 	const sandbox = workerCodemodeSandbox(new URL("codemode-worker.js", location.href));
@@ -83,6 +80,7 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 			storage: await IndexedDbStorage.open("oshawott"),
 			models,
 			credentials,
+			modelsStore,
 			files,
 			broker: (ctx) => options.broker(ctx, brokers),
 			tab: (tabId, ctx) =>

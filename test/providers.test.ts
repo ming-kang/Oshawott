@@ -67,7 +67,10 @@ test("provider auth checks run concurrently and key changes refresh the shared s
 		assert.deepEqual(workspace.providers.value.map(({ id, configured }) => ({ id, configured })), [
 			{ id: "ready", configured: true }, { id: "missing", configured: false }, { id: "broken", configured: false },
 		]);
-		assert.deepEqual(workspace.providers.value[0]?.models, [{ id: "one", name: "One", vision: true }]);
+		assert.deepEqual(workspace.providers.value[0]?.models, [{
+			id: "one", name: "One", vision: true, contextWindow: 128_000, maxTokens: 16_384,
+			thinkingLevels: ["off"], manual: false,
+		}]);
 		assert.equal(workspace.defaultModel.value, null);
 		assert.equal(workspace.busyMode.value, "steer");
 		await workspace.setBusyMode("followUp", context);

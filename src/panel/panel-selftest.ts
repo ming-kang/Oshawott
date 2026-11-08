@@ -4,13 +4,14 @@ import type { Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { OverlayController, type OverlayView } from "./overlays.ts";
 import { t } from "./i18n.ts";
+import { testModelManagement } from "./model-selftest.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
 import { Transcript } from "./render.ts";
 import { h } from "./ui.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
-	"chats" | "createChat" | "deleteChat" | "busyMode" | "setBusyMode"
+	"chats" | "createChat" | "deleteChat" | "busyMode" | "setBusyMode" | "providers" | "defaultModel" | "setDefaultConfiguration"
 >;
 async function until(read: () => boolean) {
 	const deadline = Date.now() + 5000;
@@ -25,7 +26,7 @@ const click = (selector: string) => {
 	element.click();
 };
 
-export async function testPanel(source: Source) {
+export async function testPanel(source: Source, origin?: string) {
 	const steps: Step[] = [];
 	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, detail });
 	const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -33,13 +34,20 @@ export async function testPanel(source: Source) {
 	// These keys are only saved and cleared locally; all model requests still use the demo provider.
 	click("#settings-toggle");
 	step("settings opens as a named modal and receives focus", document.querySelector("#settings")?.getAttribute("aria-modal") === "true" && document.activeElement?.id === "settings-back" && document.querySelector("#settings-back")?.hasAttribute("aria-label") === true);
+	const builtinPicker = document.querySelector<HTMLSelectElement>("#builtin-provider-picker")!;
+	builtinPicker.value = "groq";
+	builtinPicker.dispatchEvent(new Event("change", { bubbles: true }));
+	await until(() => Boolean(document.querySelector('.provider[data-provider="groq"] input')));
+	step("the built-in provider dropdown reveals additional Pi-AI providers", document.querySelector('.provider[data-provider="groq"] .provider-name')?.textContent === "Groq");
 	click('.provider[data-provider="anthropic"] .provider-head');
 	const input = document.querySelector<HTMLInputElement>('.provider[data-provider="anthropic"] input')!;
 	input.value = "panel-smoke-key";
 	click('.provider[data-provider="anthropic"] .btn.primary');
-	await until(() => document.querySelector('.provider[data-provider="anthropic"] .pill')?.hasAttribute("data-on") === true);
+	await until(() => document.querySelector('.provider[data-provider="anthropic"] .pill')?.hasAttribute("data-on") === true
+		&& !document.querySelector('.provider[data-provider="anthropic"]')?.hasAttribute("data-open"));
 	click('.provider[data-provider="anthropic"] .provider-head');
 	step("settings refresh after saving a key without exposing it", document.querySelector<HTMLInputElement>('.provider[data-provider="anthropic"] input')?.value === "");
+	await until(() => Boolean(document.querySelector('.provider[data-provider="anthropic"] .btn.danger')));
 	click('.provider[data-provider="anthropic"] .btn.danger');
 	await until(() => document.querySelector('.provider[data-provider="anthropic"] .pill')?.hasAttribute("data-on") === false);
 	const defaultDelivery = source.busyMode.value === "steer" && document.querySelector('#settings-delivery [data-value="steer"]')?.getAttribute("aria-checked") === "true";
@@ -283,5 +291,6 @@ export async function testPanel(source: Source) {
 		for (const root of retiredRoots) root.remove();
 		fixture.remove();
 	}
+	if (origin) steps.push(...await testModelManagement(source, origin));
 	return steps;
 }

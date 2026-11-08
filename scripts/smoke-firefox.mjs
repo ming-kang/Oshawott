@@ -1,15 +1,17 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
-import { root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
+import { modelApi, root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
 
 const extension = join(root, "dist", "firefox");
 const executablePath = process.env.OSHAWOTT_FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe";
 
 let reported;
 const report = new Promise((resolve) => (reported = resolve));
+const models = modelApi();
 const site = await testSite({
 	routes: {
+		...models.routes,
 		"POST /report": (req, res) => {
 			let body = "";
 			req.on("data", (chunk) => (body += chunk)).on("end", () => {
@@ -50,6 +52,7 @@ try {
 		new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("no self-test report within 60 s")), 60_000); }),
 	]);
 	for (const { name, ok, detail } of results.steps) step(name, ok, detail);
+	step("local model API receives an actual high-thinking chat request", models.requests.some((request) => request.model === "local-reasoning" && request.reasoning_effort === "high"), `${models.requests.length} request(s)`);
 	for (const [key, name] of [["screenshot", "panel"], ["filesScreenshot", "files"]]) {
 		if (!results[key]) continue;
 		await writeFile(join(root, "dist", `smoke-firefox-${name}.png`), Buffer.from(results[key].split(",")[1], "base64"));

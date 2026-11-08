@@ -1,5 +1,5 @@
 import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
-import { Chat, DEFAULT_BUSY_MODE, PANEL_LINK_LIMITS, type BusyMode, type ModelRef, type ProviderSummary, Workspace } from "../contracts/chat.ts";
+import { Chat, type ChatConfiguration, DEFAULT_BUSY_MODE, PANEL_LINK_LIMITS, type BusyMode, type ModelRef, type ProviderSummary, type ThinkingLevel, Workspace } from "../contracts/chat.ts";
 import { MESSAGES, PORTS, type Principal } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, type Reference } from "../lib/chord.ts";
 import { portLink } from "../link/port-link.ts";
@@ -11,7 +11,7 @@ import { DraftStore, type ComposerDraft } from "./drafts.ts";
 import { FilesSheet } from "./files.ts";
 import { LANG, t } from "./i18n.ts";
 import { ModelMenu } from "./model-menu.ts";
-import { configuredProviders, modelName, sameModel, shownModel as resolveModel, supportsVision } from "./models.ts";
+import { clampThinking, configuredProviders, modelName, sameModel, shownModel as resolveModel, supportedThinkingLevels, supportsVision } from "./models.ts";
 import { OverlayController } from "./overlays.ts";
 import { testPanel } from "./panel-selftest.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
@@ -20,6 +20,8 @@ import { selftest } from "./selftest.ts";
 import { initializeTheme, SettingsSheet } from "./settings.ts";
 import { TabTracker, type TargetTab } from "./tab.ts";
 import { testToolCards } from "./tool-selftest.ts";
+import { ProviderEditorSheet } from "./provider-editor.ts";
+import { ThinkingMenu } from "./thinking-menu.ts";
 import { h, icon, toast } from "./ui.ts";
 
 type WorkspaceRef = Extract<Reference<typeof Workspace>, { variant: "owner" }>;
@@ -71,6 +73,7 @@ const $ = {
 	vision: h("div", { class: "composer-notice", id: "vision-warning", role: "alert", hidden: true }),
 	prompt: h("textarea", { id: "prompt", rows: 1, placeholder: t("composer.placeholder"), "aria-label": t("composer.placeholder") }),
 	model: h("button", { class: "model-btn", id: "model", type: "button", "aria-haspopup": "listbox" }),
+	thinking: h("button", { class: "model-btn thinking-btn", id: "thinking", type: "button", "aria-haspopup": "listbox" }),
 	stop: h("button", { class: "send-btn stop-btn", id: "stop", type: "button", title: t("composer.stop"), "aria-label": t("composer.stop"), hidden: true }, icon("stop", 16)),
 	sendMode: h("button", { class: "send-mode-btn", id: "send-mode", type: "button", "aria-haspopup": "menu", hidden: true }),
 	send: h("button", { class: "send-btn", id: "send", type: "button" }),
@@ -82,7 +85,7 @@ const attachments = new AttachmentPicker(() => {
 });
 const composerElement = h("div", { class: "composer", id: "composer", "data-drop-label": t("attachments.drop") },
 	$.context, $.vision, attachments.tray, $.prompt, attachments.input,
-	h("div", { class: "composer-bar" }, $.model, attachments.button, $.stop, $.sendMode, $.send));
+	h("div", { class: "composer-bar" }, $.model, $.thinking, attachments.button, $.stop, $.sendMode, $.send));
 document.body.append(
 	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.files, $.settings),
 	h("main", { class: "main" }, $.banner, $.scroller, $.jump),
@@ -101,9 +104,16 @@ const providers = (): readonly ProviderSummary[] => workspace?.providers.value ?
 const connected = () => configuredProviders(providers());
 const chats = () => workspace?.chats.value ?? [];
 const view = (): ConversationView | null => loaded && chatId !== undefined ? chat?.view.value ?? null : null;
-const chatModel = () => (view()?.docs["pi.agent"] as AgentState | undefined)?.model;
+const chatAgent = () => view()?.docs["pi.agent"] as AgentState | undefined;
+const chatModel = () => chatAgent()?.model;
 const currentModel = (): ModelRef | undefined => chatModel() ?? workspace?.defaultModel.value ?? undefined;
 const shownModel = () => resolveModel(providers(), currentModel());
+const currentThinking = (): ThinkingLevel => chatId === undefined ? workspace?.defaultThinkingLevel.value ?? "off" : chatAgent()?.thinkingLevel ?? "off";
+const shownThinking = () => clampThinking(supportedThinkingLevels(providers(), shownModel()), currentThinking());
+const shownConfiguration = (): ChatConfiguration | undefined => {
+	const model = shownModel();
+	return model ? { model, thinkingLevel: shownThinking() } : undefined;
+};
 
 function draftSnapshot(): ComposerDraft {
 	return { text: $.prompt.value, attachments: attachments.items.map(pendingInput), updatedAt: Date.now() };
@@ -251,6 +261,19 @@ function renderComposer() {
 		$.model.dataset.attention = String(!ready);
 		$.model.replaceChildren(icon(ready ? "spark" : "key", 14), h("span", { class: "model-name" }, label), icon("chevron", 12));
 	}
+	const thinking = shownThinking();
+	const thinkingLevels = supportedThinkingLevels(providers(), ref);
+	$.thinking.hidden = !ready || !ref;
+	$.thinking.disabled = configurationTask !== undefined || thinkingLevels.length < 2;
+	$.model.disabled = configurationTask !== undefined;
+	const thinkingLabel = t(`thinking.level.${thinking}`);
+	$.thinking.dataset.level = thinking;
+	if ($.thinking.querySelector(".model-name")?.textContent !== thinkingLabel) {
+		$.thinking.replaceChildren(icon("bulb", 14), h("span", { class: "model-name" }, thinkingLabel), ...(thinkingLevels.length > 1 ? [icon("chevron", 12)] : []));
+	}
+	$.thinking.title = `${t("thinking.title")}: ${thinkingLabel}`;
+	$.thinking.setAttribute("aria-label", $.thinking.title);
+	if (($.thinking.hidden || $.thinking.disabled) && overlays.current instanceof ThinkingMenu) overlays.close();
 }
 
 function renderContext(tab: TargetTab | undefined) {
@@ -322,10 +345,12 @@ async function open(id: number | undefined, options: { preserveComposer?: boolea
 	toBottom();
 }
 
-async function ensureModel(): Promise<ModelRef | undefined> {
-	const ref = shownModel();
-	if (ref && workspace && !sameModel(ref, currentModel())) await workspace.setDefaultModel(ref, context);
-	return ref;
+async function ensureConfiguration(): Promise<ChatConfiguration | undefined> {
+	const configuration = shownConfiguration();
+	if (configuration && workspace && (!sameModel(configuration.model, currentModel()) || configuration.thinkingLevel !== currentThinking())) {
+		await workspace.setDefaultConfiguration(configuration, context);
+	}
+	return configuration;
 }
 
 async function persistSubmittedDraft(id: number, raw: string, submitted: ReturnType<typeof pendingInput>[], visible: boolean) {
@@ -342,7 +367,29 @@ async function persistSubmittedDraft(id: number, raw: string, submitted: ReturnT
 }
 
 let sending = false;
+let configurationTask: Promise<void> | undefined;
+function applyConfiguration(configuration: ChatConfiguration): Promise<void> {
+	if (configurationTask) return configurationTask;
+	const source = workspace;
+	const target = chat;
+	const task = (async () => {
+		try {
+			await source?.setDefaultConfiguration(configuration, context);
+			await target?.configure(configuration, context);
+		} catch (error) {
+			toast(String((error as Error)?.message ?? error), "error");
+		}
+	})();
+	configurationTask = task;
+	renderComposer();
+	return task.finally(() => {
+		if (configurationTask === task) configurationTask = undefined;
+		renderComposer();
+	});
+}
+
 async function send(given?: string) {
+	if (configurationTask) await configurationTask;
 	const raw = given ?? $.prompt.value;
 	const text = raw.trim();
 	const submitted = attachments.items.map(pendingInput);
@@ -360,8 +407,8 @@ async function send(given?: string) {
 	let ownedTarget: ChatRef | undefined;
 	renderComposer();
 	try {
-		const model = await ensureModel();
-		if (submitted.some((item) => item.mimeType.startsWith("image/")) && !supportsVision(providers(), model)) {
+		const configuration = await ensureConfiguration();
+		if (submitted.some((item) => item.mimeType.startsWith("image/")) && !supportsVision(providers(), configuration?.model)) {
 			renderComposer();
 			return;
 		}
@@ -390,7 +437,9 @@ async function send(given?: string) {
 			target = held;
 		}
 		const visibleTarget = target === chat && chatId === admittedId;
-		if (model && (!visibleTarget || !sameModel(chatModel(), model))) await target.configure(model, context);
+		const configured = configuration && visibleTarget && sameModel(chatModel(), configuration.model)
+			&& (chatAgent()?.thinkingLevel ?? "off") === configuration.thinkingLevel;
+		if (configuration && !configured) await target.configure(configuration, context);
 		const tab = tabs.current;
 		await target.send({
 			text, requestId: crypto.randomUUID(), whenBusy: delivery, attachments: submitted,
@@ -475,6 +524,7 @@ $.title.addEventListener("click", openChats);
 $.files.addEventListener("click", openFiles);
 $.settings.addEventListener("click", openSettings);
 $.model.addEventListener("click", openModelMenu);
+$.thinking.addEventListener("click", openThinkingMenu);
 
 function openChats(event?: Event) {
 	const anchor = event?.currentTarget instanceof HTMLElement ? event.currentTarget : $.chats;
@@ -491,7 +541,10 @@ function openFiles() {
 	if (chat) overlays.open(new FilesSheet(chat, () => overlays.close()), { kind: "sheet", anchor: $.files });
 }
 function openSettings() {
-	overlays.open(new SettingsSheet(() => workspace, () => overlays.close()), { kind: "sheet", anchor: $.settings });
+	overlays.open(new SettingsSheet(() => workspace, () => overlays.close(), openProviderEditor), { kind: "sheet", anchor: $.settings });
+}
+function openProviderEditor(provider?: string) {
+	overlays.open(new ProviderEditorSheet(provider, () => workspace, openSettings), { kind: "sheet", anchor: $.settings });
 }
 function openSendModeMenu() {
 	if (overlays.current instanceof SendModeMenu) return overlays.close();
@@ -505,24 +558,36 @@ function openSendModeMenu() {
 	menu.focus();
 }
 function openModelMenu() {
+	if (configurationTask) return;
 	if (overlays.current instanceof ModelMenu) return overlays.close();
 	if (!workspace || !connected().length) return openSettings();
 	const menu = new ModelMenu(workspace, {
 		selected: shownModel,
 		pick: async (ref) => {
-			const source = workspace;
-			const target = chat;
-			overlays.close();
-			try {
-				await source?.setDefaultModel(ref, context);
-				await target?.configure(ref, context);
-				renderComposer();
-			} catch (error) {
-				toast(String((error as Error)?.message ?? error), "error");
-			}
+			const configuration = { model: ref, thinkingLevel: clampThinking(supportedThinkingLevels(providers(), ref), currentThinking()) };
+			await applyConfiguration(configuration);
+			if (overlays.current === menu) overlays.close();
 		},
 	});
 	overlays.open(menu, { kind: "popover", anchor: $.model });
+	menu.focus();
+}
+
+function openThinkingMenu() {
+	if (configurationTask) return;
+	if (overlays.current instanceof ThinkingMenu) return overlays.close();
+	const model = shownModel();
+	if (!workspace || !model) return;
+	const levels = supportedThinkingLevels(providers(), model);
+	if (levels.length < 2) return;
+	const menu = new ThinkingMenu(levels, {
+		selected: shownThinking,
+		pick: async (thinkingLevel) => {
+			await applyConfiguration({ model, thinkingLevel });
+			if (overlays.current === menu) overlays.close();
+		},
+	});
+	overlays.open(menu, { kind: "popover", anchor: $.thinking });
 	menu.focus();
 }
 
@@ -538,7 +603,7 @@ async function main() {
 	workspace = held;
 	whenBusy = held.busyMode.value;
 	let knownChats = new Set(chats().map((chat) => chat.id));
-	for (const member of [held.chats, held.providers, held.defaultModel, held.busyMode]) {
+	for (const member of [held.chats, held.providers, held.defaultModel, held.defaultThinkingLevel, held.busyMode]) {
 		const watch = await member.watch(context);
 		watch.start(async () => {
 			if (member === held.busyMode) whenBusy = held.busyMode.value;
@@ -562,7 +627,7 @@ async function main() {
 	if (!overlays.current) $.prompt.focus();
 
 	if (__OSHAWOTT_DEV__) {
-		const panelTests = () => testPanel(held);
+		const panelTests = (origin?: string) => testPanel(held, origin);
 		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests, attachments: testAttachmentComposer };
 		const origin = new URLSearchParams(location.search).get("selftest");
 		if (origin) void selftest(origin, panelTests);

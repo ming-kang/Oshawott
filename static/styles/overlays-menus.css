@@ -127,6 +127,20 @@
 	white-space: nowrap;
 }
 
+.menu-item-details {
+	display: block;
+	overflow: hidden;
+	color: var(--text-3);
+	font-size: 10.5px;
+	font-weight: 400;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.thinking-menu {
+	max-width: 240px;
+}
+
 .menu-item-id {
 	max-width: 40%;
 	overflow: hidden;

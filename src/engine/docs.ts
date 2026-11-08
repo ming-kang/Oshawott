@@ -1,9 +1,11 @@
 import { defineDoc } from "@earendil-works/pi-durable";
-import { DEFAULT_BUSY_MODE, type BusyMode, type ChatSummary, type ModelRef } from "../contracts/chat.ts";
+import { DEFAULT_BUSY_MODE, type BusyMode, type ChatSummary, type ModelRef, type ProviderProfile, type ThinkingLevel } from "../contracts/chat.ts";
 
 export type WorkspaceState = {
 	chats: ChatSummary[];
 	defaultModel: ModelRef | null;
+	/** Absent in older documents, whose thinking preference is Off. */
+	defaultThinkingLevel?: ThinkingLevel;
 	/** Absent in older documents, whose delivery preference is Steer. */
 	busyMode?: BusyMode;
 	/** Optional for older v1 documents. An intent survives eviction between removing a chat and clearing its files. */
@@ -14,7 +16,16 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	kind: "oshawott.workspace",
 	version: 1,
 	scope: "session",
-	initial: () => ({ chats: [], defaultModel: null, busyMode: DEFAULT_BUSY_MODE, pendingFileDeletes: [] }),
+	initial: () => ({ chats: [], defaultModel: null, defaultThinkingLevel: "off", busyMode: DEFAULT_BUSY_MODE, pendingFileDeletes: [] }),
+	checkpointWhen: () => true,
+});
+
+/** Custom provider profiles contain no credentials and are restored before Durable resumes model work. */
+export const ProvidersDoc = defineDoc<{ custom: ProviderProfile[] }>({
+	kind: "oshawott.providers",
+	version: 1,
+	scope: "session",
+	initial: () => ({ custom: [] }),
 	checkpointWhen: () => true,
 });
 

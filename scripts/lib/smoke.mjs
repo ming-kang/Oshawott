@@ -26,6 +26,45 @@ export const TEST_PAGE = `<!doctype html><title>Oshawott test page</title>
 export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawott 文件" })}\n`;
 export const TEST_LARGE_DOWNLOAD = JSON.stringify({ padding: "x".repeat(1_100_000), ending: "complete" });
 
+/** A real OpenAI-compatible discovery and streaming endpoint for the browser model-management flow. */
+export function modelApi() {
+	const requests = [];
+	const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization,content-type", "access-control-allow-methods": "GET,POST,OPTIONS" };
+	const authorized = (req) => req.headers.authorization === "Bearer local-key";
+	return { requests, routes: {
+		"OPTIONS /v1/models": (_req, res) => res.writeHead(204, cors).end(),
+		"OPTIONS /v1/chat/completions": (_req, res) => res.writeHead(204, cors).end(),
+		"GET /v1/models": (req, res) => {
+			if (!authorized(req)) return res.writeHead(401, { ...cors, "content-type": "application/json" }).end(JSON.stringify({ error: { message: "unauthorized" } }));
+			res.writeHead(200, { ...cors, "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [
+				{ id: "local-reasoning", object: "model", reasoning: true, input: ["text", "image"], context_length: 65536, max_output_tokens: 8192 },
+			] }));
+		},
+		"POST /v1/chat/completions": (req, res) => {
+			if (!authorized(req)) return res.writeHead(401, cors).end();
+			let body = "";
+			req.on("data", (chunk) => { body += chunk; });
+			req.on("end", () => {
+				const parsed = JSON.parse(body);
+				requests.push(parsed);
+				const model = parsed.model ?? "unknown";
+				const reasoning = parsed.reasoning_effort ?? "off";
+				const chunk = (delta, finishReason = null) => `data: ${JSON.stringify({
+					id: "chatcmpl-oshawott", object: "chat.completion.chunk", created: 1_700_000_000, model,
+					choices: [{ index: 0, delta, finish_reason: finishReason }],
+				})}\n\n`;
+				const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
+				res.writeHead(200, { ...cors, "content-type": "text/event-stream", "cache-control": "no-cache" }).end(
+					chunk({ role: "assistant", content: `Local answer: model=${model} reasoning=${reasoning}` })
+					+ chunk({}, "stop")
+					+ `data: ${JSON.stringify({ id: "chatcmpl-oshawott", object: "chat.completion.chunk", created: 1_700_000_000, model, choices: [], usage })}\n\n`
+					+ "data: [DONE]\n\n",
+				);
+			});
+		},
+	} };
+}
+
 export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 	const redirects = { get302: 0, post307: 0, target: 0 };
 	const server = createServer((req, res) => {

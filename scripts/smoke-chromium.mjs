@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { launchExtension, root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
+import { launchExtension, modelApi, root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
 
 const steps = [];
 const step = (name, ok, detail = "") => {
@@ -11,7 +11,8 @@ const step = (name, ok, detail = "") => {
 const downloads = join(root, "dist", "smoke-downloads");
 await rm(downloads, { recursive: true, force: true });
 await mkdir(downloads, { recursive: true });
-const site = await testSite();
+const models = modelApi();
+const site = await testSite({ routes: models.routes });
 const { browser, worker, id, evaluateIn } = await launchExtension();
 let downloadSession;
 try {
@@ -123,7 +124,8 @@ try {
 	});
 	await new Promise((resolve) => setTimeout(resolve, 250));
 	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.toolCards())) step(name, ok, detail);
-	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.panel())) step(name, ok, detail);
+	for (const { name, ok, detail } of await panel.evaluate((origin) => globalThis.__oshawottTest.panel(origin), site.url)) step(name, ok, detail);
+	step("local model API receives an actual high-thinking chat request", models.requests.some((request) => request.model === "local-reasoning" && request.reasoning_effort === "high"), `${models.requests.length} request(s)`);
 	await panel.click("#new-chat");
 	await until("the new chat ready", () => panel.$eval("#files-toggle", (button) => button.hidden || undefined));
 	await ask("And again?");
@@ -134,7 +136,7 @@ try {
 	await panel.click("#files-back");
 	await panel.click("#chats-toggle");
 	const chats = await until("the chat list", () => panel.$$eval(".chat-item", (items) => (items.length ? items.length : undefined)));
-	step("after the offscreen document closed, the panel works on the next Engine", chats === 2, `${chats} chats kept`);
+	step("after the offscreen document closed, the panel works on the next Engine", chats === 3, `${chats} chats kept`);
 	await panel.keyboard.press("Escape");
 
 	const fresh = async (text) => {

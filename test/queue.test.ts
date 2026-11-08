@@ -453,7 +453,7 @@ test("edits and model changes re-check every queued image, not only newly added 
 		const model = f.faux.getModel() as unknown as { provider: string; id: string; input: ("text" | "image")[] };
 		model.input = ["text"];
 		await assert.rejects(f.chat.updateQueued({ id, text: "Still an image" }, context), /cannot process images/);
-		await assert.rejects(f.chat.configure({ provider: model.provider, modelId: model.id }, context), /cannot process images/);
+		await assert.rejects(f.chat.configure({ model: { provider: model.provider, modelId: model.id } }, context), /cannot process images/);
 	} finally {
 		await f.close();
 	}

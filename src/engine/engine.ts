@@ -1,4 +1,4 @@
-import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
+import type { CredentialStore, ModelsStore, MutableModels } from "@earendil-works/pi-ai";
 import { FileError } from "@earendil-works/pi-durable/env";
 import { createRegistry, type Extension, Harness, type Storage, type Wake } from "@earendil-works/pi-durable";
 import { Browser } from "../contracts/browser.ts";
@@ -6,8 +6,9 @@ import { PANEL_LINK_LIMITS } from "../contracts/chat.ts";
 import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/hosts.ts";
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
 import { completeAttachmentDeletes } from "./attachments.ts";
-import { WorkspaceDoc } from "./docs.ts";
+import { ProvidersDoc, WorkspaceDoc } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
+import { ProviderManager } from "./providers.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
 import { resumeFileDeletes } from "./files-lifecycle.ts";
 import { filesExtension } from "./files-tools.ts";
@@ -17,6 +18,7 @@ export interface EngineOptions {
 	readonly storage: Storage;
 	readonly models: MutableModels;
 	readonly credentials: CredentialStore;
+	readonly modelsStore?: ModelsStore;
 	readonly broker: (context: Context) => Promise<Link>;
 	readonly tab: (tabId: number, context: Context) => Promise<Link>;
 	readonly files: FileBackend;
@@ -36,6 +38,7 @@ export interface Engine {
 export async function startEngine(options: EngineOptions, context: Context): Promise<Engine> {
 	const onError = options.onError ?? ((error: unknown) => console.error("[oshawott engine]", error));
 	const now = options.now ?? Date.now;
+	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, fetch: options.fetch });
 
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError });
 	host.route(
@@ -100,7 +103,10 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	);
 	await harness.commit(async (tx) => {
 		await tx.doc(WorkspaceDoc);
+		await tx.doc(ProvidersDoc);
 	}, context);
+	const storedProviders = await harness.snapshot(ProvidersDoc, context);
+	await providers.restore(storedProviders?.custom ?? []);
 
 	await resumeFileDeletes(harness, options.files, context, onError);
 	await completeAttachmentDeletes(harness, options.files, context, onError);
@@ -108,7 +114,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		[
 			{
 				name: "oshawott.panel",
-				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, files: options.files, now, onError }),
+				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, providers, files: options.files, now, onError }),
 			},
 		],
 		context,

@@ -30,12 +30,13 @@ Oshawott 由四个角色组成，彼此通过 chord 远程对象通信。
 
 | 存储 | 内容 |
 |:-:|---|
-| IndexedDB `oshawott` | Durable 对话；`WorkspaceDoc`（对话列表、默认模型、待删除的文件）；`TargetDoc`（每个对话的目标标签页） |
+| IndexedDB `oshawott` | Durable 对话；`WorkspaceDoc`（对话列表、默认模型与思考档位、待删除的文件）；`ProvidersDoc`（非秘密的自定义服务与手填模型）；`TargetDoc`（每个对话的目标标签页） |
 | IndexedDB `oshawott-files` | 对话文件，见[文件与 Fetch](files.md) |
+| IndexedDB `oshawott-models` | Pi-AI `ModelsStore` 保存的已发现模型目录；手填覆盖在读取时应用，不改写原始目录 |
 | IndexedDB `oshawott-credentials` | API key，只有 Engine 读写 |
 | Panel `localStorage` | 主题 |
 
-Panel 用 `self.follow` 直接观察 Durable 状态，自己不另存一份对话。提供商列表只保存在 Engine 内存里，Panel 连接或修改 key 时刷新。
+Panel 用 `self.follow` 直接观察 Durable 状态，自己不另存一份对话。Provider 摘要由 Engine 从运行时注册表派生，只包含配置状态和模型能力，不包含 Key。自定义 Profile 与发现目录分别在 Engine 启动、恢复模型工作前加载。
 
 ## 生命周期
 
@@ -53,5 +54,5 @@ Durable 通过 `onWake` 安排唤醒，Broker 用 alarm `oshawott:wake` 在后�
 - Page 运行在 isolated world。元素 `ref` 用 `WeakRef` 保存在页面内存里。
 - 页面工具规格只在 `src/tools/page-tools.ts` 定义：只读的标 `safe`，会改动页面的标 `unsafe`。
 - Code Mode 在 Worker 的 QuickJS WASM 中运行，只能通过工具访问当前对话的文件，没有 shell。
-- 普通构建只为模型 API 域名声明静态权限，其他站点需要用户授权；开发构建额外声明 `<all_urls>`，供自动测试使用。
-- API key 只会进入 Engine。Panel 从不插入原始 HTML：Markdown 先解析再构建 DOM，链接只允许 `http(s):` 和 `mailto:`。
+- 普通构建只为内置模型 API 域名声明静态权限；自定义服务按 Base URL 的 origin 请求按需权限，不默认扩大为 `<all_urls>`。其他站点需要用户授权；开发构建额外声明 `<all_urls>`，供自动测试使用。
+- API key 只会进入 Engine 的 `CredentialStore`。Panel 状态只包含是否已配置；发现错误不携带响应体、请求头或 Key。Panel 从不插入原始 HTML：Markdown 先解析再构建 DOM，链接只允许 `http(s):` 和 `mailto:`。

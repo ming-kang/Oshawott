@@ -1,0 +1,305 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from "@earendil-works/pi-ai";
+import { AgentDoc, MemoryStorage } from "@earendil-works/pi-durable";
+import { ProvidersDoc } from "../src/engine/docs.ts";
+import { Browser } from "../src/contracts/browser.ts";
+import { Chat, Workspace, type ProviderProfile } from "../src/contracts/chat.ts";
+import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
+import { startEngine } from "../src/engine/engine.ts";
+import { MemoryFileBackend } from "../src/engine/files.ts";
+import { ProviderManager } from "../src/engine/providers.ts";
+import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair } from "../src/lib/chord.ts";
+
+const context = BACKGROUND_CONTEXT;
+async function until<T>(read: () => T | undefined, message = "state did not refresh"): Promise<T> {
+	const deadline = Date.now() + 2500;
+	for (;;) {
+		const value = read();
+		if (value !== undefined) return value;
+		if (Date.now() >= deadline) throw new Error(message);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
+async function fixture(fetcher?: typeof fetch, modelsStore = new InMemoryModelsStore()) {
+	const credentials = new InMemoryCredentialStore();
+	const models = createModels({ credentials, modelsStore });
+	const faux = fauxProvider({ models: [{ id: "faux-a", reasoning: true }, { id: "faux-b" }] });
+	models.setProvider(faux.provider);
+	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
+	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
+		host.serve(Browser, () => ({ variant: "engine", members: {
+			listTabs: async () => [], activeTab: async () => null,
+			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
+			hasAccess: async () => false, armWake: async () => null,
+		} }));
+	}) }], context);
+	const storage = new MemoryStorage();
+	const engine = await startEngine({
+		storage, models, credentials, modelsStore, files: new MemoryFileBackend(), fetch: fetcher, onError: () => {},
+		broker: async () => {
+			const [engineEnd, brokerEnd] = memoryLinkPair();
+			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
+			return engineEnd;
+		},
+		tab: async () => { throw new Error("unused"); },
+	}, context);
+	const panel = createHost<Principal>({ onError: () => {} });
+	const [panelEnd, engineEnd] = memoryLinkPair();
+	engine.acceptPanel(engineEnd, crypto.randomUUID());
+	panel.connect(panelEnd, { principal: { kind: "engine" } }, context);
+	await panel.load([], context);
+	const holding = panel.get(Workspace, {}, context);
+	const workspace = await holding;
+	assert.equal(workspace.variant, "owner");
+	await until(() => workspace.providers.value.length ? true : undefined);
+	return {
+		credentials, modelsStore, models, faux, engine, storage, workspace,
+		chat: async (id: number) => {
+			const held = await panel.get(Chat, { id }, context);
+			assert.equal(held.variant, "owner");
+			return held;
+		},
+		close: async () => {
+			workspace.release();
+			await holding.catch(() => {});
+			await panel.close(context);
+			await engine.close();
+			await broker.close(context);
+		},
+	};
+}
+
+const profile: ProviderProfile = {
+	id: "custom-local", name: "Local", baseUrl: "https://models.test/v1", api: "openai-responses",
+	models: [{ id: "manual", name: "Manual", contextWindow: 32_000, maxTokens: 4_096, vision: true, thinkingLevels: ["off", "high"] }],
+};
+
+test("custom providers discover, retain the last good catalog, edit and delete without exposing keys", async () => {
+	let fail = false;
+	let discoveries = 0;
+	const f = await fixture(async (input, init) => {
+		discoveries++;
+		assert.equal(input, "https://models.test/v1/models");
+		assert.equal(init?.credentials, "omit");
+		assert.equal(init?.redirect, "error");
+		assert.equal((init?.headers as Record<string, string>).authorization, "Bearer secret-key");
+		if (fail) return new Response("secret-key must not escape", { status: 500 });
+		return Response.json({ data: [
+			{ id: "remote", name: "Remote", context_length: 64_000, max_output_tokens: 8_192 },
+			{ id: "vision", display_name: "Vision", input: ["text", "image"], reasoning: true },
+		] });
+	});
+	try {
+		await f.workspace.saveProvider({ profile, key: " secret-key " }, context);
+		const custom = await until(() => f.workspace.providers.value.find((provider) => provider.id === profile.id));
+		assert.equal(custom.kind, "custom");
+		assert.equal(custom.configured, true);
+		assert.deepEqual(custom.models.map((model) => model.id), ["manual", "remote", "vision"]);
+		assert.deepEqual(custom.models.map((model) => model.manual), [true, false, false]);
+		assert.equal(custom.models[2]?.vision, true);
+		assert.deepEqual(custom.models[2]?.thinkingLevels, ["off", "minimal", "low", "medium", "high"]);
+		assert.equal(discoveries, 1);
+		assert.deepEqual(await f.credentials.read(profile.id), { type: "api_key", key: "secret-key" });
+		assert.equal(JSON.stringify(f.workspace.providers.value).includes("secret-key"), false);
+
+		fail = true;
+		await f.workspace.refreshProvider({ provider: profile.id }, context);
+		const failed = f.workspace.providers.value.find((provider) => provider.id === profile.id)!;
+		assert.deepEqual(failed.models.map((model) => model.id), ["manual", "remote", "vision"], "a failed refresh retains the last good catalog");
+		assert.match(failed.discoveryError ?? "", /HTTP 500/);
+		assert.equal(failed.discoveryError?.includes("secret-key"), false);
+
+		fail = false;
+		await f.workspace.saveProvider({ profile: { ...profile, name: "Edited" } }, context);
+		const edited = f.workspace.providers.value.find((provider) => provider.id === profile.id);
+		assert.equal(edited?.name, "Edited");
+		assert.deepEqual(edited?.models.map((model) => model.id), ["manual", "remote", "vision"], "editing restores the cached catalog without a network request");
+		assert.equal(discoveries, 2, "editing without a key preserves auth and does not force a refresh");
+		await f.workspace.setDefaultConfiguration({ model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high" }, context);
+		const id = await f.workspace.createChat({}, context);
+		assert.deepEqual(await f.engine.harness.snapshot(AgentDoc, id as never, context), {
+			model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high",
+		});
+		const cachedBeforeRejectedEdits = await f.modelsStore.read(profile.id);
+		await assert.rejects(f.workspace.saveProvider({ profile: { ...profile, models: [] } }, context), /still used/, "removing a referenced manual-only model is rejected");
+		await assert.rejects(f.workspace.saveProvider({ profile: { ...profile, baseUrl: "https://other.test/v1", models: [] } }, context), /still used/);
+		assert.deepEqual(await f.modelsStore.read(profile.id), cachedBeforeRejectedEdits, "a rejected endpoint edit preserves the last good cache");
+		assert.deepEqual(f.workspace.providers.value.find((provider) => provider.id === profile.id)?.models.map((model) => model.id), ["manual", "remote", "vision"]);
+		await assert.rejects(f.workspace.deleteProvider({ provider: profile.id }, context), /still used/);
+		const chat = await f.chat(id);
+		const imageSubmission = await chat.send({
+			text: "visual metadata check", requestId: "custom-vision", attachments: [{
+				id: "pixel", name: "pixel.png", mimeType: "image/png",
+				data: Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64")),
+			}],
+		}, context);
+		assert.ok(imageSubmission > 0, "a custom visual model accepts the existing native image attachment pipeline");
+		await chat.abort(context);
+		await chat.configure({ model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "off" }, context);
+		chat.release();
+		await f.workspace.setDefaultConfiguration({ model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "off" }, context);
+		await f.workspace.deleteProvider({ provider: profile.id }, context);
+		assert.equal(f.workspace.providers.value.some((provider) => provider.id === profile.id), false);
+		assert.equal(await f.credentials.read(profile.id), undefined);
+	} finally {
+		await f.close();
+	}
+});
+
+test("manual overrides are applied on reads rather than persisted over the discovered catalog", async () => {
+	const credentials = new InMemoryCredentialStore();
+	const modelsStore = new InMemoryModelsStore();
+	const models = createModels({ credentials, modelsStore });
+	const overridden: ProviderProfile = { ...profile, models: [
+		{ id: "remote", name: "Override", contextWindow: 10_000, maxTokens: 1_000, vision: true, thinkingLevels: ["off", "high"] },
+	] };
+	const manager = new ProviderManager({ models, modelsStore, fetch: async () => Response.json({ data: [
+		{ id: "remote", name: "Remote", context_length: 99_000, reasoning: true },
+	] }) });
+	await credentials.modify(profile.id, async () => ({ type: "api_key", key: "secret-key" }));
+	(await manager.prepare(overridden))();
+	await manager.refresh(profile.id);
+	let summary = (await manager.summaries())[0]!;
+	assert.equal(summary.models[0]?.name, "Override");
+	assert.equal(summary.models[0]?.contextWindow, 10_000);
+	assert.deepEqual(summary.models[0]?.thinkingLevels, ["off", "high"]);
+	assert.equal((await modelsStore.read(profile.id))?.models[0]?.name, "Remote");
+	(await manager.prepare({ ...profile, models: [] }))();
+	await manager.restoreCatalog(profile.id);
+	summary = (await manager.summaries())[0]!;
+	assert.equal(summary.models[0]?.name, "Remote", "removing an override reveals the raw cached model");
+	assert.equal(summary.models[0]?.contextWindow, 99_000);
+});
+
+test("thinking levels and models are durable per conversation and reach the next real model request", async () => {
+	const levels: string[] = [];
+	const requestModels: string[] = [];
+	const f = await fixture();
+	f.faux.setResponses(Array.from({ length: 3 }, (_, index) => (_ctx: unknown, options: { reasoning?: string } | undefined, _state: unknown, model: { id: string }) => {
+		levels.push(options?.reasoning ?? "off");
+		requestModels.push(model.id);
+		return fauxAssistantMessage(`answer ${index}`);
+	}));
+	try {
+		await f.workspace.setDefaultConfiguration({ model: { provider: "faux", modelId: "faux-a" }, thinkingLevel: "high" }, context);
+		const firstId = await f.workspace.createChat({}, context);
+		const first = await f.chat(firstId);
+		await first.send({ text: "one", requestId: "one" }, context);
+		await until(() => levels.length === 1 ? true : undefined);
+		await first.configure({ model: { provider: "faux", modelId: "faux-a" }, thinkingLevel: "low" }, context);
+		await first.send({ text: "two", requestId: "two" }, context);
+		await until(() => levels.length === 2 ? true : undefined);
+		await f.workspace.setDefaultConfiguration({ model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "off" }, context);
+		const secondId = await f.workspace.createChat({}, context);
+		assert.deepEqual((await f.engine.harness.snapshot(AgentDoc, firstId as never, context))?.model, { provider: "faux", modelId: "faux-a" });
+		assert.deepEqual(await f.engine.harness.snapshot(AgentDoc, secondId as never, context), {
+			model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "off",
+		});
+		const second = await f.chat(secondId);
+		await second.send({ text: "three", requestId: "three" }, context);
+		await until(() => levels.length === 3 ? true : undefined);
+		assert.deepEqual(levels, ["high", "low", "off"]);
+		assert.deepEqual(requestModels, ["faux-a", "faux-a", "faux-b"]);
+		await assert.rejects(second.configure({ model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "high" }, context), /does not support/);
+		first.release();
+		second.release();
+	} finally {
+		await f.close();
+	}
+});
+
+test("provider deletion serializes with default and chat configuration without leaving dangling references", async () => {
+	const store = new InMemoryModelsStore();
+	const remove = store.delete.bind(store);
+	const entered = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	let delayed = false;
+	store.delete = async (id, options) => {
+		if (delayed) {
+			entered.resolve();
+			await release.promise;
+		}
+		return remove(id, options);
+	};
+	const f = await fixture(undefined, store);
+	let chat: Awaited<ReturnType<typeof f.chat>> | undefined;
+	try {
+		await f.workspace.saveProvider({ profile }, context);
+		const id = await f.workspace.createChat({}, context);
+		chat = await f.chat(id);
+		delayed = true;
+		const deleting = f.workspace.deleteProvider({ provider: profile.id }, context);
+		await entered.promise;
+		const choosingDefault = assert.rejects(f.workspace.setDefaultConfiguration({
+			model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high",
+		}, context), /unavailable/);
+		const choosingChat = assert.rejects(chat.configure({
+			model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high",
+		}, context), /unavailable/);
+		release.resolve();
+		await deleting;
+		await choosingDefault;
+		await choosingChat;
+		assert.equal(f.workspace.defaultModel.value, null);
+		assert.equal((await f.engine.harness.snapshot(AgentDoc, id as never, context))?.model, undefined);
+		assert.equal(f.workspace.providers.value.some((provider) => provider.id === profile.id), false);
+	} finally {
+		release.resolve();
+		chat?.release();
+		await f.close();
+	}
+});
+
+test("provider profiles and discovered catalogs restore before a new Engine resumes", async () => {
+	const credentials = new InMemoryCredentialStore();
+	await credentials.modify(profile.id, async () => ({ type: "api_key", key: "secret-key" }));
+	const modelsStore = new InMemoryModelsStore();
+	await modelsStore.write(profile.id, { models: [{
+		id: "remote", name: "Remote", api: profile.api, provider: profile.id, baseUrl: profile.baseUrl,
+		input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, reasoning: false,
+		contextWindow: 64_000, maxTokens: 8_192,
+	}] });
+	const memory = new MemoryStorage();
+	const storage = new Proxy(memory, {
+		get(target, key) {
+			if (key === "close") return async () => {};
+			const value = Reflect.get(target, key, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
+	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
+		host.serve(Browser, () => ({ variant: "engine", members: {
+			listTabs: async () => [], activeTab: async () => null,
+			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
+			hasAccess: async () => false, armWake: async () => null,
+		} }));
+	}) }], context);
+	const boot = async (models: ReturnType<typeof createModels>) => startEngine({
+		storage, models, credentials, modelsStore, files: new MemoryFileBackend(), onError: () => {},
+		broker: async () => {
+			const [engineEnd, brokerEnd] = memoryLinkPair();
+			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
+			return engineEnd;
+		},
+		tab: async () => { throw new Error("unused"); },
+	}, context);
+	const firstModels = createModels({ credentials, modelsStore });
+	const first = await boot(firstModels);
+	await first.harness.commit(async (tx) => {
+		(await tx.doc(ProvidersDoc)).custom.push(profile);
+	}, context);
+	await first.close();
+	const secondModels = createModels({ credentials, modelsStore });
+	const second = await boot(secondModels);
+	try {
+		assert.equal(secondModels.getProvider(profile.id)?.name, profile.name);
+		assert.deepEqual(secondModels.getModels(profile.id).map((model) => model.id), ["manual", "remote"]);
+		assert.equal((await secondModels.checkAuth(profile.id))?.type, "api_key");
+	} finally {
+		await second.close();
+		await broker.close(context);
+	}
+});

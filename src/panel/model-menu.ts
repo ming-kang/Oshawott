@@ -1,7 +1,7 @@
 import type { ModelRef, Workspace } from "../contracts/chat.ts";
 import type { Reference } from "../lib/chord.ts";
 import { t } from "./i18n.ts";
-import { configuredProviders, sameModel } from "./models.ts";
+import { compactTokens, configuredProviders, sameModel } from "./models.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon } from "./ui.ts";
 
@@ -61,8 +61,12 @@ export class ModelMenu implements OverlayView {
 						class: "menu-item", id: `model-option-${option++}`, type: "button", role: "option", tabindex: -1,
 						"aria-selected": String(chosen), "data-provider": provider.id, "data-model": model.id,
 						onclick: () => void this.#actions.pick(ref),
-					}, h("span", { class: "menu-item-name" }, model.name),
-						model.name !== model.id ? h("span", { class: "menu-item-id" }, model.id) : null, chosen ? icon("check", 14) : null);
+					}, h("span", { class: "menu-item-name" }, model.name,
+						h("span", { class: "menu-item-details" }, [
+							model.name !== model.id ? model.id : "",
+							compactTokens(model.contextWindow),
+							model.vision ? t("model.vision") : "",
+						].filter(Boolean).join(" · "))), chosen ? icon("check", 14) : null);
 				}),
 			]) : [h("div", { class: "list-empty", role: "status" }, t("model.none"))]));
 		const items = this.#items();

@@ -1,28 +1,31 @@
-import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels, type CredentialStore, type MutableModels } from "@earendil-works/pi-ai";
 import { AgentDoc, configure as configureAgent, InboxDoc, type ConversationId, type Harness, type SubmissionId } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { Chat, DEFAULT_BUSY_MODE, ProviderSummary, Workspace } from "../contracts/chat.ts";
+import { Chat, type ChatConfiguration, DEFAULT_BUSY_MODE, type ModelRef, ProviderSummary, type ThinkingLevel, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { arr, ChordError, type Context, defineFacet, defineState, obj } from "../lib/chord.ts";
 import {
 	attachmentPaths, completeAttachmentDeletes, inputForSend, inputForUpdate, intendAttachmentDeletes, type QueuedInput,
 	requireContentVision, rollbackAttachments, safeAttachmentPath, storeAttachments,
 } from "./attachments.ts";
-import { TargetDoc, WorkspaceDoc } from "./docs.ts";
+import { ProvidersDoc, TargetDoc, WorkspaceDoc } from "./docs.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
 import { deleteChatFiles } from "./files-lifecycle.ts";
+import { normalizeProfile } from "./provider-discovery.ts";
+import type { ProviderManager } from "./providers.ts";
 
 export interface EngineServices {
 	readonly harness: Harness;
 	readonly models: MutableModels;
 	readonly credentials: CredentialStore;
+	readonly providers: ProviderManager;
 	readonly files: FileBackend;
 	readonly now: () => number;
 	readonly onError: (error: unknown) => void;
 }
 
 const ProviderList = obj({ list: arr(ProviderSummary) });
-const Providers = defineState("providers", { schema: ProviderList, version: 1, initial: () => ({ list: [] }) });
+const Providers = defineState("providers", { schema: ProviderList, version: 2, initial: () => ({ list: [] }) });
 
 export function titleOf(text: string): string {
 	const line = text.trim().split("\n")[0]!.replace(/\s+/g, " ");
@@ -34,21 +37,37 @@ function forbidden(): never {
 	throw new ChordError({ code: "forbidden", message: "Only a panel may use the workspace." });
 }
 
-async function providerSummaries(services: EngineServices): Promise<ProviderSummary[]> {
-	return Promise.all(services.models.getProviders().map(async (provider) => {
-		const auth = await services.models.checkAuth(provider.id).catch(() => undefined);
-		return {
-			id: provider.id,
-			name: provider.name ?? provider.id,
-			configured: auth !== undefined,
-			models: services.models.getModels(provider.id).map((model) => ({ id: model.id, name: model.name ?? model.id, vision: model.input.includes("image") })),
-		};
+function invalid(message: string): never {
+	throw new ChordError({ code: "invalid", reason: "args", message });
+}
+
+function validConfiguration(services: EngineServices, input: ChatConfiguration, previous: ThinkingLevel = "off"): Required<ChatConfiguration> {
+	const model = services.providers.model(input.model);
+	if (!model) invalid(`The selected model ${input.model.modelId} is unavailable. Choose another model.`);
+	const supported = getSupportedThinkingLevels(model);
+	const thinkingLevel = input.thinkingLevel ?? clampThinkingLevel(model, previous);
+	if (!supported.includes(thinkingLevel)) invalid(`${model.name} does not support the ${thinkingLevel} thinking level.`);
+	return { model: { ...input.model }, thinkingLevel };
+}
+
+async function modelReferences(harness: Harness, ctx: Context): Promise<{ workspaceDefault: ModelRef | null; chats: { id: number; model?: ModelRef }[] }> {
+	const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+	const chats = await Promise.all((workspace?.chats ?? []).map(async (chat) => {
+		const agent = await harness.snapshot(AgentDoc, chat.id as ConversationId, ctx);
+		return { id: chat.id, model: agent?.model };
 	}));
+	return { workspaceDefault: workspace?.defaultModel ?? null, chats };
 }
 
 export function panelFacet(services: EngineServices) {
 	const { harness } = services;
 	const tails = new Map<number, Promise<void>>();
+	let providerTail: Promise<unknown> = Promise.resolve();
+	function serializeProviders<T>(operation: () => Promise<T>): Promise<T> {
+		const run = providerTail.then(operation, operation);
+		providerTail = run.catch(() => {});
+		return run;
+	}
 	/** One Engine owns a profile; serialize attachment admission/editing/cancellation within it. */
 	async function serialize<T>(id: number, operation: () => Promise<T>): Promise<T> {
 		const previous = tails.get(id) ?? Promise.resolve();
@@ -74,25 +93,45 @@ export function panelFacet(services: EngineServices) {
 			if (principal.kind !== "panel") forbidden();
 			const workspace = self.follow((observer, ctx) => harness.observeDoc(WorkspaceDoc, observer, ctx));
 			const providers = self.state(Providers);
+			let providerRevision = 0;
 			const refreshProviders = async (ctx: Context) => {
-				const list = await providerSummaries(services);
+				const revision = ++providerRevision;
+				const list = await services.providers.summaries();
+				if (revision !== providerRevision) return;
 				await providers.change((draft) => {
 					draft.list = list;
 				}, ctx);
 			};
-			self.onLive((ctx) => refreshProviders(ctx));
+			const discover = async (id: string, ctx: Context, force = true) => {
+				const pending = services.providers.refresh(id, force);
+				await Promise.resolve();
+				await refreshProviders(ctx);
+				await pending;
+				await refreshProviders(ctx);
+			};
+			self.onLive((ctx) => {
+				void (async () => {
+					await refreshProviders(ctx);
+					const configured = (await services.providers.summaries()).filter((provider) => provider.configured && provider.models.length === 0);
+					await Promise.all(configured.map((provider) => services.providers.refresh(provider.id, false)));
+					if (configured.length) await refreshProviders(ctx);
+				})().catch(services.onError);
+			});
 			return {
 				variant: "owner",
 				members: {
 					chats: self.derive([workspace], ([value]) => value.chats),
 					defaultModel: self.derive([workspace], ([value]) => value.defaultModel),
+					defaultThinkingLevel: self.derive([workspace], ([value]) => value.defaultThinkingLevel ?? "off"),
 					busyMode: self.derive([workspace], ([value]) => value.busyMode ?? DEFAULT_BUSY_MODE),
 					providers: self.derive([providers], ([value]) => value.list),
 					createChat: async ({ title }, ctx) => {
-						const { defaultModel } = await harness.snapshot(WorkspaceDoc, ctx) ?? { defaultModel: null };
+						const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+						const defaultModel = workspace?.defaultModel ?? null;
+						const defaultThinkingLevel = workspace?.defaultThinkingLevel ?? "off";
 						const conversation = await harness.createConversation({
 							ownership: { kind: "ownerless" },
-							agent: defaultModel ? { model: defaultModel } : {},
+							agent: { ...(defaultModel ? { model: defaultModel } : {}), thinkingLevel: defaultThinkingLevel },
 							// Registered in the creating commit: no conversation exists without its Workspace entry.
 							init: async (tx, conversationId) => {
 								(await tx.doc(WorkspaceDoc)).chats.push({ id: conversationId, title: title?.trim() ?? "", createdAt: services.now() });
@@ -104,22 +143,113 @@ export function panelFacet(services: EngineServices) {
 						await deleteChatFiles(harness, services.files, id, ctx);
 						return null;
 					},
-					setApiKey: async ({ provider, key }, ctx) => {
-						await services.credentials.modify(provider, async () => ({ type: "api_key", key: key.trim() }));
+					setApiKey: ({ provider, key }, ctx) => serializeProviders(async () => {
+						if (!services.models.getProvider(provider)) invalid(`Unknown provider ${provider}.`);
+						const trimmed = key.trim();
+						if (!trimmed) invalid("The API key cannot be empty.");
+						await services.credentials.modify(provider, async () => ({ type: "api_key", key: trimmed }));
 						await refreshProviders(ctx);
+						await discover(provider, ctx);
 						return null;
-					},
-					clearApiKey: async ({ provider }, ctx) => {
+					}),
+					clearApiKey: ({ provider }, ctx) => serializeProviders(async () => {
 						await services.credentials.delete(provider);
 						await refreshProviders(ctx);
 						return null;
-					},
-					setDefaultModel: async (model, ctx) => {
+					}),
+					saveProvider: ({ profile: input, key }, ctx) => serializeProviders(async () => {
+						const profile = normalizeProfile(input);
+						const previousProfile = services.providers.profile(profile.id);
+						const catalogChanged = previousProfile !== undefined && (previousProfile.baseUrl !== profile.baseUrl || previousProfile.api !== profile.api);
+						const activate = await services.providers.prepare(profile);
+						const references = await modelReferences(harness, ctx);
+						const available = await services.providers.candidateModelIds(profile);
+						for (const model of [references.workspaceDefault, ...references.chats.map((chat) => chat.model)]) {
+							if (model?.provider === profile.id && !available.has(model.modelId)) {
+								invalid(`Model ${model.modelId} is still used by the default model or a chat. Choose another model before removing it.`);
+							}
+						}
+						const previousKey = key === undefined ? undefined : await services.credentials.read(profile.id);
+						if (key !== undefined) {
+							const trimmed = key.trim();
+							if (!trimmed) invalid("The API key cannot be empty.");
+							await services.credentials.modify(profile.id, async () => ({ type: "api_key", key: trimmed }));
+						}
+						let committed = false;
+						try {
+							await harness.commit(async (tx) => {
+								const doc = await tx.doc(ProvidersDoc);
+								const index = doc.custom.findIndex((provider) => provider.id === profile.id);
+								if (index < 0) doc.custom.push(profile);
+								else doc.custom[index] = profile;
+							}, ctx);
+							committed = true;
+							if (catalogChanged) await services.providers.deleteCatalog(profile.id);
+						} catch (error) {
+							if (committed) {
+								await harness.commit(async (tx) => {
+									const doc = await tx.doc(ProvidersDoc);
+									const index = doc.custom.findIndex((provider) => provider.id === profile.id);
+									if (previousProfile && index >= 0) doc.custom[index] = previousProfile;
+									else if (previousProfile) doc.custom.push(previousProfile);
+									else doc.custom = doc.custom.filter((provider) => provider.id !== profile.id);
+								}, ctx).catch(services.onError);
+							}
+							if (key !== undefined) await services.credentials.modify(profile.id, async () => previousKey);
+							throw error;
+						}
+						activate();
+						await services.providers.restoreCatalog(profile.id);
+						await refreshProviders(ctx);
+						if (key !== undefined) await discover(profile.id, ctx);
+						return null;
+					}),
+					deleteProvider: ({ provider }, ctx) => serializeProviders(async () => {
+						const references = await modelReferences(harness, ctx);
+						if (references.workspaceDefault?.provider === provider || references.chats.some((chat) => chat.model?.provider === provider)) {
+							invalid("This provider is still used by the default model or a chat. Choose another model before deleting it.");
+						}
+						const activate = await services.providers.prepareDelete(provider);
+						const previousKey = await services.credentials.read(provider);
+						await services.credentials.delete(provider);
+						try {
+							await harness.commit(async (tx) => {
+								const doc = await tx.doc(ProvidersDoc);
+								doc.custom = doc.custom.filter((item) => item.id !== provider);
+							}, ctx);
+						} catch (error) {
+							if (previousKey) await services.credentials.modify(provider, async () => previousKey);
+							throw error;
+						}
+						activate();
+						await services.providers.deleteCatalog(provider).catch(services.onError);
+						await refreshProviders(ctx);
+						return null;
+					}),
+					refreshProvider: ({ provider }, ctx) => serializeProviders(async () => {
+						await discover(provider, ctx);
+						return null;
+					}),
+					setDefaultModel: (model, ctx) => serializeProviders(async () => {
+						const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+						const configuration = validConfiguration(services, { model }, workspace?.defaultThinkingLevel ?? "off");
 						await harness.commit(async (tx) => {
-							(await tx.doc(WorkspaceDoc)).defaultModel = model;
+							const doc = await tx.doc(WorkspaceDoc);
+							doc.defaultModel = configuration.model;
+							doc.defaultThinkingLevel = configuration.thinkingLevel;
 						}, ctx);
 						return null;
-					},
+					}),
+					setDefaultConfiguration: (input, ctx) => serializeProviders(async () => {
+						const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+						const configuration = validConfiguration(services, input, workspace?.defaultThinkingLevel ?? "off");
+						await harness.commit(async (tx) => {
+							const doc = await tx.doc(WorkspaceDoc);
+							doc.defaultModel = configuration.model;
+							doc.defaultThinkingLevel = configuration.thinkingLevel;
+						}, ctx);
+						return null;
+					}),
 					setBusyMode: async (mode, ctx) => {
 						await harness.commit(async (tx) => {
 							(await tx.doc(WorkspaceDoc)).busyMode = mode;
@@ -272,17 +402,19 @@ export function panelFacet(services: EngineServices) {
 						await completeDeletes(ctx);
 						return null;
 					}),
-					configure: locked(async (model, ctx) => {
+					configure: locked((input, ctx) => serializeProviders(async () => {
 						const target = await conversation(ctx);
 						await target.commit(async (tx) => {
+							const agent = await tx.doc(AgentDoc, target.id);
+							const configuration = validConfiguration(services, input, agent.thinkingLevel ?? "off");
 							const inbox = await tx.doc(InboxDoc, target.id);
 							for (const item of inbox.items) {
-								if (item.mode === "steer" || item.mode === "followUp") requireContentVision(services, model, item.content);
+								if (item.mode === "steer" || item.mode === "followUp") requireContentVision(services, configuration.model, item.content);
 							}
-							await configureAgent(tx, target.id, { model });
+							await configureAgent(tx, target.id, configuration);
 						}, ctx);
 						return null;
-					}),
+					})),
 					files: async (ctx) => {
 						await conversation(ctx);
 						return [...getOrThrow(await files.workspaceFiles(ctx))];

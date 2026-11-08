@@ -9,6 +9,53 @@ export const PANEL_LINK_LIMITS = { part: 256 * 1024 * 1024, decoded: 512 * 1024 
 export const ModelRef = obj({ provider: str(), modelId: str() });
 export type ModelRef = DurableModelRef;
 
+export const ModelApi = oneOf("openai-responses", "anthropic-messages", "openai-completions");
+export type ModelApi = Static<typeof ModelApi>;
+export const ThinkingLevel = oneOf("off", "minimal", "low", "medium", "high", "xhigh", "max");
+export type ThinkingLevel = Static<typeof ThinkingLevel>;
+export const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+export const ModelConfig = obj({
+	id: str({ min: 1, max: 500 }),
+	name: str({ min: 1, max: 500 }),
+	contextWindow: int({ min: 1 }),
+	maxTokens: int({ min: 1 }),
+	vision: bool(),
+	thinkingLevels: arr(ThinkingLevel, { max: THINKING_LEVELS.length }),
+});
+export type ModelConfig = Static<typeof ModelConfig>;
+
+/** Non-secret custom provider configuration. API keys never belong to this document or the Panel state. */
+export const ProviderProfile = obj({
+	id: str({ min: 1, max: 100 }),
+	name: str({ min: 1, max: 100 }),
+	baseUrl: str({ min: 1, max: 2048 }),
+	api: ModelApi,
+	models: arr(ModelConfig, { max: 512 }),
+});
+export type ProviderProfile = Static<typeof ProviderProfile>;
+
+export const ModelSummary = obj({
+	id: str(), name: str(), vision: bool(), contextWindow: int(), maxTokens: int(), thinkingLevels: arr(ThinkingLevel), manual: bool(),
+});
+export type ModelSummary = Static<typeof ModelSummary>;
+
+export const ProviderSummary = obj({
+	id: str(),
+	name: str(),
+	kind: oneOf("builtin", "custom"),
+	baseUrl: str(),
+	api: union([ModelApi, nul()]),
+	configured: bool(),
+	models: arr(ModelSummary),
+	refreshing: bool(),
+	discoveryError: union([str(), nul()]),
+});
+export type ProviderSummary = Static<typeof ProviderSummary>;
+
+export const ChatConfiguration = obj({ model: ModelRef, thinkingLevel: opt(ThinkingLevel) });
+export type ChatConfiguration = Static<typeof ChatConfiguration>;
+
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 export const BusyMode = oneOf("steer", "followUp");
@@ -33,16 +80,8 @@ const AttachmentInputs = arr(AttachmentInput, { max: MAX_ATTACHMENTS });
 export const ChatSummary = obj({ id: int(), title: str(), createdAt: num() });
 export type ChatSummary = Static<typeof ChatSummary>;
 
-export const ProviderSummary = obj({
-	id: str(),
-	name: str(),
-	configured: bool(),
-	models: arr(obj({ id: str(), name: str(), vision: bool() })),
-});
-export type ProviderSummary = Static<typeof ProviderSummary>;
-
 export const Workspace = remote("oshawott.workspace", {
-	version: 3,
+	version: 4,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -50,6 +89,7 @@ export const Workspace = remote("oshawott.workspace", {
 			state: {
 				chats: arr(ChatSummary),
 				defaultModel: union([ModelRef, nul()]),
+				defaultThinkingLevel: ThinkingLevel,
 				busyMode: BusyMode,
 				providers: arr(ProviderSummary),
 			},
@@ -60,7 +100,11 @@ export const Workspace = remote("oshawott.workspace", {
 				deleteChat: method(obj({ id: int() })),
 				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
 				clearApiKey: method(obj({ provider: str() })),
+				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
+				deleteProvider: method(obj({ provider: str() })),
+				refreshProvider: method(obj({ provider: str() })),
 				setDefaultModel: method(ModelRef),
+				setDefaultConfiguration: method(ChatConfiguration),
 				setBusyMode: method(BusyMode),
 			},
 		},
@@ -68,7 +112,7 @@ export const Workspace = remote("oshawott.workspace", {
 });
 
 export const Chat = remote("oshawott.chat", {
-	version: 3,
+	version: 4,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -105,7 +149,7 @@ export const Chat = remote("oshawott.chat", {
 				/** Continue an idle failed run, placing any inputs its `keep` policy left queued. */
 				continueQueued: method(undefined, int()),
 				abort: method(),
-				configure: method(ModelRef),
+				configure: method(ChatConfiguration),
 				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */
 				files: method(undefined, arr(ChatFile)),
 				readFile: method(obj({ path: str() }), bytes({ max: MAX_FILE_BYTES })),

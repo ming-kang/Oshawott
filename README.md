@@ -8,7 +8,7 @@
 - **页面工具**：读取当前标签页的快照，执行点击、输入、滚动；列出标签页和打开新标签页
 - **文件与 Code Mode**：每个对话有自己的持久文件区；模型在 Worker 里的 QuickJS 中运行 JS 来处理文件
 - **`fetch`**：请求用户授权过的站点，可以把响应存成文件
-- **多模型**：由 `pi-ai` 接入 Anthropic、OpenAI、Google、OpenRouter、DeepSeek
+- **多模型**：内置 Pi-AI 的浏览器 API Key 服务；自定义 OpenAI Responses / Completions、Anthropic Messages 端点，支持模型发现、手填回退、视觉元数据和每会话思考档位
 - **侧边栏**：流式 Markdown，浅色/深色主题，中英文界面
 
 | 空状态 | 对话 | 对话（深色） | 设置（深色） | 文件 |

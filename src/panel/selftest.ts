@@ -14,7 +14,7 @@ const until = async <T>(read: () => T | undefined | null | Promise<T | undefined
 	}
 };
 
-export async function selftest(origin: string, panelTests: () => Promise<Step[]>) {
+export async function selftest(origin: string, panelTests: (origin?: string) => Promise<Step[]>) {
 	const steps: Step[] = [];
 	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, ...(detail ? { detail } : {}) });
 	const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
@@ -127,7 +127,7 @@ export async function selftest(origin: string, panelTests: () => Promise<Step[]>
 		} finally {
 			reopened?.close();
 		}
-		steps.push(...await testToolCards(), ...await panelTests());
+		steps.push(...await testToolCards(), ...await panelTests(origin));
 
 		const fresh = async (text: string) => {
 			click("#new-chat");
