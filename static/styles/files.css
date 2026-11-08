@@ -1,0 +1,110 @@
+.files-body {
+	gap: 14px;
+	min-height: 0;
+}
+
+.files-location {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	color: var(--text-3);
+}
+
+.files-location code {
+	color: var(--text-2);
+	font: 12px var(--mono);
+}
+
+.files-summary {
+	margin-left: auto;
+	color: var(--text-3);
+	font-size: 11.5px;
+}
+
+.file-list[aria-busy="true"] {
+	opacity: 0.65;
+}
+
+.file-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px;
+}
+
+.file-row + .file-row {
+	border-top: 1px solid var(--line);
+}
+
+.file-icon {
+	flex: none;
+	color: var(--text-3);
+}
+
+.file-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.file-path {
+	display: block;
+	font: 12px/1.5 var(--mono);
+	overflow-wrap: anywhere;
+}
+
+.file-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px 8px;
+	margin-top: 3px;
+	color: var(--text-3);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.file-actions {
+	display: flex;
+	flex: none;
+	gap: 3px;
+}
+
+.file-remove:hover,
+.file-remove[data-confirm] {
+	color: var(--danger);
+}
+
+.file-remove[data-confirm] {
+	width: auto;
+	padding: 0 8px;
+	background: var(--danger-soft);
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.files-empty {
+	display: flex;
+	align-items: center;
+	flex-direction: column;
+	gap: 10px;
+	padding: 34px 20px;
+	color: var(--text-3);
+	font-size: 12px;
+	text-align: center;
+}
+
+.files-empty strong {
+	color: var(--text-2);
+	font-size: 13px;
+}
+
+.files-error {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 16px;
+	color: var(--danger);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+

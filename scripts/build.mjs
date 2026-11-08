@@ -29,8 +29,8 @@ const bundles = {
 };
 const ICONS = [16, 32, 48, 96, 128].map((size) => `static/icons/icon-${size}.png`);
 const statics = {
-	chromium: ["static/engine.html", "static/panel.html", "static/panel.css", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
-	firefox: ["static/panel.html", "static/panel.css", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
+	chromium: ["static/engine.html", "static/panel.html", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
+	firefox: ["static/panel.html", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
 };
 
 for (const target of targets.length ? targets : Object.keys(bundles)) {
@@ -55,6 +55,18 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			logLevel: "warning",
 		});
 	}
+	// Resolve the ordered CSS imports into the one stylesheet linked by panel.html.
+	await build({
+		entryPoints: [join(root, "static/panel.css")],
+		outfile: join(out, "panel.css"),
+		bundle: true,
+		target: target === "chromium" ? "chrome120" : "firefox128",
+		// Keep the source rule sequence intact in release builds as well as --dev.
+		minify: false,
+		sourcemap: dev ? "inline" : false,
+		legalComments: "none",
+		logLevel: "warning",
+	});
 	await mkdir(join(out, "icons"), { recursive: true });
 	for (const file of statics[target]) {
 		const name = file.startsWith("static/icons/") ? `icons/${file.split("/").at(-1)}` : file.split("/").at(-1);

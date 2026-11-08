@@ -1,0 +1,93 @@
+.menu-search:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+@media (hover: none) {
+	.msg-actions,
+	.chat-item .remove {
+		opacity: 1;
+	}
+}
+
+@media (max-width: 380px) {
+	.topbar {
+		padding: 0 4px;
+	}
+
+	.title-btn {
+		padding: 0 6px;
+	}
+
+	.thread {
+		padding-right: 12px;
+		padding-left: 12px;
+	}
+
+	.msg.user {
+		max-width: 92%;
+	}
+
+	.composer-wrap {
+		padding: 4px 8px 10px;
+	}
+
+	.model-btn {
+		max-width: calc(100% - 84px);
+	}
+
+	.popover {
+		right: 8px;
+		left: 8px;
+	}
+
+	.sheet-body {
+		padding-right: 12px;
+		padding-left: 12px;
+	}
+
+	.provider-form {
+		padding-left: 12px;
+	}
+
+	.file-row {
+		gap: 8px;
+		padding: 12px 10px;
+	}
+}
+
+@media (max-height: 640px) {
+	.empty {
+		justify-content: flex-start;
+		padding-top: 30px;
+	}
+
+	.empty-logo {
+		margin-bottom: 4px;
+	}
+
+	.suggestions,
+	.setup {
+		margin-top: 14px;
+	}
+}
+
+/* Forced colors can remove gradients without restoring the transparent text used by shimmer effects. */
+@media (forced-colors: active) {
+	.thinking[data-live] > summary span,
+	.tool:is([data-status="running"], [data-status="pending"], [data-status="streaming"]) .tool-label,
+	.typing span + span {
+		background: none;
+		color: CanvasText;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
