@@ -2,10 +2,13 @@ import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore 
 
 const STORE = "credentials";
 
-function request<T>(req: IDBRequest<T>): Promise<T> {
+/** Run `work` in one transaction and settle when it commits, so a write is never reported before it is durable. */
+async function transaction<T>(db: IDBDatabase, mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
 	return new Promise((resolve, reject) => {
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => reject(req.error);
+		const tx = db.transaction(STORE, mode);
+		const req = work(tx.objectStore(STORE));
+		tx.oncomplete = () => resolve(req.result);
+		tx.onabort = () => reject(tx.error ?? req.error ?? new DOMException("The credential transaction was aborted.", "AbortError"));
 	});
 }
 
@@ -23,17 +26,20 @@ export class IndexedDbCredentialStore implements CredentialStore {
 		});
 	}
 
-	async #store(mode: IDBTransactionMode) {
-		return (await this.#db).transaction(STORE, mode).objectStore(STORE);
-	}
-
 	async read(providerId: string, _options?: AuthOperationOptions): Promise<Credential | undefined> {
-		return (await request((await this.#store("readonly")).get(providerId))) as Credential | undefined;
+		return (await transaction(await this.#db, "readonly", (store) => store.get(providerId))) as Credential | undefined;
 	}
 
 	async list(_options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
-		const store = await this.#store("readonly");
-		const [keys, values] = await Promise.all([request(store.getAllKeys()), request(store.getAll())]);
+		const db = await this.#db;
+		const [keys, values] = await new Promise<[IDBValidKey[], unknown[]]>((resolve, reject) => {
+			const tx = db.transaction(STORE, "readonly");
+			const store = tx.objectStore(STORE);
+			const keys = store.getAllKeys();
+			const values = store.getAll();
+			tx.oncomplete = () => resolve([keys.result, values.result]);
+			tx.onabort = () => reject(tx.error ?? new DOMException("The credential transaction was aborted.", "AbortError"));
+		});
 		return keys.map((key, i) => ({ providerId: String(key), type: (values[i] as Credential).type }));
 	}
 
@@ -44,9 +50,9 @@ export class IndexedDbCredentialStore implements CredentialStore {
 	): Promise<Credential | undefined> {
 		const run = this.#line.then(async () => {
 			const next = await fn(await this.read(providerId, options));
-			const store = await this.#store("readwrite");
-			if (next === undefined) await request(store.delete(providerId));
-			else await request(store.put(next, providerId));
+			const db = await this.#db;
+			if (next === undefined) await transaction(db, "readwrite", (store) => store.delete(providerId));
+			else await transaction(db, "readwrite", (store) => store.put(next, providerId));
 			return next;
 		});
 		this.#line = run.catch(() => {});

@@ -15,6 +15,7 @@ import { type PortLink, portLink } from "../link/port-link.ts";
 import { ext, type RuntimePort } from "../platform/webext.ts";
 import type { PageToolName } from "../tools/page-tools.ts";
 
+import { Arrivals } from "./arrivals.ts";
 import { workerCodemodeSandbox } from "./codemode.ts";
 import { IndexedDbCredentialStore } from "./credentials.ts";
 import { type Engine, startEngine } from "./engine.ts";
@@ -23,47 +24,6 @@ import { IndexedDbFileBackend } from "./files-idb.ts";
 import { callPage, using } from "./tools.ts";
 
 const ATTACH_TIMEOUT_MS = 10_000;
-
-/** Port events are not buffered, so incoming ports become links immediately and wait here for their consumers. */
-export class Arrivals<K> {
-	#links = new Map<K, PortLink>();
-	#waiters = new Map<K, (link: PortLink) => void>();
-
-	arrive(key: K, link: PortLink) {
-		const waiter = this.#waiters.get(key);
-		this.#waiters.delete(key);
-		if (waiter) return waiter(link);
-		this.#links.get(key)?.close();
-		this.#links.set(key, link);
-		void link.done.then(() => {
-			if (this.#links.get(key) === link) this.#links.delete(key);
-		});
-	}
-
-	/** The port that already arrived for `key`, or the one `summon` makes arrive within `ms`. */
-	async obtain(key: K, ms: number, context: Context, summon: () => Promise<unknown>): Promise<PortLink> {
-		const ready = this.#links.get(key);
-		this.#links.delete(key);
-		if (ready && !ready.closed) return ready;
-		const arriving = this.#wait(key, ms, context);
-		await summon();
-		return await arriving;
-	}
-
-	#wait(key: K, ms: number, context: Context): Promise<PortLink> {
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.#waiters.delete(key);
-				reject(new Error(`No port for ${String(key)} within ${ms} ms`));
-			}, ms);
-			context.abortSignal?.addEventListener("abort", () => clearTimeout(timer), { once: true });
-			this.#waiters.set(key, (link) => {
-				clearTimeout(timer);
-				resolve(link);
-			});
-		});
-	}
-}
 
 const lastError = () => ext.runtime.lastError?.message;
 
