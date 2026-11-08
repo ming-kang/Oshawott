@@ -78,6 +78,43 @@ test("large frames are fragmented and reassembled before the next message", asyn
 	assert.ok(a.sent >= 3, "the large payload and its successor use separate Port messages");
 });
 
+test("a send that fails part-way disconnects the port, so the peer ends too", async () => {
+	const [a, b] = fakePortPair();
+	const left = portLink(a);
+	const right = portLink(b);
+	const post = a.postMessage.bind(a);
+	let posts = 0;
+	a.postMessage = (message: unknown) => {
+		if (++posts === 2) throw new Error("injected send failure");
+		post(message);
+	};
+	left.send(new Uint8Array(8 * 1024 * 1024 + 1));
+	assert.equal(left.closed, true);
+	assert.equal(left.reason, "injected send failure");
+	assert.equal(await right.done, "disconnected");
+});
+
+test("an ordinary message inside a fragmented one is a protocol error", async () => {
+	const [a, b] = fakePortPair();
+	const right = portLink(b);
+	const got: Uint8Array[] = [];
+	right.onMessage((message) => got.push(message));
+	a.postMessage(`oshawott:fragment:v1:1:0:2:${toBase64(new Uint8Array([1]))}`);
+	a.postMessage(toBase64(new Uint8Array([9])));
+	assert.equal(await right.done, "invalid fragment sequence");
+	assert.deepEqual(got, []);
+});
+
+test("fragments must arrive in order, one message at a time", async () => {
+	for (const [first, second] of [["1:1:2", "1:0:2"], ["1:0:2", "2:1:2"], ["1:0:2", "1:1:3"]]) {
+		const [a, b] = fakePortPair();
+		const right = portLink(b);
+		a.postMessage(`oshawott:fragment:v1:${first}:${toBase64(new Uint8Array([1]))}`);
+		a.postMessage(`oshawott:fragment:v1:${second}:${toBase64(new Uint8Array([2]))}`);
+		assert.equal(await right.done, "invalid fragment sequence", `${first} then ${second}`);
+	}
+});
+
 test("base64 round trip, larger than one chunk", () => {
 	const bytes = new Uint8Array(100_000).map((_, i) => (i * 31) & 255);
 	assert.deepEqual(fromBase64(toBase64(bytes)), bytes);

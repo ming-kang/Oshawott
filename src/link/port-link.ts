@@ -21,7 +21,8 @@ const FRAGMENT = "oshawott:fragment:v1:";
 const FRAGMENT_BYTES = 8 * 1024 * 1024;
 const MAX_MESSAGE_BYTES = 512 * 1024 * 1024;
 
-type Fragments = { chunks: (Uint8Array | undefined)[]; received: number; bytes: number };
+/** The one message being reassembled: a sender posts all fragments of a message before anything else, in order. */
+type Assembly = { id: string; count: number; chunks: Uint8Array[]; bytes: number };
 
 export function portLink(port: RuntimePort, lastError: () => string | undefined = () => undefined): PortLink {
 	let closed = false;
@@ -30,7 +31,7 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 	let queued: Uint8Array[] = [];
 	let closeListener: (() => void) | undefined;
 	let fragmentId = 0;
-	const fragments = new Map<string, Fragments>();
+	let assembly: Assembly | undefined;
 	let settle: (reason: string | undefined) => void = () => {};
 	const done = new Promise<string | undefined>((resolve) => (settle = resolve));
 
@@ -42,7 +43,7 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 		port.onDisconnect.removeListener(disconnected);
 		listener = undefined;
 		queued = [];
-		fragments.clear();
+		assembly = undefined;
 		const notify = closeListener;
 		closeListener = undefined;
 		notify?.();
@@ -60,6 +61,10 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 			return;
 		}
 		if (!data.startsWith(FRAGMENT)) {
+			if (assembly) {
+				close("invalid fragment sequence");
+				return;
+			}
 			deliver(fromBase64(data));
 			return;
 		}
@@ -79,22 +84,22 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 			close("invalid fragment bytes");
 			return;
 		}
-		const state = fragments.get(id) ?? { chunks: Array.from({ length: count }, () => undefined), received: 0, bytes: 0 };
-		if (state.chunks.length !== count || state.chunks[index] !== undefined || payload.length > FRAGMENT_BYTES || state.bytes + payload.length > MAX_MESSAGE_BYTES) {
+		const state = assembly ?? (index === 0 ? { id, count, chunks: [], bytes: 0 } : undefined);
+		if (!state || state.id !== id || state.count !== count || index !== state.chunks.length
+			|| payload.length > FRAGMENT_BYTES || state.bytes + payload.length > MAX_MESSAGE_BYTES) {
 			close("invalid fragment sequence");
 			return;
 		}
-		state.chunks[index] = payload;
-		state.received++;
+		state.chunks.push(payload);
 		state.bytes += payload.length;
-		fragments.set(id, state);
-		if (state.received !== count) return;
-		fragments.delete(id);
+		assembly = state;
+		if (state.chunks.length !== count) return;
+		assembly = undefined;
 		const message = new Uint8Array(state.bytes);
 		let offset = 0;
 		for (const chunk of state.chunks) {
-			message.set(chunk!, offset);
-			offset += chunk!.length;
+			message.set(chunk, offset);
+			offset += chunk.length;
 		}
 		deliver(message);
 	};
@@ -132,8 +137,9 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 					port.postMessage(`${FRAGMENT}${id}:${index}:${count}:${payload}`);
 				}
 			} catch (error) {
-				// Firefox throws on a port its peer closed; Chromium throws on a disconnected one.
-				end(error instanceof Error ? error.message : String(error));
+				// Firefox throws on a port its peer closed, Chromium on a disconnected one; the failure may also be local (an
+				// oversized message) or follow some fragments already sent. Disconnect either way, so the peer ends too.
+				close(error instanceof Error ? error.message : String(error));
 			}
 		},
 		onMessage(next) {
