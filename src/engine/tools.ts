@@ -1,9 +1,10 @@
 import { defineExtension, defineTool, type Extension, section } from "@earendil-works/pi-durable";
+import type { Static } from "@earendil-works/pi-schema";
 import { Browser } from "../contracts/browser.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { Page } from "../contracts/page.ts";
 import { bool, type Context, type Contract, type Host, int, obj, opt, type ParamsOf, type Reference, str } from "../lib/chord.ts";
-import { type PageToolName, pageTools } from "../tools/page-tools.ts";
+import { type PageToolName, pageTools, SnapshotResult } from "../tools/page-tools.ts";
 import { TargetDoc } from "./docs.ts";
 
 type EngineHost = Host<Principal>;
@@ -54,7 +55,11 @@ export function browserExtension(host: EngineHost): Extension {
 				const { tabId: named, ...rest } = args as { tabId?: number } & Record<string, unknown>;
 				const tabId = await tabOf(named, () => api.snapshot(TargetDoc, api.conversationId, context), context);
 				const result = await callPage(host, tabId, name, rest, context);
-				return { output: text(result), structuredOutput: result as never };
+				const snapshot = name === "page_snapshot" ? result as Static<typeof SnapshotResult> : undefined;
+				return {
+					output: text(result), structuredOutput: result as never,
+					...(snapshot ? { details: { snapshot: { title: snapshot.title, elementCount: snapshot.elements.length } } } : {}),
+				};
 			},
 		});
 	};

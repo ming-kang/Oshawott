@@ -152,6 +152,18 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	assert.deepEqual(tabResolves, [7], "the Engine resolved the route to tab 7 once");
 	const kinds = (chat.view.value?.entries ?? []).map((entry) => (entry as { kind: string }).kind);
 	assert.ok(kinds.includes("pi.tool-result"), `a tool result in ${kinds.join(", ")}`);
+	const snapshotMessage = chat.view.value?.entries.find((entry) => entry.kind === "pi.tool-result")?.model?.[0];
+	assert.equal(snapshotMessage?.role, "toolResult");
+	if (snapshotMessage?.role === "toolResult") {
+		assert.deepEqual(snapshotMessage.details, { snapshot: { title: "Example Domain", elementCount: 1 } });
+		assert.equal(snapshotMessage.content[0]?.type, "text");
+		if (snapshotMessage.content[0]?.type === "text") {
+			assert.deepEqual(JSON.parse(snapshotMessage.content[0].text), {
+				url: "https://example.com/", title: "Example Domain", text: "This domain is for use in examples.",
+				truncated: false, elements: [{ ref: "e1", role: "link", name: "More information" }],
+			});
+		}
+	}
 	assert.ok(wakes.some((wake) => wake.active), "the Broker was asked for a recovery wakeup while the run was active");
 
 	faux.appendResponses([fauxAssistantMessage("Hello.")]);

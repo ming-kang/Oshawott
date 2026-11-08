@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { MemoryStorage } from "@earendil-works/pi-durable";
+import { MemoryStorage, ToolResultEntry } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { InlineCodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codemode";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
@@ -213,7 +213,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		assert.equal(chat.variant, "owner");
 		await chat.send({ text: "Save the items.", requestId: "r1" }, context);
 
-		type Result = { kind: string; model?: { toolName?: string; isError?: boolean; content?: { type: string; text?: string }[] }[] };
+		type Result = { kind: string; model?: { toolName?: string; isError?: boolean; details?: unknown; content?: { type: string; text?: string }[] }[] };
 		const results = await until(() => {
 			const entries = (chat.view.value?.entries ?? []) as readonly Result[];
 			const done = entries.at(-1)?.kind === "pi.assistant" && entries.filter((entry) => entry.kind === "pi.tool-result").length === 5;
@@ -225,6 +225,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		assert.equal(requests.length, 1, "the refused site was never requested");
 		assert.equal(requests[0]?.init?.credentials, "omit");
 		assert.match(textOf(fetched!), /HTTP 200 · application\/json · 17 bytes\nSaved the body to \/workspace\/items\.json\./);
+		assert.deepEqual(fetched!.details, { http: { status: 200, bytes: 17 } });
 		assert.equal(textOf(read!), '{"items":[1,2,3]}');
 		assert.equal(code!.isError, false, textOf(code!));
 		assert.match(textOf(code!), /"total":6/);
@@ -234,7 +235,11 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		assert.match(textOf(listed!), /items\.json {2}\(17 bytes\)/);
 		assert.match(textOf(listed!), /summary\.txt {2}\(6 bytes\)/);
 		assert.equal(refused!.isError, true);
-		assert.ok(textOf(refused!).includes(`${NO_ACCESS} other.example:`), textOf(refused!));
+		assert.equal(textOf(refused!), `<harness>\n[error] ${NO_ACCESS} other.example: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.\n</harness>`);
+		assert.deepEqual(refused!.details, { access: { url: "https://other.example/" } });
+		const deniedEntry = chat.view.value?.entries.find((entry) => entry.model?.[0]?.role === "toolResult" && entry.model[0].isError);
+		assert.ok(ToolResultEntry.is(deniedEntry));
+		assert.equal(deniedEntry.data.diagnostics[0]?.code, "no_access");
 
 		assert.deepEqual(
 			(await chat.files(context)).map((file) => [file.path, file.size]),

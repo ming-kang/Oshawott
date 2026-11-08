@@ -46,7 +46,15 @@ const valueOf = (result: ToolExecutionResult) => result.structuredOutput as { by
 test("fetch refuses invalid schemes and unauthorized sites before requesting or writing", async () => {
 	let requests = 0;
 	await withFetch(async () => { requests++; return new Response("never"); }, async (call, files) => {
-		await assert.rejects(call({ url: "https://other.example/private", saveTo: "private.txt" }), (error: Error) => error.message.includes(NO_ACCESS));
+		const denied = await call({ url: "https://other.example:8443/private", saveTo: "private.txt" });
+		assert.equal(denied.isError, true);
+		assert.equal(denied.structuredOutput, undefined);
+		assert.deepEqual(denied.output, []);
+		assert.deepEqual(denied.details, { access: { url: "https://other.example:8443/private" } });
+		assert.deepEqual(denied.diagnostics, [{
+			severity: "error", code: "no_access",
+			message: `${NO_ACCESS} other.example:8443: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.`,
+		}]);
 		await assert.rejects(call({ url: "file:///private.txt" }), /Only http and https/);
 		await assert.rejects(call({ url: "not a URL" }), /Not a URL/);
 		assert.equal(requests, 0);
@@ -62,16 +70,26 @@ test("fetch truncates text, preserves binary bytes on disk, and sets safe reques
 		if (String(input).endsWith("/latin")) return new Response(new Uint8Array([233]), { headers: { "content-type": "text/plain; charset=iso-8859-1" } });
 		return new Response('{"items":[1,2,3]}', { headers: { "content-type": "application/json" } });
 	}, async (call, files) => {
-		assert.deepEqual(valueOf(await call({ url: "https://data.example/text", maxChars: 5 })), {
+		const preview = await call({ url: "https://data.example/text", maxChars: 5 });
+		assert.deepEqual(preview.details, { http: { status: 200, bytes: 17 } });
+		assert.deepEqual(valueOf(preview), {
 			status: 200, statusText: "", url: "https://data.example/text", contentType: "application/json", bytes: 17, body: '{"ite', truncated: true,
 		});
-		const saved = valueOf(await call({ url: "https://data.example/binary", saveTo: "nested/data.bin", method: "POST", body: "input" }));
+		const savedResult = await call({ url: "https://data.example/binary", saveTo: "nested/data.bin", method: "POST", body: "input" });
+		assert.deepEqual(savedResult.details, { http: { status: 200, bytes: 4 } });
+		const saved = valueOf(savedResult);
 		assert.equal(saved.savedTo, "/workspace/nested/data.bin");
 		assert.equal(saved.body, undefined);
 		assert.deepEqual(getOrThrow(await files.readBinaryFile("nested/data.bin", context)), new Uint8Array([0, 255, 128, 1]));
-		assert.equal(valueOf(await call({ url: "https://data.example/binary" })).body, undefined);
-		assert.equal(valueOf(await call({ url: "https://data.example/latin" })).body, "é");
-		assert.equal(valueOf(await call({ url: "https://data.example/text", method: "HEAD", body: "ignored" })).bytes, 0);
+		const binary = await call({ url: "https://data.example/binary" });
+		assert.deepEqual(binary.details, { http: { status: 200, bytes: 4 } });
+		assert.equal(valueOf(binary).body, undefined);
+		const latin = await call({ url: "https://data.example/latin" });
+		assert.deepEqual(latin.details, { http: { status: 200, bytes: 1 } });
+		assert.equal(valueOf(latin).body, "é");
+		const head = await call({ url: "https://data.example/text", method: "HEAD", body: "ignored" });
+		assert.deepEqual(head.details, { http: { status: 200, bytes: 0 } });
+		assert.equal(valueOf(head).bytes, 0);
 		assert.equal(requests[1]?.body, "input");
 		assert.equal(requests.at(-1)?.body, undefined);
 		for (const request of requests) {
@@ -81,6 +99,15 @@ test("fetch truncates text, preserves binary bytes on disk, and sets safe reques
 			assert.equal(request.redirect, "error");
 			assert.ok(request.signal instanceof AbortSignal);
 		}
+	});
+});
+
+test("fetch records HTTP UI details for non-2xx responses without changing the model output", async () => {
+	await withFetch(async () => new Response("gone", { status: 404, statusText: "Not Found", headers: { "content-type": "text/plain" } }), async (call) => {
+		const result = await call({ url: "https://data.example/missing" });
+		assert.notEqual(result.isError, true);
+		assert.deepEqual(result.details, { http: { status: 404, bytes: 4 } });
+		assert.deepEqual(result.output, [{ type: "text", text: "HTTP 404 Not Found · text/plain · 4 bytes\n\ngone" }]);
 	});
 });
 

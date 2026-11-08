@@ -1,4 +1,5 @@
-import { NO_ACCESS } from "../contracts/browser.ts";
+import type { ToolDiagnostic } from "@earendil-works/pi-durable";
+import { NO_ACCESS_CODE } from "../contracts/browser.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { sitePattern } from "../platform/patterns.ts";
 import { ext } from "../platform/webext.ts";
@@ -51,18 +52,26 @@ function look(name: string, args: Record<string, unknown>): Look {
 	}
 }
 
-function resultMeta(name: string, text: string): string | undefined {
+function record(value: unknown): Record<string, unknown> | undefined {
+	return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+function resultMeta(name: string, details: unknown): string | undefined {
+	const data = record(details);
 	if (name === "fetch") {
-		const summary = /^HTTP (\d{3})[^\n]*? · (\d+) bytes(?: · from .*?)?$/m.exec(text);
-		return summary ? `HTTP ${summary[1]} · ${formatBytes(Number(summary[2]))}` : undefined;
+		const http = record(data?.http);
+		return http && count(http.status) && http.status >= 100 && http.status <= 599 && count(http.bytes)
+			? `HTTP ${http.status} · ${formatBytes(http.bytes)}` : undefined;
 	}
-	if (name !== "page_snapshot") return undefined;
-	try {
-		const snapshot = JSON.parse(text) as { title?: string; elements?: unknown[] };
-		return [snapshot.title, t("tool.elements", snapshot.elements?.length ?? 0)].filter(Boolean).join(" · ");
-	} catch {
-		return undefined;
+	if (name === "page_snapshot") {
+		const snapshot = record(data?.snapshot);
+		if (snapshot && typeof snapshot.title === "string" && count(snapshot.elementCount)) {
+			return [snapshot.title, t("tool.elements", snapshot.elementCount)].filter(Boolean).join(" · ");
+		}
 	}
+	return undefined;
 }
 
 function pretty(value: unknown): string {
@@ -85,7 +94,7 @@ export class ToolCard {
 	readonly #state: HTMLElement;
 	readonly #body: HTMLElement;
 	readonly #summary: HTMLElement;
-	readonly #fetchUrl: string | undefined;
+	readonly #initialMeta: string;
 	#grant: HTMLButtonElement | undefined;
 	#result: HTMLElement | undefined;
 	#output: HTMLElement | undefined;
@@ -93,9 +102,9 @@ export class ToolCard {
 
 	constructor(name: string, args: Record<string, unknown>) {
 		this.#name = name;
-		this.#fetchUrl = name === "fetch" && typeof args.url === "string" ? args.url : undefined;
 		const { icon: iconName, label, meta } = look(name, args);
-		this.#meta = h("span", { class: "tool-meta" }, meta ?? "");
+		this.#initialMeta = meta ?? "";
+		this.#meta = h("span", { class: "tool-meta" }, this.#initialMeta);
 		this.#state = h("span", { class: "tool-state", role: "status", "aria-live": "polite" });
 		this.#body = h("div", { class: "tool-body" });
 		const code = name === "codemode" && typeof args.code === "string" ? args.code : undefined;
@@ -141,24 +150,27 @@ export class ToolCard {
 		this.#output.textContent = output.slice(-MAX_SHOWN);
 	}
 
-	setResult(text: string, isError: boolean) {
+	setResult(text: string, isError: boolean, details?: unknown, diagnostics: readonly ToolDiagnostic[] = []) {
 		this.#output?.parentElement?.remove();
 		this.#output = undefined;
 		this.#result?.remove();
 		const shown = pretty(text);
 		this.#result = section(t("tool.result"), h("pre", { class: isError ? "error" : null }, shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown));
 		this.#body.append(this.#result);
-		const meta = isError ? undefined : resultMeta(this.#name, text);
-		if (meta) this.#meta.textContent = meta;
+		const meta = isError ? undefined : resultMeta(this.#name, details);
+		this.#meta.textContent = meta ?? this.#initialMeta;
 		this.setStatus(isError ? "error" : "done");
 		this.#grant?.remove();
 		this.#grant = undefined;
 		delete this.element.dataset.needsAccess;
-		if (isError && text.includes(NO_ACCESS)) this.#offerAccess();
+		const access = record(record(details)?.access);
+		if (isError && diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === NO_ACCESS_CODE) && typeof access?.url === "string") {
+			this.#offerAccess(access.url);
+		}
 	}
 
-	#offerAccess() {
-		const pattern = this.#fetchUrl && sitePattern(this.#fetchUrl);
+	#offerAccess(url: string) {
+		const pattern = sitePattern(url);
 		if (!pattern) return;
 		const button = h("button", { class: "grant-btn tool-grant", type: "button" }, icon("lock", 12), t("tab.grant"));
 		button.addEventListener("click", async (event) => {

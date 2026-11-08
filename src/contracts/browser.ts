@@ -1,8 +1,9 @@
 import { arr, bool, int, method, nul, num, obj, opt, remote, str, union } from "../lib/chord.ts";
 import { BrokerHost } from "./hosts.ts";
 
-/** The file tool's permission failure marker, also recognized by the panel's fetch card. */
+/** Model-visible wording; panel actions use the structured diagnostic code instead. */
 export const NO_ACCESS = "No access to";
+export const NO_ACCESS_CODE = "no_access";
 
 export const TabSchema = obj({
 	tabId: int(),

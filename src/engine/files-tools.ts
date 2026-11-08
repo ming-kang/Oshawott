@@ -1,7 +1,7 @@
 import { defineExtension, defineTool, type Extension, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
-import { Browser, NO_ACCESS } from "../contracts/browser.ts";
+import { Browser, NO_ACCESS, NO_ACCESS_CODE } from "../contracts/browser.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { arr, bool, int, map, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import type { Host } from "../lib/chord.ts";
@@ -150,9 +150,17 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 			if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http and https URLs can be fetched.");
 			const allowed = await using(host, Browser, {}, context, (browser) => browser.hasAccess({ url: url.href }, context));
 			if (!allowed) {
-				throw new Error(
-					`${NO_ACCESS} ${url.host}: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.`,
-				);
+				return {
+					output: [],
+					isError: true,
+					details: { access: { url: url.href } },
+					// Rendered by the harness just like the former thrown error, without exposing the code to the model.
+					diagnostics: [{
+						severity: "error",
+						code: NO_ACCESS_CODE,
+						message: `${NO_ACCESS} ${url.host}: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.`,
+					}],
+				};
 			}
 			const method = args.method ?? "GET";
 			const signals = [AbortSignal.timeout(FETCH_TIMEOUT_MS), ...(context.abortSignal ? [context.abortSignal] : [])];
@@ -189,6 +197,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 				contentType,
 				bytes: body.length,
 			};
+			const details = { http: { status: summary.status, bytes: summary.bytes } };
 			const head = [`HTTP ${response.status} ${response.statusText}`.trim(), contentType || "no content type", `${body.length} bytes`];
 			if (summary.url !== url.href) head.push(`from ${summary.url}`);
 			const line = head.join(" · ");
@@ -197,13 +206,14 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 				const env = envOf(api);
 				const path = getOrThrow(await env.absolutePath(args.saveTo, context));
 				getOrThrow(await env.writeFile(path, body, context));
-				return { output: text(`${line}\nSaved the body to ${path}.`), structuredOutput: { ...summary, savedTo: path } };
+				return { output: text(`${line}\nSaved the body to ${path}.`), structuredOutput: { ...summary, savedTo: path }, details };
 			}
 			const decoded = decodeBody(contentType, body);
 			if (decoded === undefined) {
 				return {
 					output: text(`${line}\nA binary body, not shown: pass saveTo to keep it as a file.`),
 					structuredOutput: summary,
+					details,
 				};
 			}
 			const max = args.maxChars ?? DEFAULT_MAX_CHARS;
@@ -212,7 +222,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 			const note = truncated
 				? `\n\n[The body is cut at ${max} of ${decoded.length} characters: pass saveTo to keep all of it as a file, or a larger maxChars.]`
 				: "";
-			return { output: text(`${line}\n\n${shown}${note}`), structuredOutput: { ...summary, body: shown, truncated } };
+			return { output: text(`${line}\n\n${shown}${note}`), structuredOutput: { ...summary, body: shown, truncated }, details };
 		},
 	});
 }
