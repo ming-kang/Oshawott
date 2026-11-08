@@ -1,11 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="400" height="400" role="img" aria-labelledby="title">
+  <title id="title">Oshawott · Paw &amp; Scalchop</title>
   <defs>
-    <linearGradient id="g" x1="0.2" y1="0" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#62d0f5"/>
-      <stop offset="1" stop-color="#2a64e0"/>
-    </linearGradient>
+    <clipPath id="badge"><circle cx="100" cy="100" r="88"/></clipPath>
   </defs>
-  <path d="M16 2.5c5.6 6.6 9.5 11.6 9.5 16.6a9.5 9.5 0 0 1-19 0c0-5 3.9-10 9.5-16.6Z" fill="url(#g)"/>
-  <path d="M10.2 20.2c1.9 1.7 3.9 1.7 5.8 0s3.9-1.7 5.8 0" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
-  <path d="M12.3 13.6c.6-1.6 1.6-3.1 2.7-4.5" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"/>
+
+  <!-- Neutral badge: the product mark is the paw and scalchop, without water drops or bubbles. -->
+  <circle cx="100" cy="100" r="88" fill="#F2F5F7"/>
+  <g clip-path="url(#badge)">
+    <g transform="translate(100 90) scale(1.25) translate(-100 -100)" stroke="#1B3B5A" stroke-linecap="round" stroke-linejoin="round">
+      <!-- The scalchop sits behind the paw. -->
+      <g transform="translate(100 76) rotate(-7) scale(1.18)">
+        <path d="M-9 12 L-29.14 -0.49 A8.77 8.77 0 0 1 -19.95 -11.29 A8.77 8.77 0 0 1 -7.09 -17.23 A8.77 8.77 0 0 1 7.09 -17.23 A8.77 8.77 0 0 1 19.95 -11.29 A8.77 8.77 0 0 1 29.14 -0.49 L9 12 L15.5 14.5 Q17 22 13 22 L-13 22 Q-17 22 -15.5 14.5 Z" fill="#F7DF83" stroke-width="4.24"/>
+        <path d="M-7.26 5.44L-15.42 -5.31M-2.58 3.28L-5.48 -9.91M2.58 3.28L5.48 -9.91M7.26 5.44L15.42 -5.31" fill="none" stroke-width="2.88"/>
+      </g>
+
+      <!-- Arm and three-toed paw. -->
+      <path d="M73 186 L73.5 152 C73 138 67 128 67 112 A13 13 0 0 1 86.51 100.75 A14 14 0 0 1 113.49 100.75 A13 13 0 0 1 133 112 C133 128 127 138 126.5 152 L127 186 Z" fill="#FFFFFF" stroke-width="5"/>
+      <path d="M86.51 100.75 q0.6 4.5 -0.6 7.5 M113.49 100.75 q-0.6 4.5 0.6 7.5" fill="none" stroke-width="3.4"/>
+      <path d="M70 154 Q100 162 130 154 L131 171 Q100 179 69 171 Z" fill="#6EC6E6" stroke-width="5"/>
+
+      <!-- Borderless pads keep the paw from reading as a face. -->
+      <g fill="#D96B43" stroke="none">
+        <path d="M100 124.5 C106 124.5 108.5 129 112 131 C117 134 117 141.5 111 142.5 C106.5 143.3 104 141 100 141 C96 141 93.5 143.3 89 142.5 C83 141.5 83 134 88 131 C91.5 129 94 124.5 100 124.5 Z"/>
+        <ellipse cx="81" cy="115" rx="4.6" ry="5.6" transform="rotate(-14 81 115)"/>
+        <ellipse cx="100" cy="108.5" rx="5" ry="6"/>
+        <ellipse cx="119" cy="115" rx="4.6" ry="5.6" transform="rotate(14 119 115)"/>
+      </g>
+    </g>
+  </g>
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#1B3B5A" stroke-width="6"/>
 </svg>

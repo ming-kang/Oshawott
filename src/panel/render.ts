@@ -9,7 +9,7 @@ import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
-import { copyText, h, type IconName, icon, logo } from "./ui.ts";
+import { copyText, h, type IconName, icon, mascot } from "./ui.ts";
 
 const FAILURE_LABELS = {
 	no_model: "failure.no_model", model_error: "failure.model_error", interrupted: "failure.interrupted", turn_limit: "failure.turn_limit",
@@ -324,7 +324,7 @@ export class Transcript {
 		return h(
 			"div",
 			{ class: "empty" },
-			h("div", { class: "empty-logo" }, logo(44)),
+			h("div", { class: "empty-logo" }, mascot()),
 			h("h1", null, t("empty.title")),
 			h("p", null, t("empty.subtitle")),
 			state.ready

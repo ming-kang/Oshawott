@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title">
+  <title id="title">Oshawott · Small Paw &amp; Scalchop</title>
+
+  <!-- Optical 16/32px variant: larger badge, bold outlines and no water or fine-line details. -->
+  <circle cx="100" cy="100" r="90" fill="#F2F5F7"/>
+  <g stroke="#1B3B5A" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(100 66) rotate(-7) scale(1.25)">
+      <path d="M-9 12 L-29.14 -0.49 A8.77 8.77 0 0 1 -19.95 -11.29 A8.77 8.77 0 0 1 -7.09 -17.23 A8.77 8.77 0 0 1 7.09 -17.23 A8.77 8.77 0 0 1 19.95 -11.29 A8.77 8.77 0 0 1 29.14 -0.49 L9 12 L15.5 14.5 Q17 22 13 22 L-13 22 Q-17 22 -15.5 14.5 Z" fill="#F7DF83" stroke-width="6"/>
+    </g>
+    <path d="M70 184 L72 146 C72 137 65 128 65 115 C65 105 74 98 84 102 C86 88 114 88 116 102 C126 98 135 105 135 115 C135 128 128 137 128 146 L130 184 Z" fill="#FFFFFF" stroke-width="7"/>
+  </g>
+  <g fill="#D96B43">
+    <path d="M100 124.5 C107 124.5 110 129 114 132 C120 136 118 144 111 145 C106 146 104 143 100 143 C96 143 94 146 89 145 C82 144 80 136 86 132 C90 129 93 124.5 100 124.5 Z"/>
+    <ellipse cx="80" cy="114" rx="6" ry="7" transform="rotate(-14 80 114)"/>
+    <ellipse cx="100" cy="106" rx="6.5" ry="7.5"/>
+    <ellipse cx="120" cy="114" rx="6" ry="7" transform="rotate(14 120 114)"/>
+  </g>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#1B3B5A" stroke-width="8"/>
+</svg>

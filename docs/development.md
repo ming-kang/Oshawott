@@ -5,6 +5,7 @@
 ```sh
 npm install
 npm run build                        # 两端普通构建
+npm run icons                        # 从 static/icons 的 SVG 重新生成 PNG 图标
 node scripts/build.mjs chromium --dev
 node scripts/build.mjs firefox --dev
 ```

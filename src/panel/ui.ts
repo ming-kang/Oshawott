@@ -91,44 +91,26 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 	return svg;
 }
 
-let logoCount = 0;
+function brandImage(source: string, size: number, className: "logo" | "mascot"): HTMLImageElement {
+	const image = document.createElement("img");
+	image.src = `icons/${source}`;
+	image.width = size;
+	image.height = size;
+	image.alt = "";
+	image.draggable = false;
+	image.setAttribute("aria-hidden", "true");
+	image.classList.add(className);
+	return image;
+}
 
-export function logo(size = 24): SVGSVGElement {
-	const id = `oshawott-logo-${logoCount++}`;
-	const svg = document.createElementNS(SVG, "svg");
-	svg.setAttribute("viewBox", "0 0 32 32");
-	svg.setAttribute("width", String(size));
-	svg.setAttribute("height", String(size));
-	svg.setAttribute("aria-hidden", "true");
-	svg.classList.add("logo");
-	const defs = document.createElementNS(SVG, "defs");
-	const gradient = document.createElementNS(SVG, "linearGradient");
-	gradient.id = id;
-	for (const [k, v] of [["x1", "0.2"], ["y1", "0"], ["x2", "0.8"], ["y2", "1"]]) gradient.setAttribute(k!, v!);
-	for (const [offset, color] of [["0", "#62d0f5"], ["1", "#2a64e0"]]) {
-		const stop = document.createElementNS(SVG, "stop");
-		stop.setAttribute("offset", offset!);
-		stop.setAttribute("stop-color", color!);
-		gradient.appendChild(stop);
-	}
-	defs.appendChild(gradient);
-	const drop = document.createElementNS(SVG, "path");
-	drop.setAttribute("d", "M16 2.5c5.6 6.6 9.5 11.6 9.5 16.6a9.5 9.5 0 0 1-19 0c0-5 3.9-10 9.5-16.6Z");
-	drop.setAttribute("fill", `url(#${id})`);
-	const wave = document.createElementNS(SVG, "path");
-	wave.setAttribute("d", "M10.2 20.2c1.9 1.7 3.9 1.7 5.8 0s3.9-1.7 5.8 0");
-	wave.setAttribute("fill", "none");
-	wave.setAttribute("stroke", "#fff");
-	wave.setAttribute("stroke-width", "2.2");
-	wave.setAttribute("stroke-linecap", "round");
-	const shine = document.createElementNS(SVG, "path");
-	shine.setAttribute("d", "M12.3 13.6c.6-1.6 1.6-3.1 2.7-4.5");
-	shine.setAttribute("fill", "none");
-	shine.setAttribute("stroke", "rgba(255,255,255,.55)");
-	shine.setAttribute("stroke-width", "1.8");
-	shine.setAttribute("stroke-linecap", "round");
-	svg.append(defs, drop, wave, shine);
-	return svg;
+/** Product logo: use the optically simplified paw at toolbar-like sizes. */
+export function logo(size = 24): HTMLImageElement {
+	return brandImage(size <= 32 ? "icon-small.svg" : "icon.svg", size, "logo");
+}
+
+/** The character is a mascot, not a second product logo. */
+export function mascot(size = 56): HTMLImageElement {
+	return brandImage("mascot.svg", size, "mascot");
 }
 
 export function toast(text: string, tone: "info" | "error" = "info") {

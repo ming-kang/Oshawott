@@ -72,7 +72,8 @@ button:disabled {
 	stroke-linejoin: round;
 }
 
-.logo {
+.logo,
+.mascot {
 	flex: none;
 }
 

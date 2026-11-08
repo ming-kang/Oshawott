@@ -79,6 +79,7 @@ try {
 	await panel.click("#settings-toggle");
 	await until("the providers", () => panel.$('.provider[data-provider="anthropic"] .provider-head'));
 	await panel.click('.provider[data-provider="anthropic"] .provider-head');
+	await panel.$eval(".about", (about) => about.scrollIntoView({ block: "end" }));
 	await both("settings");
 	await panel.click("#settings-back");
 	await until("the settings closed", async () => !(await panel.$("#settings")) || undefined);

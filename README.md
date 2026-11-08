@@ -1,6 +1,10 @@
-# Oshawott
+<p align="center">
+  <img src="static/icons/icon.svg" width="88" alt="">
+</p>
 
-> 正在开发中
+<h1 align="center">Oshawott</h1>
+
+<p align="center">正在开发中</p>
 
 水水獭（Oshawott）是基于 [Pi Durable](https://github.com/earendil-works/pi) 的浏览器智能体扩展，支持 Chromium 和 Firefox。
 

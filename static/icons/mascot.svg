@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 180 180" width="400" height="400" role="img" aria-labelledby="title">
+  <title id="title">Oshawott Mascot</title>
+  <defs>
+    <!-- Only the part below the inverted-V mouth is visible. -->
+    <clipPath id="shell-below-mouth">
+      <path d="M40 142 L75 132 L100 118.5 L125 132 L160 142 L160 200 L40 200 Z"/>
+    </clipPath>
+    <clipPath id="left-ear-clip">
+      <path d="M53 46 C40 43 26 47 21 57 C17 65 20 80 25 91 C27 95 31 94 35 87 C41 77 48 62 53 46 Z"/>
+    </clipPath>
+    <clipPath id="right-ear-clip">
+      <path d="M147 46 C160 43 174 47 179 57 C183 65 180 80 175 91 C173 95 169 94 165 87 C159 77 152 62 147 46 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Head -->
+  <path d="M100 32 C146 32 175 63 175 107 C175 147 144 174 100 174 C56 174 25 147 25 107 C25 63 54 32 100 32 Z" fill="#FFFFFF" stroke="#1E242B" stroke-width="3.4" stroke-linejoin="round"/>
+
+  <!-- Ears -->
+  <g>
+    <path d="M53 46 C40 43 26 47 21 57 C17 65 20 80 25 91 C27 95 31 94 35 87 C41 77 48 62 53 46 Z" fill="#4B6E9E"/>
+    <path d="M53 46 C40 43 26 47 21 57 C27 54 38 53 50 56 Z" fill="#6488B8" clip-path="url(#left-ear-clip)"/>
+    <path d="M53 46 C40 43 26 47 21 57 C17 65 20 80 25 91 C27 95 31 94 35 87 C41 77 48 62 53 46 Z" fill="none" stroke="#1E242B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g>
+    <path d="M147 46 C160 43 174 47 179 57 C183 65 180 80 175 91 C173 95 169 94 165 87 C159 77 152 62 147 46 Z" fill="#4B6E9E"/>
+    <path d="M147 46 C160 43 174 47 179 57 C173 54 162 53 150 56 Z" fill="#6488B8" clip-path="url(#right-ear-clip)"/>
+    <path d="M147 46 C160 43 174 47 179 57 C183 65 180 80 175 91 C173 95 169 94 165 87 C159 77 152 62 147 46 Z" fill="none" stroke="#1E242B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Scalchop -->
+  <g clip-path="url(#shell-below-mouth)">
+    <g transform="translate(100 139.5) scale(0.95)" stroke="#1E242B" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-8.8 11 L-27 -0.5 A8.4 8.4 0 0 1 -18.6 -10.8 A8.4 8.4 0 0 1 -6.7 -16.5 A8.4 8.4 0 0 1 6.7 -16.5 A8.4 8.4 0 0 1 18.6 -10.8 A8.4 8.4 0 0 1 27 -0.5 L8.8 11 L14.5 13.5 Q16 20 12 20 L-12 20 Q-16 20 -14.5 13.5 Z" fill="#F8E289" stroke-width="3.3"/>
+      <path d="M-6.6 5.2L-14.2 -4.8M-2.3 3.2L-5 -9M2.3 3.2L5 -9M6.6 5.2L14.2 -4.8" fill="none" stroke-width="2.3"/>
+    </g>
+  </g>
+  <path d="M75 132 L100 118.5 L125 132" fill="none" stroke="#1E242B" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Eyes -->
+  <g transform="translate(56, 91) rotate(-4)">
+    <ellipse cx="0" cy="0" rx="10.2" ry="13.8" fill="#1E242B"/>
+    <ellipse cx="0.4" cy="6.5" rx="5.8" ry="4" fill="#525A65"/>
+    <ellipse cx="-2.2" cy="-4.8" rx="4.2" ry="5.2" fill="#FFFFFF"/>
+  </g>
+  <g transform="translate(144, 91) rotate(4)">
+    <ellipse cx="0" cy="0" rx="10.2" ry="13.8" fill="#1E242B"/>
+    <ellipse cx="-0.4" cy="6.5" rx="5.8" ry="4" fill="#525A65"/>
+    <ellipse cx="-2.2" cy="-4.8" rx="4.2" ry="5.2" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Nose -->
+  <g transform="translate(100, 99)">
+    <ellipse cx="0" cy="0" rx="19" ry="13" fill="#BF7C34"/>
+    <ellipse cx="-3.5" cy="-3.5" rx="9" ry="5.2" fill="#D19550"/>
+    <ellipse cx="0" cy="0" rx="19" ry="13" fill="none" stroke="#1E242B" stroke-width="3.2"/>
+  </g>
+
+  <!-- Freckles -->
+  <g fill="#1E242B">
+    <circle cx="42.5" cy="111.5" r="1.9"/>
+    <circle cx="52.5" cy="114" r="1.9"/>
+    <circle cx="47.5" cy="121.5" r="1.9"/>
+    <circle cx="157.5" cy="111.5" r="1.9"/>
+    <circle cx="147.5" cy="114" r="1.9"/>
+    <circle cx="152.5" cy="121.5" r="1.9"/>
+  </g>
+</svg>

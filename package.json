@@ -13,6 +13,7 @@
     "build": "node scripts/build.mjs",
     "build:chromium": "node scripts/build.mjs chromium",
     "build:firefox": "node scripts/build.mjs firefox",
+    "icons": "node scripts/icons.mjs",
     "check": "tsc --noEmit",
     "test": "node --test --experimental-strip-types \"test/**/*.test.ts\"",
     "smoke:chromium": "node scripts/build.mjs chromium --dev && node scripts/smoke-chromium.mjs",

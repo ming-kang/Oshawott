@@ -28,9 +28,10 @@ const bundles = {
 	},
 };
 const ICONS = [16, 32, 48, 96, 128].map((size) => `static/icons/icon-${size}.png`);
+const BRAND_SVGS = ["icon.svg", "icon-small.svg", "mascot.svg"].map((name) => `static/icons/${name}`);
 const statics = {
-	chromium: ["static/engine.html", "static/panel.html", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
-	firefox: ["static/panel.html", ...ICONS, "node_modules/quickjs-wasi/quickjs.wasm"],
+	chromium: ["static/engine.html", "static/panel.html", ...ICONS, ...BRAND_SVGS, "node_modules/quickjs-wasi/quickjs.wasm"],
+	firefox: ["static/panel.html", ...ICONS, ...BRAND_SVGS, "node_modules/quickjs-wasi/quickjs.wasm"],
 };
 
 for (const target of targets.length ? targets : Object.keys(bundles)) {
