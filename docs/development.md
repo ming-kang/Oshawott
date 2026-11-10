@@ -26,6 +26,8 @@ node scripts/build.mjs chromium --dev
 node scripts/screenshots.mjs [目录]   # 默认 dist/screenshots；OSHAWOTT_LANG=en 可切换英文
 ```
 
+开发构建除演示模型外还注册 `Demo account`：一个只能账号登录的内置服务，显示设备码 `DEMO-1234` 后要求输入授权码 `demo`。冒烟测试用它走完 Engine 的登录会话和 Panel 界面，不需要真实账号。
+
 ## 调试
 
 Engine 全局对象 `oshawott` 在普通构建中也可用：

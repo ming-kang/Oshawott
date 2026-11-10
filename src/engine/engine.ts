@@ -10,6 +10,7 @@ import { ConversationActivity } from "./activity.ts";
 import { ProvidersDoc, WorkspaceDoc, type WorkspaceState } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
 import { writeInstructions } from "./instructions.ts";
+import { LoginSessions, type OAuthSetups } from "./oauth.ts";
 import { ChatTitles, TITLE_TIMEOUT_MS } from "./titles.ts";
 import { ProviderManager } from "./providers.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
@@ -26,6 +27,10 @@ export interface EngineOptions {
 	readonly tab: (tabId: number, context: Context) => Promise<Link>;
 	readonly files: FileBackend;
 	readonly fetch?: typeof fetch;
+	/** Browser sign-in setups by provider ID; a provider with OAuth but no entry asks every question of the user. */
+	readonly oauth?: OAuthSetups;
+	/** Test hook for the bounded sign-in; production uses 15 minutes. */
+	readonly loginTimeoutMs?: number;
 	readonly extensions?: readonly Extension[];
 	readonly now?: () => number;
 	/** Test hook for the bounded title request; production uses 15 seconds. */
@@ -43,7 +48,8 @@ export interface Engine {
 export async function startEngine(options: EngineOptions, context: Context): Promise<Engine> {
 	const onError = options.onError ?? ((error: unknown) => console.error("[oshawott engine]", error));
 	const now = options.now ?? Date.now;
-	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, fetch: options.fetch });
+	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, fetch: options.fetch, oauth: options.oauth });
+	const logins = new LoginSessions({ models: options.models, setups: options.oauth, now, timeoutMs: options.loginTimeoutMs });
 
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError });
 	host.route(
@@ -150,7 +156,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		[
 			{
 				name: "oshawott.panel",
-				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, providers, files: options.files, now, activity, titles, onError }),
+				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, providers, logins, files: options.files, now, activity, titles, onError }),
 			},
 		],
 		context,
@@ -167,6 +173,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 			// Links first: holders go `loading` and re-hold on the next Engine, instead of seeing their objects fail.
 			closing = true;
 			await host.close(context);
+			logins.close();
 			titles.close();
 			workspaceObservation.detach();
 			activity.close();

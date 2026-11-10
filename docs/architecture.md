@@ -33,10 +33,20 @@ Oshawott 由四个角色组成，彼此通过 chord 远程对象通信。
 | IndexedDB `oshawott` | Durable 对话；`WorkspaceDoc`（对话列表、默认模型与思考档位、待删除的文件）；`ProvidersDoc`（非秘密的自定义服务与自定义模型）；`TargetDoc`（每个对话的目标标签页） |
 | IndexedDB `oshawott-files` | 对话文件，见[文件与 Fetch](files.md) |
 | IndexedDB `oshawott-models` | Pi-AI `ModelsStore` 保存的已发现模型目录；自定义覆盖在读取时应用，不改写原始目录 |
-| IndexedDB `oshawott-credentials` | API key，只有 Engine 读写 |
+| IndexedDB `oshawott-credentials` | API key 与账号登录的 OAuth token，只有 Engine 读写 |
 | Panel `localStorage` | 主题、语言 |
 
 Panel 用 `self.follow` 直接观察 Durable 状态，自己不另存一份对话。Provider 摘要由 Engine 从运行时注册表派生，只包含配置状态和模型能力，不包含 Key。自定义 Profile 与发现目录分别在 Engine 启动、恢复模型工作前加载。
+
+## 账号登录
+
+协议、令牌交换与刷新都由 Pi-AI 完成，扩展只做三件事：
+
+- **选流程**：`BROWSER_OAUTH`（`src/engine/builtin-providers.ts`）只登记不需要本地 loopback 回调的登录方式——Anthropic 粘贴授权码，OpenAI Codex、GitHub Copilot、Kimi Coding、Meta、xAI 设备码——并记录各自要访问的 token 与 API 域名。其余提供商注册时去掉 OAuth，只保留 API Key；这六个提供商的请求固定走 SSE。
+- **打包**：Pi-AI 用变量 `import()` 加载登录流程，打包器跟不进去。`scripts/lib/pi-oauth.mjs` 在构建时把加载器换成这六个流程的静态入口，并把它们顺带引用的 `node:http` 换成一个只会抛错的桩；构建结束后检查产物没有加载期的 Node 内置模块导入。
+- **会话**：`LoginSessions`（`src/engine/oauth.ts`）在 Engine 内持有登录，每个提供商同时最多一个，15 分钟超时，随 Engine 结束。它把 Pi-AI 的 `notify` / `prompt` 转成 `Workspace.logins` 里的视图：授权链接（仅 HTTPS）、设备码、进度、待回答的问题和归类后的错误码。Panel 关掉重开看到的是同一个登录。
+
+登录完成后凭据写入 `CredentialStore`。之后每次请求由 `Models.getAuth()` 取用，过期时在 `CredentialStore.modify()` 里刷新：写入按顺序执行，并发请求只刷新一次，轮换后的 refresh token 先落盘再放行下一个。退出登录会取消进行中的登录并删除凭据。
 
 ## 生命周期
 
@@ -57,4 +67,4 @@ Durable 通过 `onWake` 安排唤醒，Broker 用 alarm `oshawott:wake` 在后�
 - 页面工具规格只在 `src/tools/page-tools.ts` 定义：只读的标 `safe`，会改动页面的标 `unsafe`。
 - Code Mode 在 Worker 的 QuickJS WASM 中运行，只能通过工具访问当前对话的文件，没有 shell。
 - 普通构建只为内置模型 API 域名声明静态权限；自定义服务按 Base URL 的 origin 请求按需权限，不默认扩大为 `<all_urls>`。其他站点需要用户授权；开发构建额外声明 `<all_urls>`，供自动测试使用。
-- API key 只会进入 Engine 的 `CredentialStore`。Panel 状态只包含是否已配置；发现错误不携带响应体、请求头或 Key。Panel 从不插入原始 HTML：Markdown 先解析再构建 DOM，链接只允许 `http(s):` 和 `mailto:`。
+- API key 和 OAuth token 只会进入 Engine 的 `CredentialStore`。Panel 状态只包含是否已配置及凭据类型；发现错误不携带响应体、请求头或 Key。Pi-AI 的登录错误会引用提供商的响应，Engine 只把它归类为错误码（及 HTTP 状态），原文既不发布也不写日志；粘贴的授权码只经 `answerLogin` 送进 Engine。授权页面只在用户点击链接时打开，登录所需域名在点击「登录」时按需申请权限。Panel 从不插入原始 HTML：Markdown 先解析再构建 DOM，链接只允许 `http(s):` 和 `mailto:`。

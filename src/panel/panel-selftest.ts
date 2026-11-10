@@ -4,6 +4,7 @@ import type { Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { OverlayController, type OverlayView } from "./overlays.ts";
 import { t } from "./i18n.ts";
+import { testAccountLogin } from "./login-selftest.ts";
 import { testModelManagement } from "./model-selftest.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
 import { Transcript } from "./render.ts";
@@ -13,7 +14,7 @@ type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"chats" | "createChat" | "deleteChat" | "renameChat" | "busyMode" | "setBusyMode" | "providers" | "defaultModel" | "setDefaultConfiguration"
 	| "autoTitle" | "autoCompaction" | "autoRetry" | "setAutoTitle" | "setAutoCompaction" | "setAutoRetry"
-	| "instructions" | "setInstructions" | "resetInstructions"
+	| "instructions" | "setInstructions" | "resetInstructions" | "logins" | "logout"
 >;
 async function until(read: () => boolean) {
 	const deadline = Date.now() + 5000;
@@ -382,6 +383,6 @@ export async function testPanel(source: Source, origin?: string) {
 		for (const root of retiredRoots) root.remove();
 		fixture.remove();
 	}
-	if (origin) steps.push(...await testModelManagement(source, origin));
+	if (origin) steps.push(...await testModelManagement(source, origin), ...await testAccountLogin(source));
 	return steps;
 }

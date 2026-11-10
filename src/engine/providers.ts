@@ -6,12 +6,14 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import type { ModelApi, ModelRef, ProviderProfile, ProviderSummary } from "../contracts/chat.ts";
+import type { OAuthSetups } from "./oauth.ts";
 import { discoverModels, modelFromConfig, normalizeProfile } from "./provider-discovery.ts";
 
 export interface ProviderManagerOptions {
 	readonly models: MutableModels;
 	readonly modelsStore?: ModelsStore;
 	readonly fetch?: typeof fetch;
+	readonly oauth?: OAuthSetups;
 }
 
 const APIS: Record<ModelApi, () => ProviderStreams> = {
@@ -66,6 +68,7 @@ export class ProviderManager {
 	readonly #models: MutableModels;
 	readonly #modelsStore?: ModelsStore;
 	readonly #fetch?: typeof fetch;
+	readonly #oauth: OAuthSetups;
 	readonly #profiles = new Map<string, ProviderProfile>();
 	readonly #refreshing = new Set<string>();
 	readonly #errors = new Map<string, string>();
@@ -75,6 +78,7 @@ export class ProviderManager {
 		this.#models = options.models;
 		this.#modelsStore = options.modelsStore;
 		this.#fetch = options.fetch;
+		this.#oauth = options.oauth ?? {};
 	}
 
 	profile(id: string): ProviderProfile | undefined {
@@ -155,6 +159,11 @@ export class ProviderManager {
 		return Promise.all(this.#models.getProviders().map(async (provider) => {
 			const auth = await this.#models.checkAuth(provider.id).catch(() => undefined);
 			const profile = this.#profiles.get(provider.id);
+			const { apiKey, oauth } = provider.auth;
+			// A signed-in account may be entitled to only part of the catalog (GitHub Copilot).
+			const models = auth && provider.filterModels
+				? await this.#models.getAvailable(provider.id).catch(() => this.#models.getModels(provider.id))
+				: this.#models.getModels(provider.id);
 			return {
 				id: provider.id,
 				name: provider.name ?? provider.id,
@@ -162,7 +171,10 @@ export class ProviderManager {
 				baseUrl: provider.baseUrl ?? "",
 				api: profile?.api ?? null,
 				configured: auth !== undefined,
-				models: this.#models.getModels(provider.id).map((model: Model<Api>) => ({
+				auth: auth?.type ?? null,
+				apiKey: apiKey !== undefined,
+				oauth: oauth ? { label: oauth.loginLabel ?? oauth.name, origins: [...(this.#oauth[provider.id]?.origins ?? [])] } : null,
+				models: models.map((model: Model<Api>) => ({
 					id: model.id,
 					name: model.name ?? model.id,
 					vision: model.input.includes("image"),

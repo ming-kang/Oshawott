@@ -1,5 +1,5 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
-import type { FauxResponseFactory, Message } from "@earendil-works/pi-ai";
+import type { FauxResponseFactory, Message, OAuthCredential, Provider } from "@earendil-works/pi-ai";
 import { NO_ACCESS } from "../contracts/browser.ts";
 
 const DEMO_PROVIDER = "demo";
@@ -185,4 +185,32 @@ export function demoProvider() {
 	};
 	handle.setResponses([respond]);
 	return { ...handle.provider, name: "Demo" };
+}
+
+/**
+ * Dev builds only: a provider whose only auth is a sign-in that needs no account. It shows a device code, then asks for
+ * the code `demo`, so the smoke tests drive the real Engine sessions and Panel UI.
+ */
+export function demoAccountProvider(): Provider {
+	const handle = fauxProvider({ provider: "demo-account", models: [{ id: "demo-account", name: "Demo account" }] });
+	handle.setResponses([() => fauxAssistantMessage("Signed in to the demo account.")]);
+	const credential = (): OAuthCredential => ({ type: "oauth", access: "demo-access", refresh: "demo-refresh", expires: Date.now() + 3_600_000 });
+	return {
+		...handle.provider,
+		name: "Demo account",
+		auth: {
+			oauth: {
+				name: "Demo account",
+				loginLabel: "Sign in with the demo account",
+				login: async (interaction) => {
+					interaction.notify({ type: "device_code", userCode: "DEMO-1234", verificationUri: "https://example.com/device", expiresInSeconds: 600 });
+					const code = await interaction.prompt({ type: "manual_code", message: "Enter demo", placeholder: "demo", signal: interaction.signal });
+					if (code.trim() !== "demo") throw new Error("Missing authorization code");
+					return credential();
+				},
+				refresh: async () => credential(),
+				toAuth: async ({ access }) => ({ apiKey: access }),
+			},
+		},
+	};
 }

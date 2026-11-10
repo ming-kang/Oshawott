@@ -3,6 +3,7 @@ import {
 } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { t } from "./i18n.ts";
+import { LoginCard, type LoginSource } from "./login-card.ts";
 import { compactTokens } from "./models.ts";
 import { requestModelAccess } from "./model-permissions.ts";
 import type { OverlayView } from "./overlays.ts";
@@ -10,7 +11,7 @@ import { h, icon, toast } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"providers" | "setApiKey" | "clearApiKey" | "saveProvider" | "deleteProvider" | "refreshProvider"
->;
+> & LoginSource;
 type ProviderKind = "builtin" | "custom";
 const context = BACKGROUND_CONTEXT;
 const DEFAULT_MODEL = (): ModelConfig => ({
@@ -35,6 +36,8 @@ export class ProviderEditorSheet implements OverlayView {
 		h("option", { value: "openai-completions" }, "OpenAI Chat Completions"),
 		h("option", { value: "anthropic-messages" }, "Anthropic Messages"));
 	readonly #key = h("input", { class: "input", id: "provider-key", type: "password", autocomplete: "off", spellcheck: "false" });
+	readonly #keyField = this.#field("API Key", this.#key);
+	readonly #login: LoginCard;
 	readonly #discoverySection = h("section", { class: "section", id: "provider-discovery" });
 	readonly #manualSection = h("section", { class: "section", id: "provider-custom-models" });
 	readonly #manual = h("div", { class: "provider-models", id: "provider-manual-models" });
@@ -56,7 +59,13 @@ export class ProviderEditorSheet implements OverlayView {
 		const existing = providerId ? this.#summary(providerId) : undefined;
 		this.#kind = existing?.kind ?? "builtin";
 		this.#kindLocked = providerId !== undefined;
-		this.#builtinId = existing?.kind === "builtin" ? existing.id : "";
+		// A reopened panel returns to the sign-in the Engine is still running instead of starting another.
+		const pending = providerId ? undefined : source()?.logins.value.find((login) => login.status === "pending");
+		this.#builtinId = existing?.kind === "builtin" ? existing.id : pending?.provider ?? "";
+		this.#login = new LoginCard(source, () => this.#kind === "builtin" ? this.#summary(this.#builtinId) : undefined, () => {
+			this.#kindLocked = true;
+			this.#renderKind();
+		});
 		this.#draft = {
 			id: this.#id,
 			name: existing?.name ?? "",
@@ -75,7 +84,7 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#api.addEventListener("change", () => { this.#draft.api = this.#api.value as ModelApi; });
 		this.#builtinPicker.addEventListener("change", () => {
 			this.#builtinId = this.#builtinPicker.value;
-			this.#updateKeyPlaceholder();
+			this.refresh();
 			this.#setBusy(this.#busy);
 		});
 		this.#buildTypePicker();
@@ -159,27 +168,27 @@ export class ProviderEditorSheet implements OverlayView {
 		}
 		this.#form.replaceChildren(...(this.#kind === "builtin" ? [
 			this.#field(t("settings.builtinProvider"), this.#builtinPicker),
-			this.#field("API Key", this.#key),
+			this.#keyField,
+			this.#login.element,
 		] : [
 			this.#field(t("settings.providerName"), this.#name),
 			this.#field(t("settings.providerEndpoint"), this.#baseUrl),
 			this.#field(t("settings.providerApi"), this.#api),
-			this.#field("API Key", this.#key),
+			this.#keyField,
 		]));
-		this.#discoverySection.hidden = this.#kind !== "custom";
 		this.#manualSection.hidden = this.#kind !== "custom";
 		delete this.#delete.dataset.confirm;
 		this.#delete.textContent = t("settings.deleteProvider");
-		this.#refreshBuiltinOptions();
-		this.#updateKeyPlaceholder();
-		this.#updateDeleteVisibility();
+		this.refresh();
 		this.#setBusy(this.#busy);
 	}
 
 	#refreshBuiltinOptions() {
 		const selected = this.#builtinId;
+		// A provider being signed in to stays selected although it becomes configured mid-flow.
+		const pinned = this.#kindLocked || this.#login.session !== undefined;
 		const providers = (this.#source()?.providers.value ?? []).filter((provider) => provider.kind === "builtin"
-			&& (this.#kindLocked ? provider.id === selected : !provider.configured));
+			&& (pinned ? provider.id === selected : !provider.configured));
 		this.#builtinPicker.replaceChildren(...(providers.length
 			? providers.map((provider) => h("option", { value: provider.id }, provider.name))
 			: [h("option", { value: "" }, t("settings.noBuiltinProviders"))]));
@@ -237,7 +246,7 @@ export class ProviderEditorSheet implements OverlayView {
 	}
 
 	#modelRow(model: ModelSummary) {
-		const override = model.manual ? h("span", { class: "pill" }, t("settings.manual"))
+		const override = this.#kind === "builtin" ? null : model.manual ? h("span", { class: "pill" }, t("settings.manual"))
 			: h("button", { class: "btn small", type: "button", onclick: () => {
 				this.#draft.models.push({
 					id: model.id, name: model.name, contextWindow: model.contextWindow, maxTokens: model.maxTokens,
@@ -283,7 +292,18 @@ export class ProviderEditorSheet implements OverlayView {
 	}
 
 	async #discoverModels() {
-		if (!this.#busy) await this.#persistCustom(true);
+		if (this.#busy) return;
+		if (this.#kind === "custom") return void await this.#persistCustom(true);
+		const provider = this.#currentSummary();
+		if (!provider) return;
+		this.#setBusy(true, this.#refresh);
+		try {
+			await this.#source()?.refreshProvider({ provider: provider.id }, context);
+		} catch (error) {
+			toast(String((error as Error)?.message ?? error), "error");
+		} finally {
+			this.#setBusy(false, this.#refresh);
+		}
 	}
 
 	async #persistCustom(discover: boolean) {
@@ -356,7 +376,7 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#busy = busy;
 		this.element.dataset.busy = String(busy);
 		this.#save.disabled = busy || (this.#kind === "builtin" && !this.#builtinId);
-		this.#refresh.disabled = busy || this.#summary()?.refreshing === true;
+		this.#refresh.disabled = busy || this.#currentSummary()?.refreshing === true;
 		this.#delete.disabled = busy;
 		this.#builtinPicker.disabled = busy || this.#kindLocked || !this.#builtinId;
 		for (const choice of this.#type.querySelectorAll<HTMLButtonElement>("button")) choice.disabled = busy || this.#kindLocked;
@@ -369,7 +389,14 @@ export class ProviderEditorSheet implements OverlayView {
 
 	refresh() {
 		if (this.#closed) return;
-		const summary = this.#summary();
+		this.#refreshBuiltinOptions();
+		const summary = this.#currentSummary();
+		const builtin = this.#kind === "builtin";
+		this.#login.refresh();
+		this.#keyField.hidden = builtin && summary?.apiKey === false;
+		this.#save.hidden = this.#keyField.hidden;
+		// A configured built-in provider lists what its key or account may use; only custom catalogs are editable.
+		this.#discoverySection.hidden = builtin && !summary?.configured;
 		this.#status.textContent = summary?.refreshing ? t("settings.discovering")
 			: summary?.discoveryError ?? (summary ? t("settings.discoveryReady", summary.models.length) : t("settings.unsavedProvider"));
 		this.#discovered.replaceChildren(...(summary?.models.length
@@ -377,7 +404,6 @@ export class ProviderEditorSheet implements OverlayView {
 			: [h("div", { class: "list-empty" }, t("settings.noDiscoveredModels"))]));
 		this.#refresh.textContent = summary?.refreshing ? t("settings.discovering") : t("settings.getModels");
 		this.#refresh.disabled = this.#busy || summary?.refreshing === true;
-		this.#refreshBuiltinOptions();
 		this.#updateKeyPlaceholder();
 		this.#updateDeleteVisibility();
 	}

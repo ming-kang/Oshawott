@@ -7,7 +7,7 @@ const model = (id: string, name: string, vision: boolean): ProviderSummary["mode
 	id, name, vision, contextWindow: 128_000, maxTokens: 16_384, thinkingLevels: ["off"], manual: false,
 });
 const provider = (id: string, name: string, configured: boolean, models: ProviderSummary["models"]): ProviderSummary => ({
-	id, name, kind: "builtin", baseUrl: "https://example.test/v1", api: null, configured, models, refreshing: false, discoveryError: null,
+	id, name, kind: "builtin", baseUrl: "https://example.test/v1", api: null, configured, auth: configured ? "api_key" : null, apiKey: true, oauth: null, models, refreshing: false, discoveryError: null,
 });
 const providers: ProviderSummary[] = [
 	provider("offline", "Offline", false, [model("unavailable", "Unavailable", false)]),

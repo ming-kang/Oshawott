@@ -6,6 +6,11 @@ import { ext } from "../platform/webext.ts";
 export function requestModelAccess(baseUrl: string): Promise<boolean> {
 	const pattern = sitePattern(baseUrl);
 	if (!pattern) return Promise.resolve(false);
-	if (MODEL_ORIGINS.includes(pattern)) return Promise.resolve(true);
-	return ext.permissions.request({ origins: [pattern] });
+	return requestOrigins([pattern]);
+}
+
+/** As above, for match patterns: only those the manifest does not already grant are asked for. */
+export function requestOrigins(origins: readonly string[]): Promise<boolean> {
+	const missing = origins.filter((origin) => !MODEL_ORIGINS.includes(origin));
+	return missing.length ? ext.permissions.request({ origins: missing }) : Promise.resolve(true);
 }

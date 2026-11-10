@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { manifestFor } from "../src/manifest.ts";
+import { piOAuth, staticNodeImports } from "./lib/pi-oauth.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -53,8 +54,11 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			define: { __OSHAWOTT_DEV__: JSON.stringify(dev) },
 			// SDK code paths for Node (proxies, files) that a browser never takes.
 			external: ["node:*"],
+			plugins: [piOAuth()],
 			logLevel: "warning",
 		});
+		const leaked = staticNodeImports(await readFile(join(out, file), "utf8"));
+		if (leaked.length) throw new Error(`${target}/${file} imports ${[...new Set(leaked)].join(", ")} when it loads`);
 	}
 	// Resolve the ordered CSS imports into the one stylesheet linked by panel.html.
 	await build({

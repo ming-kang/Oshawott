@@ -487,6 +487,68 @@
 	flex-wrap: wrap;
 }
 
+.login-card,
+.login-prompt {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+	min-width: 0;
+}
+
+.login-card {
+	padding-top: 12px;
+	border-top: 1px solid var(--line);
+}
+
+.login-card[hidden],
+.provider-field[hidden] {
+	display: none;
+}
+
+.login-prompt {
+	width: 100%;
+}
+
+.login-title {
+	color: var(--text-2);
+	font-size: 12px;
+}
+
+.login-row,
+.login-status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.login-status,
+.login-error {
+	margin: 0;
+	color: var(--text-2);
+	font-size: 12.5px;
+}
+
+.login-error {
+	color: var(--danger);
+}
+
+.login-code {
+	padding: 6px 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--surface);
+	font-family: var(--mono);
+	font-size: 15px;
+	letter-spacing: 0.08em;
+	user-select: all;
+}
+
+a.btn {
+	text-decoration: none;
+}
+
 .provider-section-action {
 	margin-top: 8px;
 }

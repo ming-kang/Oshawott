@@ -11,7 +11,7 @@ import { ext, type RuntimePort } from "../platform/webext.ts";
 import type { PageToolName } from "../tools/page-tools.ts";
 
 import { Arrivals } from "./arrivals.ts";
-import { browserBuiltinProviders } from "./builtin-providers.ts";
+import { BROWSER_OAUTH, browserBuiltinProviders } from "./builtin-providers.ts";
 import { workerCodemodeSandbox } from "./codemode.ts";
 import { IndexedDbCredentialStore } from "./credentials.ts";
 import { IndexedDbModelsStore } from "./models-store.ts";
@@ -71,7 +71,11 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 		authContext: { env: async () => undefined, fileExists: async () => false },
 	});
 	for (const provider of browserBuiltinProviders()) models.setProvider(provider);
-	if (__OSHAWOTT_DEV__) models.setProvider((await import("./demo.ts")).demoProvider());
+	if (__OSHAWOTT_DEV__) {
+		const demo = await import("./demo.ts");
+		models.setProvider(demo.demoProvider());
+		models.setProvider(demo.demoAccountProvider());
+	}
 
 	const sandbox = workerCodemodeSandbox(new URL("codemode-worker.js", location.href));
 	const files = await IndexedDbFileBackend.open();
@@ -81,6 +85,7 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 			models,
 			credentials,
 			modelsStore,
+			oauth: BROWSER_OAUTH,
 			files,
 			broker: (ctx) => options.broker(ctx, brokers),
 			tab: (tabId, ctx) =>

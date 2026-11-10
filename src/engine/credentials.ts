@@ -14,7 +14,7 @@ async function transaction<T>(db: IDBDatabase, mode: IDBTransactionMode, work: (
 
 export class IndexedDbCredentialStore implements CredentialStore {
 	#db: Promise<IDBDatabase>;
-	/** Writes one after another, as `modify` must be serialized. */
+	/** Writes one after another: an OAuth refresh runs inside `modify`, so a rotated token is never exchanged twice. */
 	#line: Promise<unknown> = Promise.resolve();
 
 	constructor(name = "oshawott-credentials") {
@@ -43,23 +43,34 @@ export class IndexedDbCredentialStore implements CredentialStore {
 		return keys.map((key, i) => ({ providerId: String(key), type: (values[i] as Credential).type }));
 	}
 
-	modify(
-		providerId: string,
-		fn: (current: Credential | undefined) => Promise<Credential | undefined>,
-		options?: AuthOperationOptions,
-	): Promise<Credential | undefined> {
-		const run = this.#line.then(async () => {
-			const next = await fn(await this.read(providerId, options));
-			const db = await this.#db;
-			if (next === undefined) await transaction(db, "readwrite", (store) => store.delete(providerId));
-			else await transaction(db, "readwrite", (store) => store.put(next, providerId));
-			return next;
+	/** `signal` cancels only the wait for the line: a write that has started always finishes. */
+	#queue<T>(work: () => Promise<T>, options?: AuthOperationOptions): Promise<T> {
+		const run = this.#line.then(() => {
+			options?.signal?.throwIfAborted();
+			return work();
 		});
 		this.#line = run.catch(() => {});
 		return run;
 	}
 
+	/** Pi-AI's contract: `fn` returning undefined leaves the entry as it is (a refresh another request already did). */
+	modify(
+		providerId: string,
+		fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+		options?: AuthOperationOptions,
+	): Promise<Credential | undefined> {
+		return this.#queue(async () => {
+			const current = await this.read(providerId);
+			const next = await fn(current);
+			if (next === undefined) return current;
+			await transaction(await this.#db, "readwrite", (store) => store.put(next, providerId));
+			return next;
+		}, options);
+	}
+
 	delete(providerId: string, options?: AuthOperationOptions): Promise<void> {
-		return this.modify(providerId, async () => undefined, options).then(() => {});
+		return this.#queue(async () => {
+			await transaction(await this.#db, "readwrite", (store) => store.delete(providerId));
+		}, options);
 	}
 }

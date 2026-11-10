@@ -10,6 +10,7 @@ import {
 	requireContentVision, rollbackAttachments, safeAttachmentPath, storeAttachments,
 } from "./attachments.ts";
 import type { ConversationActivity } from "./activity.ts";
+import type { LoginSessions } from "./oauth.ts";
 import { ProvidersDoc, TargetDoc, WorkspaceDoc } from "./docs.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
 import { currentInstructions, writeInstructions } from "./instructions.ts";
@@ -23,6 +24,7 @@ export interface EngineServices {
 	readonly models: MutableModels;
 	readonly credentials: CredentialStore;
 	readonly providers: ProviderManager;
+	readonly logins: LoginSessions;
 	readonly files: FileBackend;
 	readonly now: () => number;
 	readonly activity: ConversationActivity;
@@ -31,7 +33,7 @@ export interface EngineServices {
 }
 
 const ProviderList = obj({ list: arr(ProviderSummary) });
-const Providers = defineState("providers", { schema: ProviderList, version: 2, initial: () => ({ list: [] }) });
+const Providers = defineState("providers", { schema: ProviderList, version: 3, initial: () => ({ list: [] }) });
 
 export { titleOf } from "./titles.ts";
 
@@ -142,6 +144,20 @@ export function panelFacet(services: EngineServices) {
 				await pending;
 				await refreshProviders(ctx);
 			};
+			const removeCredential = (provider: string, ctx: Context) => serializeProviders(async () => {
+				services.logins.cancelProvider(provider);
+				await services.models.logout(provider);
+				await refreshProviders(ctx);
+				return null;
+			});
+			const logins = self.follow((observer) => services.logins.observe(observer));
+			// A finished sign-in changes the provider's auth, and the account decides which models it may use.
+			const signedIn = new Set<string>();
+			self.on(logins, async ({ value }, ctx) => {
+				const fresh = value.items.filter((item) => item.status === "done" && !signedIn.has(item.id));
+				for (const item of fresh) signedIn.add(item.id);
+				await Promise.all(fresh.map((item) => discover(item.provider, ctx)));
+			});
 			self.onLive((ctx) => {
 				void (async () => {
 					await refreshProviders(ctx);
@@ -165,6 +181,7 @@ export function panelFacet(services: EngineServices) {
 					autoRetry: self.derive([workspace], ([value]) => value.autoRetry ?? true),
 					instructions: self.derive([workspace], ([value]) => currentInstructions(value)),
 					providers: self.derive([providers], ([value]) => value.list),
+					logins: self.derive([logins], ([value]) => value.items),
 					createChat: async ({ title }, ctx) => {
 						const workspace = await harness.snapshot(WorkspaceDoc, ctx);
 						const defaultModel = workspace?.defaultModel ?? null;
@@ -231,16 +248,37 @@ export function panelFacet(services: EngineServices) {
 						if (!services.models.getProvider(provider)) invalid(`Unknown provider ${provider}.`);
 						const trimmed = key.trim();
 						if (!trimmed) invalid("The API key cannot be empty.");
+						services.logins.cancelProvider(provider);
 						await services.credentials.modify(provider, async () => ({ type: "api_key", key: trimmed }));
 						await refreshProviders(ctx);
 						await discover(provider, ctx);
 						return null;
 					}),
-					clearApiKey: ({ provider }, ctx) => serializeProviders(async () => {
-						await services.credentials.delete(provider);
-						await refreshProviders(ctx);
+					clearApiKey: ({ provider }, ctx) => removeCredential(provider, ctx),
+					startLogin: async ({ provider }) => {
+						try {
+							return services.logins.start(provider);
+						} catch (error) {
+							invalid((error as Error).message);
+						}
+					},
+					answerLogin: async ({ id, promptId, value }) => {
+						try {
+							services.logins.answer(id, promptId, value);
+						} catch (error) {
+							invalid((error as Error).message);
+						}
 						return null;
-					}),
+					},
+					cancelLogin: async ({ id }) => {
+						services.logins.cancel(id);
+						return null;
+					},
+					dismissLogin: async ({ id }) => {
+						services.logins.dismiss(id);
+						return null;
+					},
+					logout: ({ provider }, ctx) => removeCredential(provider, ctx),
 					saveProvider: ({ profile: input, key }, ctx) => serializeProviders(async () => {
 						const profile = normalizeProfile(input);
 						const previousProfile = services.providers.profile(profile.id);
@@ -279,7 +317,10 @@ export function panelFacet(services: EngineServices) {
 									else doc.custom = doc.custom.filter((provider) => provider.id !== profile.id);
 								}, ctx).catch(services.onError);
 							}
-							if (key !== undefined) await services.credentials.modify(profile.id, async () => previousKey);
+							if (key !== undefined) {
+								if (previousKey) await services.credentials.modify(profile.id, async () => previousKey);
+								else await services.credentials.delete(profile.id);
+							}
 							throw error;
 						}
 						activate();

@@ -624,7 +624,7 @@ async function main() {
 	whenBusy = held.busyMode.value;
 	let knownChats = new Set(chats().map((chat) => chat.id));
 	for (const member of [
-		held.chats, held.providers, held.defaultModel, held.defaultThinkingLevel, held.busyMode,
+		held.chats, held.providers, held.logins, held.defaultModel, held.defaultThinkingLevel, held.busyMode,
 		held.autoTitle, held.autoCompaction, held.autoRetry, held.instructions,
 	]) {
 		const watch = await member.watch(context);

@@ -47,11 +47,46 @@ export const ProviderSummary = obj({
 	baseUrl: str(),
 	api: union([ModelApi, nul()]),
 	configured: bool(),
+	/** The stored credential's kind; null when unconfigured. */
+	auth: union([oneOf("api_key", "oauth"), nul()]),
+	/** Whether an API key can be entered for this provider. */
+	apiKey: bool(),
+	/** Account sign-in, when the provider has a flow a browser can complete; `origins` are the hosts it must reach. */
+	oauth: union([obj({ label: str(), origins: arr(str()) }), nul()]),
 	models: arr(ModelSummary),
 	refreshing: bool(),
 	discoveryError: union([str(), nul()]),
 });
 export type ProviderSummary = Static<typeof ProviderSummary>;
+
+export const LoginPrompt = obj({
+	id: str(),
+	/** `code` is an authorization code pasted from the provider's page. */
+	kind: oneOf("text", "secret", "code", "select"),
+	message: str(),
+	placeholder: str(),
+	options: arr(obj({ id: str(), label: str() })),
+});
+export type LoginPrompt = Static<typeof LoginPrompt>;
+
+export const LoginError = oneOf("timeout", "denied", "expired", "mismatch", "missing_code", "network", "http", "unknown");
+export type LoginError = Static<typeof LoginError>;
+
+/** What a Panel may know about an account sign-in the Engine is running: never a token, a verifier or a provider response. */
+export const LoginView = obj({
+	id: str(),
+	provider: str(),
+	status: oneOf("pending", "done", "failed", "cancelled"),
+	/** The HTTPS authorization or verification page, opened only by the user's click. */
+	url: union([str(), nul()]),
+	userCode: union([str(), nul()]),
+	expiresAt: union([num(), nul()]),
+	progress: union([str(), nul()]),
+	prompt: union([LoginPrompt, nul()]),
+	error: union([LoginError, nul()]),
+	httpStatus: union([int(), nul()]),
+});
+export type LoginView = Static<typeof LoginView>;
 
 export const ChatConfiguration = obj({ model: ModelRef, thinkingLevel: opt(ThinkingLevel) });
 export type ChatConfiguration = Static<typeof ChatConfiguration>;
@@ -85,7 +120,7 @@ export type ChatSummary = Static<typeof ChatSummary>;
 export const MAX_INSTRUCTIONS_CHARS = 100_000;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 5,
+	version: 6,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -100,6 +135,7 @@ export const Workspace = remote("oshawott.workspace", {
 				autoRetry: bool(),
 				instructions: str(),
 				providers: arr(ProviderSummary),
+				logins: arr(LoginView),
 			},
 			methods: {
 				/** `title` empty or absent: the chat takes its first message's beginning when it is sent. */
@@ -116,6 +152,14 @@ export const Workspace = remote("oshawott.workspace", {
 				resetInstructions: method(undefined, str()),
 				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
 				clearApiKey: method(obj({ provider: str() })),
+				/** Starts an account sign-in, or returns the one already pending for this provider. */
+				startLogin: method(obj({ provider: str() }), str()),
+				answerLogin: method(obj({ id: str(), promptId: str(), value: str({ max: 8192 }) })),
+				cancelLogin: method(obj({ id: str() })),
+				/** Forgets a finished sign-in's outcome. */
+				dismissLogin: method(obj({ id: str() })),
+				/** Cancels any pending sign-in and deletes the provider's stored credential. */
+				logout: method(obj({ provider: str() })),
 				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
 				deleteProvider: method(obj({ provider: str() })),
 				refreshProvider: method(obj({ provider: str() })),

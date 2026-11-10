@@ -29,3 +29,23 @@ test("a write whose transaction aborts after the request succeeded is reported a
 	await store.modify("openai", async () => ({ type: "api_key", key: "sk-2" }));
 	assert.deepEqual(await store.read("openai"), { type: "api_key", key: "sk-2" }, "the write line continues after a failure");
 });
+
+test("modify leaves the entry unchanged when it returns nothing, and an aborted wait never writes", async () => {
+	const store = new IndexedDbCredentialStore(`oshawott-credentials-${crypto.randomUUID()}`);
+	await store.modify("openai", async () => ({ type: "api_key", key: "sk-1" }));
+	assert.deepEqual(await store.modify("openai", async () => undefined), { type: "api_key", key: "sk-1" });
+	assert.deepEqual(await store.read("openai"), { type: "api_key", key: "sk-1" });
+
+	const release = Promise.withResolvers<void>();
+	const holding = store.modify("openai", async (current) => {
+		await release.promise;
+		return current;
+	});
+	const cancelled = new AbortController();
+	const waiting = store.modify("openai", async () => ({ type: "api_key", key: "sk-late" }), { signal: cancelled.signal });
+	cancelled.abort();
+	release.resolve();
+	await holding;
+	await assert.rejects(waiting);
+	assert.deepEqual(await store.read("openai"), { type: "api_key", key: "sk-1" });
+});

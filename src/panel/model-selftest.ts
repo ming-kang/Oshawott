@@ -5,20 +5,20 @@ import { ext } from "../platform/webext.ts";
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "defaultModel" | "setDefaultConfiguration">;
 const context = BACKGROUND_CONTEXT;
-const control = <T extends HTMLElement>(selector: string): T | null =>
+export const control = <T extends HTMLElement>(selector: string): T | null =>
 	document.querySelector<T>(`.overlay:not(.leaving) ${selector}`) ?? document.querySelector<T>(selector);
-const click = (selector: string) => {
+export const click = (selector: string) => {
 	const element = control<HTMLElement>(selector);
 	if (!element) throw new Error(`No model test control ${selector}`);
 	element.click();
 };
-const input = (selector: string, value: string) => {
+export const input = (selector: string, value: string) => {
 	const element = control<HTMLInputElement>(selector);
 	if (!element) throw new Error(`No model test input ${selector}`);
 	element.value = value;
 	element.dispatchEvent(new Event("input", { bubbles: true }));
 };
-async function until<T>(read: () => T | undefined | null | false, ms = 10_000): Promise<T> {
+export async function until<T>(read: () => T | undefined | null | false, ms = 10_000): Promise<T> {
 	const deadline = Date.now() + ms;
 	for (;;) {
 		const value = read();
