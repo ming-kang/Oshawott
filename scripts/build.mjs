@@ -1,11 +1,10 @@
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { build } from "esbuild";
 import { manifestFor } from "../src/manifest.ts";
+import { freshDir, root } from "./lib/paths.mjs";
 import { piOAuth, staticNodeImports } from "./lib/pi-oauth.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const dev = args.includes("--dev");
 const unknownOption = args.find((arg) => arg.startsWith("--") && arg !== "--dev");
@@ -37,9 +36,7 @@ const statics = {
 
 for (const target of targets.length ? targets : Object.keys(bundles)) {
 	if (!(target in bundles)) throw new Error(`Unknown target ${target}`);
-	const out = join(root, "dist", target);
-	await rm(out, { recursive: true, force: true });
-	await mkdir(out, { recursive: true });
+	const out = await freshDir(target);
 	for (const [file, [entry, format]] of Object.entries(bundles[target])) {
 		await build({
 			entryPoints: [join(root, entry)],

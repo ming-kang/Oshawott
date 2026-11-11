@@ -1,8 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { launchExtension, root, testSite, until } from "./lib/smoke.mjs";
+import { launchExtension } from "./lib/browsers.mjs";
+import { dist } from "./lib/paths.mjs";
+import { testSite } from "./lib/site.mjs";
+import { until } from "./lib/smoke.mjs";
 
-const out = process.argv[2] ?? join(root, "dist", "screenshots");
+const out = process.argv[2] ?? dist("screenshots");
 const lang = process.env.OSHAWOTT_LANG ?? "zh-CN";
 const zh = lang.startsWith("zh");
 // Chromium on Linux takes its UI language from LANGUAGE, not --lang. An explicit OSHAWOTT_LANG must win over the shell.

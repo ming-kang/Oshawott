@@ -1,10 +1,10 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
-import { modelApi, root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
-
-const extension = join(root, "dist", "firefox");
-const executablePath = process.env.OSHAWOTT_FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe";
+import { firefoxPath } from "./lib/browsers.mjs";
+import { dist, freshDir } from "./lib/paths.mjs";
+import { modelApi, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite } from "./lib/site.mjs";
+import { checklist, until } from "./lib/smoke.mjs";
 
 let reported;
 const report = new Promise((resolve) => (reported = resolve));
@@ -22,17 +22,13 @@ const site = await testSite({
 	},
 });
 
-const steps = [];
-const step = (name, ok, detail = "") => {
-	steps.push({ name, ok });
-	console.log(`${ok ? "✔" : "✖"} ${name}${detail ? ` — ${detail}` : ""}`);
-};
-
-const downloads = join(root, "dist", "smoke-firefox-downloads");
-await rm(downloads, { recursive: true, force: true });
-await mkdir(downloads, { recursive: true });
+const run = checklist();
+const { step } = run;
+const artifacts = await freshDir("test", "firefox");
+const downloads = join(artifacts, "downloads");
+await mkdir(downloads);
 const browser = await puppeteer.launch({
-	browser: "firefox", executablePath, headless: true,
+	browser: "firefox", executablePath: firefoxPath(), headless: true,
 	extraPrefsFirefox: {
 		"browser.download.folderList": 2,
 		"browser.download.dir": downloads,
@@ -46,7 +42,7 @@ try {
 	// runs the steps and posts them to /report (WebDriver BiDi cannot reach extension pages in Firefox).
 	const page = await browser.newPage();
 	await page.goto(`${site.url}?oshawott-selftest`);
-	await browser.installExtension(extension);
+	await browser.installExtension(dist("firefox"));
 	const results = await Promise.race([
 		report,
 		new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("no self-test report within 60 s")), 60_000); }),
@@ -55,10 +51,11 @@ try {
 	step("local model API receives an actual high-thinking chat request", models.requests.some((request) => request.model === "local-reasoning" && request.reasoning_effort === "high"), `${models.requests.length} request(s)`);
 	for (const [key, name] of [["screenshot", "panel"], ["filesScreenshot", "files"]]) {
 		if (!results[key]) continue;
-		await writeFile(join(root, "dist", `smoke-firefox-${name}.png`), Buffer.from(results[key].split(",")[1], "base64"));
-		console.log(`  screenshot: dist/smoke-firefox-${name}.png`);
+		const path = join(artifacts, `${name}.png`);
+		await writeFile(path, Buffer.from(results[key].split(",")[1], "base64"));
+		console.log(`  screenshot: ${path}`);
 	}
-	if (!steps.some((s) => !s.ok)) {
+	if (!run.failed) {
 		const downloaded = await until("a real Firefox download", () => readFile(join(downloads, "items.json"), "utf8"));
 		step("Firefox saves the downloaded file", downloaded === TEST_DOWNLOAD, `${Buffer.byteLength(downloaded)} UTF-8 bytes`);
 		const large = await until("a large Firefox download", () => readFile(join(downloads, "large.json"), "utf8"));
@@ -72,8 +69,4 @@ try {
 	await browser.close();
 	site.close();
 }
-const failed = steps.filter((s) => !s.ok);
-if (failed.length) {
-	console.error(`${failed.length} step(s) failed`);
-	process.exit(1);
-}
+run.finish();

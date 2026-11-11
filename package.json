@@ -13,11 +13,13 @@
     "build": "node scripts/build.mjs",
     "build:chromium": "node scripts/build.mjs chromium",
     "build:firefox": "node scripts/build.mjs firefox",
-    "icons": "node scripts/icons.mjs",
+    "build:dev": "node scripts/build.mjs --dev",
     "check": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types \"test/**/*.test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\"",
     "smoke:chromium": "node scripts/build.mjs chromium --dev && node scripts/smoke-chromium.mjs",
-    "smoke:firefox": "node scripts/build.mjs firefox --dev && node scripts/smoke-firefox.mjs"
+    "smoke:firefox": "node scripts/build.mjs firefox --dev && node scripts/smoke-firefox.mjs",
+    "screenshots": "node scripts/build.mjs chromium --dev && node scripts/screenshots.mjs",
+    "icons": "node scripts/icons.mjs"
   },
   "dependencies": {
     "@earendil-works/chord": "1.5.0",

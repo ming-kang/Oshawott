@@ -1,16 +1,14 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { launchExtension, modelApi, root, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite, until } from "./lib/smoke.mjs";
+import { launchExtension } from "./lib/browsers.mjs";
+import { freshDir } from "./lib/paths.mjs";
+import { modelApi, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite } from "./lib/site.mjs";
+import { checklist, until } from "./lib/smoke.mjs";
 
-const steps = [];
-const step = (name, ok, detail = "") => {
-	steps.push({ name, ok });
-	console.log(`${ok ? "✔" : "✖"} ${name}${detail ? ` — ${detail}` : ""}`);
-};
-
-const downloads = join(root, "dist", "smoke-downloads");
-await rm(downloads, { recursive: true, force: true });
-await mkdir(downloads, { recursive: true });
+const { step, finish } = checklist();
+const artifacts = await freshDir("test", "chromium");
+const downloads = join(artifacts, "downloads");
+await mkdir(downloads);
 const models = modelApi();
 const site = await testSite({ routes: models.routes });
 const { browser, worker, id, evaluateIn } = await launchExtension();
@@ -88,7 +86,7 @@ try {
 	await ask("Click the button");
 	const asked = await approval();
 	const whileWaiting = await tab.$eval("#out", (p) => p.textContent);
-	await panel.screenshot({ path: "dist/smoke-chromium-approval.png" });
+	await panel.screenshot({ path: join(artifacts, "approval.png") });
 	await panel.click('#approvals [data-decision="deny"]');
 	await idle("the refused click", '.tool[data-tool="page_click"][data-status="error"]');
 	const afterDeny = await tab.$eval("#out", (p) => p.textContent);
@@ -115,7 +113,7 @@ try {
 	await panel.click('.file-row[data-path="items.json"] .file-download');
 	const downloaded = await until("a real browser download", () => readFile(join(downloads, "items.json"), "utf8"));
 	step("download through Chat.readFile and a Blob URL", downloaded === TEST_DOWNLOAD, `${Buffer.byteLength(downloaded)} UTF-8 bytes`);
-	await panel.screenshot({ path: "dist/smoke-chromium-files.png" });
+	await panel.screenshot({ path: join(artifacts, "files.png") });
 	await panel.click("#files-back");
 
 	await evaluateIn(worker, "chrome.offscreen.closeDocument()");
@@ -245,7 +243,7 @@ try {
 } catch (error) {
 	const panel = (await browser.pages()).find((p) => p.url().endsWith("/panel.html"));
 	if (panel) {
-		await panel.screenshot({ path: "dist/smoke-chromium-failure.png" }).catch(() => {});
+		await panel.screenshot({ path: join(artifacts, "failure.png") }).catch(() => {});
 		console.error("  [panel text]", await panel.evaluate(() => document.body.innerText).catch(() => ""));
 	}
 	throw error;
@@ -254,8 +252,4 @@ try {
 	await browser.close();
 	site.close();
 }
-const failed = steps.filter((s) => !s.ok);
-if (failed.length) {
-	console.error(`${failed.length} step(s) failed`);
-	process.exit(1);
-}
+finish();

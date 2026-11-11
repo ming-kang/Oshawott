@@ -2,7 +2,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
-import { chromiumPath, root } from "./lib/smoke.mjs";
+import { chromiumPath } from "./lib/browsers.mjs";
+import { root } from "./lib/paths.mjs";
 
 const SIZES = [16, 32, 48, 96, 128];
 const [svg, smallSvg] = await Promise.all([
