@@ -44,7 +44,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			bundle: true,
 			format,
 			platform: "browser",
-			target: target === "chromium" ? "chrome120" : "firefox128",
+			target: target === "chromium" ? "chrome120" : "firefox140",
 			minify: !dev,
 			sourcemap: dev ? "inline" : false,
 			legalComments: "none",
@@ -62,7 +62,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 		entryPoints: [join(root, "static/panel.css")],
 		outfile: join(out, "panel.css"),
 		bundle: true,
-		target: target === "chromium" ? "chrome120" : "firefox128",
+		target: target === "chromium" ? "chrome120" : "firefox140",
 		// Keep the source rule sequence intact in release builds as well as --dev.
 		minify: false,
 		sourcemap: dev ? "inline" : false,

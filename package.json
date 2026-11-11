@@ -14,6 +14,7 @@
     "build:chromium": "node scripts/build.mjs chromium",
     "build:firefox": "node scripts/build.mjs firefox",
     "build:dev": "node scripts/build.mjs --dev",
+    "package": "node scripts/build.mjs && node scripts/package.mjs",
     "check": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
     "smoke:chromium": "node scripts/build.mjs chromium --dev && node scripts/smoke-chromium.mjs",

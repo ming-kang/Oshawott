@@ -51,8 +51,13 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 			open_at_install: false,
 		},
 		browser_specific_settings: {
-			// Keep the add-on identity stable so its local data stays under one extension origin.
-			gecko: { id: "oshawott@astralyn", strict_min_version: "128.0" },
+			// Keep the add-on identity stable so its local data stays under one extension origin. Page contents, tab
+			// URLs and titles go to the model provider the user chose; Firefox 140 is the first to show that at install.
+			gecko: {
+				id: "oshawott@astralyn",
+				strict_min_version: "140.0",
+				data_collection_permissions: { required: ["websiteContent", "browsingActivity"] },
+			},
 		},
 	};
 }

@@ -8,6 +8,7 @@
 |---|---|
 | `npm run build` | 构建两端；`build:chromium`、`build:firefox` 只构建一端 |
 | `npm run build:dev` | 开发构建两端 |
+| `npm run package` | 构建正式版并打包为 Chromium zip、Firefox xpi 和源码包，见[分发](distribution.md) |
 | `npm run check` | TypeScript 类型检查 |
 | `npm test` | 单元测试；单个文件用 `node --test test/<name>.test.ts` |
 | `npm run smoke:chromium` | 开发构建后，在真实 Chromium 中运行冒烟测试 |
