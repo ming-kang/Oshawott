@@ -28,6 +28,7 @@ export interface TabInfo {
 	readonly url?: string;
 	readonly title?: string;
 	readonly active?: boolean;
+	readonly status?: string;
 	readonly favIconUrl?: string;
 	/** Milliseconds since the epoch. */
 	readonly lastAccessed?: number;
@@ -51,7 +52,9 @@ export interface WebExt {
 	};
 	readonly tabs: {
 		query(query: { active?: boolean; currentWindow?: boolean; lastFocusedWindow?: boolean; windowId?: number }): Promise<TabInfo[]>;
+		get(tabId: number): Promise<TabInfo>;
 		create(properties: { url: string; active?: boolean }): Promise<TabInfo>;
+		goBack(tabId: number): Promise<void>;
 		update(tabId: number, properties: { url?: string; active?: boolean }): Promise<TabInfo>;
 		remove(tabId: number): Promise<void>;
 		readonly onRemoved: WebExtEvent<(tabId: number) => void>;

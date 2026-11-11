@@ -18,6 +18,12 @@ const Element = obj({
 	ref: str(),
 	role: str(),
 	name: str(),
+	/** State, present only when it applies: a field's text (never a password), a checkbox's tick, a link's target. */
+	value: opt(str()),
+	checked: opt(bool()),
+	disabled: opt(bool()),
+	expanded: opt(bool()),
+	href: opt(str()),
 });
 
 const Table = obj({
@@ -67,6 +73,9 @@ export const InspectResult = obj({
 	elements: arr(Inspected),
 });
 
+export const MODIFIERS = ["Alt", "Control", "Meta", "Shift"] as const;
+export const WAIT = { default: 5_000, max: 30_000 } as const;
+
 const Done = obj({ ok: bool(), detail: opt(str()) });
 
 export const pageTools = {
@@ -103,16 +112,41 @@ export const pageTools = {
 		replay: "safe",
 	}),
 	page_click: spec({
-		description: "Click the element with this `ref` from the last snapshot.",
+		description:
+			"Click the element with this `ref`, as a pointer would: it is scrolled into view, pressed and released. " +
+			"Use it for buttons, links, checkboxes, radios, tabs and menu items; take a new snapshot afterwards to see the effect.",
 		args: { ref: str() },
 		result: Done,
 		replay: "unsafe",
 	}),
 	page_type: spec({
-		description: "Type text into the input with this `ref`, replacing its value; `submit` presses Enter after it.",
+		description:
+			"Type text into the text field or editable element with this `ref`, replacing its content; `submit` presses " +
+			"Enter after it. Not for dropdowns (page_select) or checkboxes (page_click).",
 		args: { ref: str(), text: str(), submit: opt(bool()) },
 		result: Done,
 		replay: "unsafe",
+	}),
+	page_select: spec({
+		description: "Choose an option of the `<select>` with this `ref`, by the option's visible label or its value.",
+		args: { ref: str(), option: str() },
+		result: Done,
+		replay: "unsafe",
+	}),
+	page_press: spec({
+		description:
+			"Press a key (Enter, Escape, Tab, ArrowDown, a letter…) on the element with this `ref`, or on the focused " +
+			"element. Enter submits a field's form and activates a button or link. It sends key events to the page: it " +
+			"does not type text (page_type) and cannot trigger browser shortcuts.",
+		args: { key: str({ min: 1, max: 32 }), ref: opt(str()), modifiers: opt(arr(oneOf(...MODIFIERS), { max: MODIFIERS.length })) },
+		result: Done,
+		replay: "unsafe",
+	}),
+	page_hover: spec({
+		description: "Move the pointer over the element with this `ref`, to open a hover menu or tooltip.",
+		args: { ref: str() },
+		result: Done,
+		replay: "safe",
 	}),
 	page_scroll: spec({
 		description: "Scroll the element with this `ref` into view, or the page by `pixels` (negative scrolls up).",
@@ -120,8 +154,25 @@ export const pageTools = {
 		result: Done,
 		replay: "safe",
 	}),
+	page_wait: spec({
+		description:
+			"Wait until a visible element matches `selector` or the page shows `text` (`gone`: until it no longer does), " +
+			`at most \`timeoutMs\` (default ${WAIT.default}, max ${WAIT.max}). With neither, just waits that long. ` +
+			"`ok` is false when the time ran out. Use it after an action whose result loads later.",
+		args: {
+			selector: opt(str()),
+			text: opt(str({ min: 1 })),
+			gone: opt(bool()),
+			timeoutMs: opt(int({ min: 0, max: WAIT.max })),
+		},
+		result: Done,
+		replay: "safe",
+	}),
 } as const;
 
 export type PageToolName = keyof typeof pageTools;
+
+/** What a page action is about to act on, for a confirmation the user reads. */
+export const Described = obj({ role: str(), name: str() });
 
 export type PageToolArgs<N extends PageToolName> = StaticObject<(typeof pageTools)[N]["args"]>;

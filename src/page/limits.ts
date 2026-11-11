@@ -3,6 +3,7 @@ export const LIMITS = {
 	snapshotElements: 500,
 	name: 120,
 	url: 2_000,
+	href: 300,
 	title: 500,
 	inspectElements: 5,
 	inspectElementsMax: 20,

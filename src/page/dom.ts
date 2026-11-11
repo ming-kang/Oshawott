@@ -1,9 +1,15 @@
 import type { Static } from "../lib/chord.ts";
-import type { InspectResult, PageToolArgs as Args, SnapshotResult, Structure } from "../tools/page-tools.ts";
+import { type InspectResult, type PageToolArgs as Args, type SnapshotResult, type Structure, WAIT } from "../tools/page-tools.ts";
 import { clip, cut, LIMITS, RAW_CELLS, RAW_ROWS, type RawRow, shapeGrid, squash, take, takeWhere } from "./limits.ts";
 import { RefTable } from "./refs.ts";
 
-const INTERACTIVE = "a[href], button, input, select, textarea, summary, [role=button], [role=link], [contenteditable=true], [tabindex]";
+const INTERACTIVE = [
+	"a[href]", "button", "input:not([type=hidden])", "select", "textarea", "summary", "[contenteditable=''], [contenteditable=true]", "[onclick]",
+	...["button", "link", "checkbox", "radio", "switch", "tab", "menuitem", "option", "combobox", "textbox"].map((role) => `[role=${role}]`),
+	"[tabindex]:not([tabindex='-1'])",
+].join(", ");
+/** Inputs whose `value` is their caption, not something the user typed. */
+const CAPTIONED = new Set(["submit", "button", "reset"]);
 const TABLES = "table, [role=table], [role=grid], [role=treegrid]";
 const LISTS = "ul, ol, dl";
 const DEFAULT_STYLES = [
@@ -27,16 +33,57 @@ function visible(element: Element): boolean {
 	return style.visibility !== "hidden" && style.display !== "none";
 }
 
+const inputType = (element: Element) => element instanceof HTMLInputElement ? element.type : undefined;
+
+/** The first of the element's accessible-name sources that says something. */
 function nameOf(element: Element): string {
-	const label =
-		element.getAttribute("aria-label") ??
-		(element as HTMLInputElement).labels?.[0]?.textContent ??
-		element.getAttribute("placeholder") ??
-		element.getAttribute("title") ??
-		element.textContent ??
-		(element as HTMLInputElement).value ??
-		"";
-	return clip(squash(label), LIMITS.name)[0];
+	const type = inputType(element);
+	const labelled = element.getAttribute("aria-labelledby")?.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+	// A field's own text is its options or its content, never its name.
+	const field = element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement || type !== undefined;
+	const sources = [
+		element.getAttribute("aria-label"),
+		labelled,
+		(element as HTMLInputElement).labels?.[0]?.textContent,
+		type !== undefined && CAPTIONED.has(type) ? (element as HTMLInputElement).value : undefined,
+		element.getAttribute("placeholder"),
+		element.getAttribute("alt"),
+		field ? undefined : element.textContent,
+		field ? undefined : element.querySelector("img[alt]")?.getAttribute("alt"),
+		element.getAttribute("title"),
+		element.getAttribute("name"),
+	];
+	for (const source of sources) {
+		const text = squash(source ?? "");
+		if (text) return clip(text, LIMITS.name)[0];
+	}
+	return "";
+}
+
+const isDisabled = (element: Element) => element.matches(":disabled") || element.getAttribute("aria-disabled") === "true";
+
+const ariaFlag = (element: Element, name: string) => {
+	const value = element.getAttribute(name);
+	return value === "true" ? true : value === "false" ? false : undefined;
+};
+
+/** What a user sees of the element beyond its name. A password's text is never read. */
+function stateOf(element: Element) {
+	const type = inputType(element);
+	const typed = element instanceof HTMLTextAreaElement
+		|| (type !== undefined && type !== "password" && type !== "checkbox" && type !== "radio" && !CAPTIONED.has(type));
+	const value = squash((element instanceof HTMLSelectElement ? element.selectedOptions[0]?.text : typed ? (element as HTMLInputElement).value : "") ?? "");
+	const checked = type === "checkbox" || type === "radio"
+		? (element as HTMLInputElement).checked : ariaFlag(element, "aria-checked") ?? ariaFlag(element, "aria-selected");
+	const expanded = ariaFlag(element, "aria-expanded");
+	const href = element instanceof HTMLAnchorElement ? element.href : "";
+	return {
+		...(value ? { value: clip(value, LIMITS.name)[0] } : {}),
+		...(checked !== undefined ? { checked } : {}),
+		...(isDisabled(element) ? { disabled: true } : {}),
+		...(expanded !== undefined ? { expanded } : {}),
+		...(href ? { href: clip(href, LIMITS.href)[0] } : {}),
+	};
 }
 
 function roleOf(element: Element): string {
@@ -57,7 +104,7 @@ function within(root: Element, selector: string): Element[] {
 	return [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll(selector)];
 }
 
-function select(selector: string): Element[] {
+function matching(selector: string): Element[] {
 	try {
 		return [...document.querySelectorAll(selector)];
 	} catch {
@@ -70,7 +117,7 @@ function target({ ref: name, selector }: { ref?: string; selector?: string }, fa
 	if (name !== undefined && selector !== undefined) throw new Error("Pass either ref or selector, not both.");
 	if (name !== undefined) return [element(name)];
 	if (selector !== undefined) {
-		const found = select(selector);
+		const found = matching(selector);
 		if (!found.length) throw new Error(`No element matches ${selector}.`);
 		return found;
 	}
@@ -152,7 +199,7 @@ export function snapshot({ maxChars = 20_000, structure, ...scope }: Args<"page_
 	const elements = [];
 	for (const candidate of within(root, INTERACTIVE)) {
 		if (!visible(candidate)) continue;
-		elements.push({ ref: ref(candidate), role: roleOf(candidate), name: nameOf(candidate) });
+		elements.push({ ref: ref(candidate), role: roleOf(candidate), name: nameOf(candidate), ...stateOf(candidate) });
 		if (elements.length >= LIMITS.snapshotElements) break;
 	}
 	const text = textOf(root).replace(/\n{3,}/g, "\n\n");
@@ -239,36 +286,158 @@ export function inspect(args: Args<"page_inspect">): Static<typeof InspectResult
 	return { url: clip(location.href, LIMITS.url)[0], matched: found.length, truncated: more || elements.some((each) => each.truncated), elements };
 }
 
-export function click({ ref }: Args<"page_click">) {
-	const target = element(ref) as HTMLElement;
-	target.scrollIntoView({ block: "center" });
-	target.click();
-	return { ok: true };
+export function describe({ ref }: { ref: string }) {
+	const target = element(ref);
+	return { role: roleOf(target), name: nameOf(target) };
 }
 
+const label = (target: Element) => `${roleOf(target)} "${nameOf(target)}"`;
+
+function center(target: Element) {
+	const rect = target.getBoundingClientRect();
+	return { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+}
+
+/** Pointer and mouse events at the element's centre; `false` when the page cancelled one. */
+function point(target: Element, kinds: readonly string[], buttons = 0) {
+	const init = { cancelable: true, composed: true, view: window, button: 0, buttons, ...center(target) };
+	let allowed = true;
+	for (const kind of kinds) {
+		const bubbles = !kind.endsWith("enter");
+		const event = kind.startsWith("pointer")
+			? new PointerEvent(kind, { ...init, bubbles, pointerId: 1, pointerType: "mouse", isPrimary: true })
+			: new MouseEvent(kind, { ...init, bubbles });
+		allowed = target.dispatchEvent(event) && allowed;
+	}
+	return allowed;
+}
+
+const HOVER = ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"];
+
+export function hover({ ref }: Args<"page_hover">) {
+	const target = element(ref);
+	target.scrollIntoView({ block: "center" });
+	point(target, HOVER);
+	return { ok: true, detail: `Hovering ${label(target)}.` };
+}
+
+export function click({ ref }: Args<"page_click">) {
+	const target = element(ref) as HTMLElement;
+	if (isDisabled(target)) throw new Error(`${label(target)} is disabled.`);
+	target.scrollIntoView({ block: "center" });
+	// Widgets that open on press (menus, comboboxes) listen for these, not for `click`.
+	point(target, HOVER);
+	if (point(target, ["pointerdown", "mousedown"], 1)) target.focus({ preventScroll: true });
+	point(target, ["pointerup", "mouseup"]);
+	const { clientX, clientY } = center(target);
+	const top = document.elementFromPoint(clientX, clientY);
+	const covered = top !== null && top !== target && !target.contains(top) && !top.contains(target);
+	const done = `Clicked ${label(target)}.${covered ? ` A ${tagOf(top)} element covers it: if nothing changed, deal with that one first.` : ""}`;
+	// The activation itself: follows links, toggles checkboxes and submits forms as a user's click does.
+	target.click();
+	return { ok: true, detail: done };
+}
+
+/** Key events on the element; `false` when the page cancelled the key. */
+function key(target: Element, name: string, modifiers: readonly string[] = []) {
+	const init = {
+		key: name, code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : name === " " ? "Space" : name,
+		bubbles: true, cancelable: true, composed: true, view: window,
+		altKey: modifiers.includes("Alt"), ctrlKey: modifiers.includes("Control"), metaKey: modifiers.includes("Meta"), shiftKey: modifiers.includes("Shift"),
+	};
+	const down = target.dispatchEvent(new KeyboardEvent("keydown", init));
+	const pressed = down && (name.length > 1 && name !== "Enter" || target.dispatchEvent(new KeyboardEvent("keypress", init)));
+	target.dispatchEvent(new KeyboardEvent("keyup", init));
+	return pressed;
+}
+
+/** What the browser does for a real Enter or Space, which a scripted key event does not trigger. */
+function activate(target: Element, name: string) {
+	if (name !== "Enter" && name !== " ") return;
+	const type = inputType(target);
+	const toggle = type === "checkbox" || type === "radio";
+	const button = target instanceof HTMLButtonElement || target instanceof HTMLAnchorElement || target.tagName === "SUMMARY"
+		|| (type !== undefined && CAPTIONED.has(type)) || target.getAttribute("role") === "button";
+	if (button || (toggle && name === " ")) (target as HTMLElement).click();
+	else if (name === "Enter" && target instanceof HTMLInputElement) target.form?.requestSubmit();
+}
+
+export function press({ key: name, ref, modifiers = [] }: Args<"page_press">) {
+	const target = ref !== undefined ? element(ref) : document.activeElement ?? document.body;
+	if (ref !== undefined && target instanceof HTMLElement) target.focus({ preventScroll: true });
+	const pressed = name === "Space" ? " " : name;
+	if (key(target, pressed, modifiers) && !modifiers.length) activate(target, pressed);
+	return { ok: true, detail: `Pressed ${[...modifiers, name].join("+")} on ${label(target)}.` };
+}
+
+const UNTYPABLE = new Set(["checkbox", "radio", "file", "submit", "button", "reset", "image", "range", "color", "hidden"]);
+
 export function type({ ref, text, submit }: Args<"page_type">) {
-	const target = element(ref) as HTMLInputElement | HTMLTextAreaElement | HTMLElement;
-	target.focus();
+	const target = element(ref) as HTMLElement;
+	if (target instanceof HTMLSelectElement) throw new Error(`${label(target)} is a dropdown: choose an option with page_select.`);
+	if (target instanceof HTMLInputElement && UNTYPABLE.has(target.type)) throw new Error(`${label(target)} takes no text: use page_click.`);
+	if (isDisabled(target) || (target as HTMLInputElement).readOnly) throw new Error(`${label(target)} is read-only.`);
+	target.scrollIntoView({ block: "center" });
+	target.focus({ preventScroll: true });
 	if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
 		// The native setter, so frameworks that track the value see the change.
 		const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(target), "value")?.set;
 		setter?.call(target, text);
-		target.dispatchEvent(new Event("input", { bubbles: true }));
+		target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 		target.dispatchEvent(new Event("change", { bubbles: true }));
-	} else {
-		target.textContent = text;
-		target.dispatchEvent(new InputEvent("input", { bubbles: true }));
+	} else if (target.isContentEditable) {
+		// Through the editing command: rich-text editors keep their own model and ignore a replaced `textContent`.
+		getSelection()?.selectAllChildren(target);
+		if (!document.execCommand("insertText", false, text)) {
+			target.textContent = text;
+			target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+		}
+	} else throw new Error(`${label(target)} is not a text field.`);
+	if (submit && key(target, "Enter")) activate(target, "Enter");
+	return { ok: true, detail: `Typed into ${label(target)}.` };
+}
+
+export function select({ ref, option }: Args<"page_select">) {
+	const target = element(ref);
+	if (!(target instanceof HTMLSelectElement)) throw new Error(`${label(target)} is not a <select>: open it with page_click and click the option.`);
+	if (isDisabled(target)) throw new Error(`${label(target)} is disabled.`);
+	const options = [...target.options].filter((each) => !each.disabled);
+	const wanted = squash(option);
+	const found = options.find((each) => each.value === option) ?? options.find((each) => squash(each.text) === wanted)
+		?? options.find((each) => squash(each.text).toLowerCase() === wanted.toLowerCase());
+	if (!found) {
+		const [shown, more] = take(options.map((each) => squash(each.text)), 30);
+		throw new Error(`${label(target)} has no option "${option}". Options: ${shown.join(" | ")}${more ? " | …" : ""}`);
 	}
-	if (submit) {
-		const form = (target as HTMLInputElement).form;
-		if (form) form.requestSubmit();
-		else target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-	}
-	return { ok: true };
+	target.focus({ preventScroll: true });
+	found.selected = true;
+	target.dispatchEvent(new Event("input", { bubbles: true }));
+	target.dispatchEvent(new Event("change", { bubbles: true }));
+	return { ok: true, detail: `Selected "${squash(found.text)}" in ${label(target)}.` };
 }
 
 export function scroll({ ref, pixels }: Args<"page_scroll">) {
 	if (ref !== undefined) element(ref).scrollIntoView({ block: "center" });
 	else window.scrollBy({ top: pixels ?? window.innerHeight * 0.8 });
 	return { ok: true, detail: `scrollY=${Math.round(window.scrollY)}` };
+}
+
+const WAIT_STEP_MS = 100;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function wait({ selector, text, gone = false, timeoutMs = WAIT.default }: Args<"page_wait">) {
+	if (selector !== undefined && text !== undefined) throw new Error("Pass either selector or text, not both.");
+	if (selector === undefined && text === undefined) {
+		await sleep(timeoutMs);
+		return { ok: true, detail: `Waited ${timeoutMs} ms.` };
+	}
+	// An invalid selector fails now, not after the timeout.
+	const present = () => selector !== undefined ? matching(selector).some(visible) : textOf(document.body ?? document.documentElement).includes(text!);
+	const what = selector ?? `"${text}"`;
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		if (present() !== gone) return { ok: true, detail: `${what} ${gone ? "is gone" : "is there"}.` };
+		if (Date.now() >= deadline) return { ok: false, detail: `${what} ${gone ? "was still there" : "did not appear"} after ${timeoutMs} ms.` };
+		await sleep(WAIT_STEP_MS);
+	}
 }
