@@ -72,6 +72,36 @@ try {
 		`tool ${tool[0]?.join(": ")}; title “${title}”`,
 	);
 
+	const confirmActions = async (on) => {
+		await panel.click("#settings-toggle");
+		await until("the confirmation switch", () => panel.$eval("#settings-confirmActions", (input) => !input.disabled || undefined).catch(() => undefined));
+		await panel.$eval("#settings-confirmActions", (input) => input.click());
+		await until("the confirmation preference saved", () => panel.$eval("#settings-confirmActions", (input, expected) => input.checked === expected && !input.disabled || undefined, on).catch(() => undefined));
+		await panel.click("#settings-back");
+	};
+	const approval = () => until("the approval request", () =>
+		panel.$eval("#approvals .approval .approval-target", (node) => node.textContent || undefined).catch(() => undefined), 20_000);
+	const idle = (what, selector) => until(what, () => panel.evaluate((wanted) =>
+		document.body.dataset.busy === "false" && document.querySelector(wanted) ? true : undefined, selector), 20_000);
+	await tab.$eval("#out", (p) => { p.textContent = ""; });
+	await confirmActions(true);
+	await ask("Click the button");
+	const asked = await approval();
+	const whileWaiting = await tab.$eval("#out", (p) => p.textContent);
+	await panel.screenshot({ path: "dist/smoke-chromium-approval.png" });
+	await panel.click('#approvals [data-decision="deny"]');
+	await idle("the refused click", '.tool[data-tool="page_click"][data-status="error"]');
+	const afterDeny = await tab.$eval("#out", (p) => p.textContent);
+	await ask("Click the button");
+	await approval();
+	await panel.click('#approvals [data-decision="allow"]');
+	await idle("the allowed click", '.tool[data-tool="page_click"][data-status="done"]');
+	const afterAllow = await tab.$eval("#out", (p) => p.textContent);
+	const cleared = await panel.$eval("#approvals", (bar) => bar.hidden);
+	step("with confirmation on, a page action waits for the user: Deny stops it, Allow runs it",
+		asked.includes("Go") && whileWaiting === "" && afterDeny === "" && afterAllow.startsWith("searched:") && cleared, `asked “${asked}”; then “${afterAllow}”`);
+	await confirmActions(false);
+
 	await ask(`Download and measure ${site.url}items.json`);
 	await panel.click("#files-toggle");
 	await until("fetch and Code Mode finished", () => panel.evaluate(() => {
@@ -179,7 +209,7 @@ try {
 		), 20_000);
 		await panel.click("#files-toggle");
 		const empty = await until("no file from the redirect", () => panel.$("#files .files-empty"));
-		step(`${method} ${path} refused without saving`, error.includes("Redirects are not followed") && Boolean(empty));
+		step(`${method} ${path} refused without saving`, error.includes("request the final URL directly") && Boolean(empty));
 		await panel.click("#files-back");
 		await until("redirect file sheet closed", async () => !(await panel.$("#files")) || undefined);
 	}

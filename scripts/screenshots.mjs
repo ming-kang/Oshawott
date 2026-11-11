@@ -82,10 +82,15 @@ try {
 
 	await panel.click("#settings-toggle");
 	await until("the saved providers", () => panel.$('.provider[data-provider="demo"] .provider-head'));
+	await both("settings-top");
 	await panel.$eval(".about", (about) => about.scrollIntoView({ block: "end" }));
 	await both("settings");
 	await panel.click("#add-provider");
+	await until("the built-in provider list", () => panel.$("#builtin-provider-list [data-provider]"));
 	await both("provider-builtin");
+	await panel.click("#builtin-provider-list [data-provider]");
+	await until("the chosen provider", () => panel.$("#builtin-provider-chosen:not([hidden])"));
+	await both("provider-builtin-chosen");
 	await panel.click("#provider-kind-custom");
 	for (const width of [280, 400, 640]) {
 		await panel.setViewport({ width, height: 760, deviceScaleFactor: 2 });

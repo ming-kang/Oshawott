@@ -23,6 +23,21 @@ export const TEST_PAGE = `<!doctype html><title>Oshawott test page</title>
 <input id="q" placeholder="Search"><button id="go" onclick="out.textContent='searched: '+q.value">Go</button>
 <p id="out">nothing yet</p>`;
 
+/** Page-action fixture: every control logs what a user's action would have done to it. */
+export const ACTIONS_PAGE = `<!doctype html><title>Actions fixture</title>
+<label for="size">Size</label><select id="size" onchange="log('select:'+this.value)"><option value="s">Small</option><option value="m">Medium</option><option value="l" disabled>Large</option></select>
+<form onsubmit="event.preventDefault();log('submit:'+this.q.value)"><input name="q" aria-label="Query"><input type="submit" value="Search"></form>
+<a href="#pic"><img alt="Picture link" width="16" height="16" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a>
+<label><input type="checkbox" id="agree" checked> Agree</label>
+<button id="menu" aria-expanded="false" onpointerdown="this.setAttribute('aria-expanded','true');log('pointerdown')" onmousedown="log('mousedown')" onclick="log('click')">Menu</button>
+<button id="off" disabled>Off</button>
+<div id="hover" role="button" tabindex="0" onmouseover="log('hover')">Hover me</div>
+<div id="rich" contenteditable="true" aria-label="Rich">old</div>
+<button id="later" onclick="setTimeout(()=>{const p=document.createElement('p');p.id='late';p.textContent='Arrived';document.body.append(p)},300)">Later</button>
+<input id="keys" aria-label="Keys" onkeydown="log('key:'+event.key+(event.shiftKey?'+shift':''))">
+<input id="secret" type="password" aria-label="Secret" value="hunter2">
+<pre id="log"></pre><script>function log(t){document.getElementById('log').textContent+=t+' '}</script>`;
+
 /** Page-inspection fixture: bounded data, a scoped region, dynamic content and same-document navigation. */
 export const INSPECT_PAGE = `<!doctype html><title>Inspect fixture</title>
 <section id="scope"><h2>Inside region</h2><button id="inside">Inside</button>
@@ -90,6 +105,7 @@ export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 	const server = createServer((req, res) => {
 		const route = routes[`${req.method} ${req.url}`];
 		if (route) return route(req, res);
+		if (req.url === "/actions") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(ACTIONS_PAGE);
 		if (req.url?.startsWith("/inspect")) {
 			const strict = req.url === "/inspect-csp" ? { "content-security-policy": "default-src 'none'; script-src 'none'" } : {};
 			return res.writeHead(200, { "content-type": "text/html; charset=utf-8", ...strict }).end(INSPECT_PAGE);
@@ -106,6 +122,8 @@ export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 			redirects.target++;
 			return res.writeHead(200, { "access-control-allow-origin": "*" }).end("must not be requested");
 		}
+		// The slash form of a redirecting address, which fetch tries before giving up, is not a page here.
+		if (req.url?.startsWith("/redirect-")) return res.writeHead(404, { "access-control-allow-origin": "*" }).end();
 		res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(page);
 	});
 	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
