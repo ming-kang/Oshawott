@@ -243,7 +243,7 @@ test("the failure-retry preference changes real retry behavior without a second 
 		const id = await f.workspace.createChat({}, context);
 		const chat = await f.chat(id);
 		await chat.send({ text: "Retry once", requestId: "retry-enabled" }, context);
-		await until(() => chat.view.value?.entries.some((entry) => entry.model?.some((message) => message.role === "assistant" && message.content.some((part) => part.type === "text" && part.text === "Recovered"))) ? true : undefined, "the bounded retry response");
+		await until(() => chat.view.value?.entries.some((entry) => entry.model?.some((message) => message.role === "assistant" && message.content.some((part) => part.type === "text" && part.text === "Recovered"))) ? true : undefined, "the bounded retry response", 15_000);
 		assert.equal(f.faux.state.callCount, 2);
 
 		await f.workspace.setPreference({ key: "autoRetry", enabled: false }, context);

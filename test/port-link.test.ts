@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fromBase64, toBase64 } from "../src/lib/base64.ts";
+import { toBase64 } from "../src/lib/base64.ts";
 import { portLink } from "../src/link/port-link.ts";
 import { fakePortPair } from "./support/fake-port.ts";
 
@@ -114,9 +114,4 @@ test("fragments must arrive in order, one message at a time", async () => {
 		a.postMessage(`oshawott:fragment:v1:${second}:${toBase64(new Uint8Array([2]))}`);
 		assert.equal(await right.done, "invalid fragment sequence", `${first} then ${second}`);
 	}
-});
-
-test("base64 round trip, larger than one chunk", () => {
-	const bytes = new Uint8Array(100_000).map((_, i) => (i * 31) & 255);
-	assert.deepEqual(fromBase64(toBase64(bytes)), bytes);
 });

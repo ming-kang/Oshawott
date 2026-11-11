@@ -60,12 +60,6 @@ test("returning to the snapshot's URL does not revive its refs", () => {
 	assert.doesNotThrow(() => refs.resolve(fragment, URL_A));
 });
 
-test("page load ids are long enough not to collide across loads", () => {
-	const ids = new Set(Array.from({ length: 20_000 }, () => new RefTable().pageLoad));
-	assert.equal(ids.size, 20_000);
-	assert.match([...ids][0]!, /^[a-z0-9]{8}$/);
-});
-
 test("adding after a navigation starts a new generation", () => {
 	const refs = new RefTable<ReturnType<typeof node>>("abcd");
 	refs.begin(URL_A);

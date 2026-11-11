@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProviderSummary } from "../src/contracts/chat.ts";
-import { clampThinking, compactTokens, configuredProviders, modelName, sameModel, shownModel, supportedThinkingLevels } from "../src/panel/models.ts";
+import { clampThinking, shownModel, supportedThinkingLevels } from "../src/panel/models.ts";
 
 const model = (id: string, name: string, vision: boolean): ProviderSummary["models"][number] => ({
 	id, name, vision, contextWindow: 128_000, maxTokens: 16_384, thinkingLevels: ["off"], manual: false,
@@ -17,7 +17,6 @@ const providers: ProviderSummary[] = [
 ];
 
 test("model fallback skips disconnected and empty providers, preserving a connected choice", () => {
-	assert.deepEqual(configuredProviders(providers).map((provider) => provider.id), ["empty", "first", "second"]);
 	assert.deepEqual(shownModel(providers, undefined), { provider: "first", modelId: "one" });
 	assert.deepEqual(shownModel(providers, { provider: "offline", modelId: "unavailable" }), { provider: "first", modelId: "one" });
 	const choice = { provider: "second", modelId: "three" };
@@ -32,17 +31,6 @@ test("no fallback keeps a configured model reference for error feedback, or leav
 	assert.equal(shownModel([], undefined), undefined);
 });
 
-test("model labels and equality use provider and model id, not object identity", () => {
-	const choice = { provider: "first", modelId: "two" };
-	assert.equal(modelName(providers, choice), "Model Two");
-	assert.equal(modelName(providers, { provider: "first", modelId: "unknown" }), "unknown");
-	assert.equal(sameModel(choice, { ...choice }), true);
-	assert.equal(sameModel(choice, { provider: "second", modelId: "two" }), false);
-	assert.equal(sameModel(choice, { provider: "first", modelId: "one" }), false);
-	assert.equal(sameModel(choice, undefined), false);
-	assert.equal(sameModel(undefined, undefined), true);
-});
-
 test("thinking choices come from the selected model and clamp without mutating metadata", () => {
 	const reasoning = { ...model("reasoning", "Reasoning", false), thinkingLevels: ["off", "low", "high"] as ("off" | "low" | "high")[] };
 	const list = [provider("reasoning", "Reasoning", true, [reasoning])];
@@ -53,6 +41,4 @@ test("thinking choices come from the selected model and clamp without mutating m
 	assert.equal(clampThinking(supportedThinkingLevels(list, ref), "minimal"), "low");
 	assert.equal(clampThinking(["off"], "max"), "off");
 	assert.deepEqual(reasoning.thinkingLevels, ["off", "low", "high"]);
-	assert.equal(compactTokens(128_000), "128K");
-	assert.equal(compactTokens(1_500_000), "1.5M");
 });

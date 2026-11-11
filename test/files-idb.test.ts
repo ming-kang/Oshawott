@@ -1,11 +1,12 @@
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createEnvConformance } from "@earendil-works/pi-durable/testing";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { ChatFiles, type Entry } from "../src/engine/files.ts";
 import { IndexedDbFileBackend } from "../src/engine/files-idb.ts";
 import { BACKGROUND_CONTEXT } from "../src/lib/chord.ts";
+import { settle } from "../src/lib/idb.ts";
+import { conformance } from "./support/files.ts";
 
 const context = BACKGROUND_CONTEXT;
 const encoder = new TextEncoder();
@@ -19,30 +20,11 @@ async function withBackend(use: (backend: IndexedDbFileBackend, name: string) =>
 		await use(backend, name);
 	} finally {
 		backend.close();
-		await new Promise<void>((resolve, reject) => {
-			const request = indexedDB.deleteDatabase(name);
-			request.onsuccess = () => resolve();
-			request.onerror = () => reject(request.error);
-		});
+		await settle(indexedDB.deleteDatabase(name));
 	}
 }
 
-for (const conformance of createEnvConformance({
-	assertions: {
-		ok: (value, message) => assert.ok(value, message),
-		strictEqual: (actual, expected) => assert.strictEqual(actual, expected),
-		deepEqual: (actual, expected) => assert.deepStrictEqual(actual, expected),
-		partialDeepEqual: (actual, expected) => assert.partialDeepStrictEqual(actual, expected),
-		greaterThan: (actual, expected) => assert.ok(actual > expected, `${actual} > ${expected}`),
-		rejects: (operation, includes) => assert.rejects(operation, (error: Error) => error.message.includes(includes)),
-	},
-	withEnv: (use) => withBackend((backend) => use(new ChatFiles(backend, 1))),
-	symlinks: false,
-	listFiles: true,
-})) {
-	if (/^watch|exec|git ignores|symbolic/.test(conformance.name)) continue;
-	test(`IndexedDB conformance: ${conformance.name}`, () => conformance.run());
-}
+conformance("IndexedDB conformance", (use) => withBackend((backend) => use(new ChatFiles(backend, 1))));
 
 for (const failure of ["synchronous", "asynchronous", "cloning"] as const) {
 	test(`IndexedDB rolls back both stores on ${failure} failure after queued writes`, () => withBackend(async (backend) => {

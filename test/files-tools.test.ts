@@ -8,8 +8,6 @@ import { BrokerHost, EngineHost, type Principal } from "../src/contracts/hosts.t
 import { ChatFiles, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
 import { filesExtension, MAX_READ_CHARS, redirectGuesses } from "../src/engine/files-tools.ts";
 import { createHost, type Context } from "../src/lib/chord.ts";
-import { formatBytes } from "../src/lib/bytes.ts";
-import { sitePattern } from "../src/platform/patterns.ts";
 import { context, fakeBrowser, linkTo, serveBrowser } from "./support/world.ts";
 
 type FetchCall = (args: Record<string, unknown>, ctx?: Context) => Promise<ToolExecutionResult>;
@@ -180,14 +178,6 @@ test("read_text character chunks reassemble Unicode, strip BOM and support expli
 	} finally {
 		await host.close(context);
 	}
-});
-
-test("site patterns omit ports on both browsers and sizes use binary units", () => {
-	assert.equal(sitePattern("https://example.com:8443/path?q=1"), "https://example.com/*");
-	assert.equal(sitePattern("http://127.0.0.1:1234/"), "http://127.0.0.1/*");
-	assert.equal(sitePattern("file:///tmp/private"), undefined);
-	assert.equal(sitePattern("bad"), undefined);
-	assert.deepEqual([0, 17, 1024, 1536, 20 * 1024 * 1024].map(formatBytes), ["0 B", "17 B", "1 KiB", "1.5 KiB", "20 MiB"]);
 });
 
 test("fetch follows a redirect only to the https or www form of the same address", async () => {

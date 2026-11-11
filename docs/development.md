@@ -19,7 +19,7 @@
 
 ## 测试
 
-- **单元测试**：位于 `test/`，共用的夹具在 `test/support/`：`world.ts` 提供假 Broker、Page 和 Engine / Panel 连接，`wait.ts` 提供 `until`，`fake-port.ts` 模拟 `runtime.Port`。模型用 Pi-AI 的 faux provider。
+- **单元测试**：位于 `test/`，共用的夹具在 `test/support/`：`world.ts` 提供假 Broker、Page 和 Engine / Panel 连接，`wait.ts` 提供 `until`，`fake-port.ts` 模拟 `runtime.Port`，`files.ts` 用 Durable 的 `ExecutionEnv` 一致性用例检查两种文件后端。模型用 Pi-AI 的 faux provider。
 - **冒烟测试**：使用本地测试站点和本地 OpenAI 兼容模型 API（`scripts/lib/site.mjs`），不需要真实账号。一部分检查以面板内自测的形式写在 `src/panel/selftest/`，只进入开发构建。Chromium 由 Puppeteer 驱动面板并调用这些自测；Firefox 中 WebDriver BiDi 无法访问扩展页面，由开发构建自动打开面板运行自测，再把结果回报给测试站点。
 - **浏览器**：默认使用 Playwright 安装的 Chromium 和系统安装的 Firefox，可以用 `OSHAWOTT_CHROME`、`OSHAWOTT_FIREFOX` 指定可执行文件。
 - **测试产物**：下载的文件和截图分别保存在 `dist/test/chromium/`、`dist/test/firefox/`，每次运行前清空。

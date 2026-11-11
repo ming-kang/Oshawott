@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { NO_ACCESS_CODE, type Tab } from "../src/contracts/browser.ts";
 import { Approvals, DECLINED } from "../src/engine/approvals.ts";
+import { sitePattern } from "../src/platform/patterns.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, fakeBrowser, linkTo, openEngine, serveBrowser, servePage, useModel } from "./support/world.ts";
 
@@ -165,4 +166,11 @@ test("approvals: trusting a chat answers all it waits for, and forgetting it dec
 	approvals.close();
 	assert.equal(await again, DECLINED);
 	assert.equal(approvals.decide("gone", "allow"), false);
+});
+
+test("site access is granted per host without its port, which Firefox match patterns cannot express", () => {
+	assert.equal(sitePattern("https://example.com:8443/path?q=1"), "https://example.com/*");
+	assert.equal(sitePattern("http://127.0.0.1:1234/"), "http://127.0.0.1/*");
+	assert.equal(sitePattern("file:///tmp/private"), undefined);
+	assert.equal(sitePattern("bad"), undefined);
 });

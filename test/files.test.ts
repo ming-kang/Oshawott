@@ -5,32 +5,16 @@ import { ToolResultEntry } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { InlineCodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codemode";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { createEnvConformance } from "@earendil-works/pi-durable/testing";
 import { ChatFiles, type FileTx, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
 import { NO_ACCESS } from "../src/contracts/browser.ts";
 import { withAbortSignal } from "../src/lib/chord.ts";
+import { conformance } from "./support/files.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, fakeBrowser, openEngine, portPair, serveBrowser, useModel } from "./support/world.ts";
 
 const decoder = new TextDecoder();
 
-const UNSUPPORTED = /^watch|exec|git ignores|symbolic/;
-for (const conformance of createEnvConformance({
-	assertions: {
-		ok: (value, message) => assert.ok(value, message),
-		strictEqual: (actual, expected) => assert.strictEqual(actual, expected),
-		deepEqual: (actual, expected) => assert.deepStrictEqual(actual, expected),
-		partialDeepEqual: (actual, expected) => assert.partialDeepStrictEqual(actual, expected),
-		greaterThan: (actual, expected) => assert.ok(actual > expected, `${actual} > ${expected}`),
-		rejects: (operation, includes) => assert.rejects(operation, (error: Error) => error.message.includes(includes)),
-	},
-	withEnv: (use) => use(new ChatFiles(new MemoryFileBackend(), 1)),
-	symlinks: false,
-	listFiles: true,
-})) {
-	if (UNSUPPORTED.test(conformance.name)) continue;
-	test(`conformance: ${conformance.name}`, () => conformance.run());
-}
+conformance("conformance", (use) => use(new ChatFiles(new MemoryFileBackend(), 1)));
 
 test("files: parents are created, directories move with their contents, and the working directory stays", async () => {
 	const files = new ChatFiles(new MemoryFileBackend(), 1);

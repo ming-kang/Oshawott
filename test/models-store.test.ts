@@ -42,23 +42,16 @@ const replacement: ModelsStoreEntry = {
 	checkedAt: 1_700_000_200_000,
 };
 
-test("model catalogs round trip, replace, delete, and read unknown providers as undefined", async () => {
-	const store = new IndexedDbModelsStore(`oshawott-models-${crypto.randomUUID()}`);
+test("model catalogs round trip, replace, delete, survive reopening, and read unknown providers as undefined", async () => {
+	const name = `oshawott-models-${crypto.randomUUID()}`;
+	const store = new IndexedDbModelsStore(name);
 	assert.equal(await store.read("missing"), undefined);
 	await store.write("openai", first);
-	assert.deepEqual(await store.read("openai"), first);
+	assert.deepEqual(await new IndexedDbModelsStore(name).read("openai"), first);
 	await store.write("openai", replacement);
 	assert.deepEqual(await store.read("openai"), replacement);
 	await store.delete("openai");
 	assert.equal(await store.read("openai"), undefined);
-});
-
-test("model catalogs persist across store instances using the same database", async () => {
-	const name = `oshawott-models-${crypto.randomUUID()}`;
-	const store = new IndexedDbModelsStore(name);
-	await store.write("openai", first);
-	const reopened = new IndexedDbModelsStore(name);
-	assert.deepEqual(await reopened.read("openai"), first);
 });
 
 test("already-aborted operations reject with the abort reason without mutating data", async () => {

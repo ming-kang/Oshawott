@@ -8,6 +8,7 @@ import { ChatFiles, type FileBackend, MemoryFileBackend } from "../src/engine/fi
 import { IndexedDbFileBackend } from "../src/engine/files-idb.ts";
 import { filesExtension } from "../src/engine/files-tools.ts";
 import { BACKGROUND_CONTEXT, createHost } from "../src/lib/chord.ts";
+import { settle } from "../src/lib/idb.ts";
 
 const context = BACKGROUND_CONTEXT;
 const fixture = ["top.txt", "skip/file.txt", "a.txt", "a/z.txt", "a/deep/end.txt", ".git/config", ".cache/kept.txt"];
@@ -69,11 +70,7 @@ for (const kind of ["memory", "indexeddb"] as const) {
 			await host.close(context);
 			if (backend instanceof IndexedDbFileBackend) {
 				backend.close();
-				await new Promise<void>((resolve, reject) => {
-					const request = indexedDB.deleteDatabase(name);
-					request.onsuccess = () => resolve();
-					request.onerror = () => reject(request.error);
-				});
+				await settle(indexedDB.deleteDatabase(name));
 			}
 		}
 	});
