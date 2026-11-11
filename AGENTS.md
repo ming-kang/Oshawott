@@ -1,34 +1,14 @@
-# AGENTS.md
+# Repository contract
 
 Oshawott is a browser extension built on [Pi Durable](https://github.com/earendil-works/pi), providing an agent inside Chromium and Firefox.
 
-## Repository Map
+## Testing rules
 
-```text
-Oshawott/
-|-- AGENTS.md                Coding-agent guidance
-|-- README.md                Features, setup and user workflows
-|-- src/
-|   |-- contracts/           chord hosts, identities and shared API contracts
-|   |-- engine/              Durable harness, tools, files, credentials and Code Mode
-|   |-- broker/              Tabs, page-script injection and alarms
-|   |-- page/                DOM implementation of page tools
-|   |-- panel/               Chat UI, Markdown, models, tools, files and site access
-|   |-- entries/             Chromium and Firefox runtime entry points
-|   |-- link/                runtime.Port transport for chord
-|   |-- platform/            WebExtension types, build targets and permission patterns
-|   |-- tools/               Single source of page-tool specifications
-|   |-- lib/                 chord import facade and platform-independent helpers
-|   `-- manifest.ts          Browser manifest generation
-|-- static/                  Extension HTML, CSS and icons
-|-- scripts/                 Builds, browser smoke tests, screenshots and icons
-|-- test/                    Unit tests and fixtures
-|-- docs/                    Documents
-`-- dist/                    Generated builds and local test output; ignored by Git
-```
+- **Observable behavior:** Test observable behavior, not internals, constants, or mock structures. For bug fixes, write a failing reproduction first when practical.
+- **When to test:** Add a test only when it catches a plausible future bug that types and existing tests would miss.
+- **Offline fixtures:** Use the existing fake Browser/Port/IndexedDB fixtures, faux providers, demo account, and local smoke servers.
 
-## Git & Safety Rules
+## Git & safety rules
 
-- **Commit on request:** Stage explicit paths; review the staged diff before committing.
-- **Conventional Commits**: `<type>[(scope)]: <summary>`.
+- **Commit on request:** Commit only when the user asks. Stage explicit paths (`git add <path1> <path2>`); review the staged diff before committing. Use Conventional Commits: `<type>[(scope)]: <summary>`.
 - **Forbidden git operations:** Never run `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, or `--no-verify`.

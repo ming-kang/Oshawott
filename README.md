@@ -4,16 +4,13 @@
 
 <h1 align="center">Oshawott</h1>
 
-<p align="center">正在开发中</p>
+水水獭（Oshawott）是基于 [Pi Durable](https://github.com/earendil-works/pi) 的浏览器 Agent 扩展，支持 Chromium 和 Firefox。
 
-水水獭（Oshawott）是基于 [Pi Durable](https://github.com/earendil-works/pi) 的浏览器智能体扩展，支持 Chromium 和 Firefox。
-
-- **可恢复**：对话、工具调用和运行状态存进 Durable，后台被回收或浏览器重启后能接着运行
-- **页面工具**：读取当前标签页的快照（可限定区域、提取表格和列表），检查元素的 HTML、属性、样式与位置，执行点击、输入、选择、按键、悬停、滚动和等待；列出、打开、跳转、切换和关闭标签页；可开启“操作前确认”
-- **文件与 Code Mode**：每个对话有自己的持久文件区；模型在 Worker 里的 QuickJS 中运行 JS 来处理文件
-- **`fetch`**：请求用户授权过的站点，可以把响应存成文件
-- **多模型**：内置 Pi-AI 的浏览器 API Key 服务；Anthropic、OpenAI Codex、GitHub Copilot、Kimi Coding、Meta、xAI 可用账号登录（设备码 / 粘贴授权码）；自定义 OpenAI Responses / Completions、Anthropic Messages 端点，支持模型发现、自定义模型回退、视觉元数据和每会话思考档位
-- **侧边栏**：流式 Markdown，浅色/深色主题，中英文界面
+- **持续运行**：保存对话、工具调用和任务进度，浏览器重启后继续执行
+- **网页操作**：读取页面、提取内容、操作元素和管理标签页，可为修改页面的操作开启确认
+- **文件与 Code Mode**：每个对话都有独立的持久文件区，可以运行 JavaScript 处理文件和发起网络请求
+- **多种模型**：支持 API Key、账号登录和自定义 OpenAI / Anthropic 兼容端点
+- **侧边栏界面**：流式 Markdown、浅色 / 深色主题和中英文界面
 
 | 空状态 | 对话 | 对话（深色） | 设置（深色） | 文件 |
 |---|---|---|---|---|
@@ -21,16 +18,15 @@
 
 ## 快速开始
 
+需要 Node.js 24 或更高版本，构建结果位于 `dist/chromium` 和 `dist/firefox`
+
 ```sh
 npm install
-npm run build                  # 输出到 dist/chromium 和 dist/firefox
-node scripts/build.mjs --dev   # 开发构建：全站权限、source map 和测试钩子
+npm run build
 ```
 
 - **Chromium**：打开 `chrome://extensions`，开启开发者模式，加载 `dist/chromium`
 - **Firefox**：打开 `about:debugging#/runtime/this-firefox`，加载 `dist/firefox/manifest.json`
-
-文档：[架构](docs/architecture.md) · [文件与 Fetch](docs/files.md) · [开发](docs/development.md) · [已知限制](docs/limitations.md)
 
 ## 许可
 
