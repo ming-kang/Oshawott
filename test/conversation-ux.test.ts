@@ -1,39 +1,19 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import {
-	AgentDoc, defineExtension, defineTool, type Extension, type InboxState, LiveDoc, type LiveState, MemoryStorage, type Storage,
+	AgentDoc, defineExtension, defineTool, type Extension, type InboxState, LiveDoc, type LiveState, type Storage,
 } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { Browser } from "../src/contracts/browser.ts";
-import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
 import { chatStatus } from "../src/engine/activity.ts";
-import { startEngine } from "../src/engine/engine.ts";
 import { ChatFiles, type FileBackend, MemoryFileBackend } from "../src/engine/files.ts";
 import { WorkspaceDoc } from "../src/engine/docs.ts";
 import { DEFAULT_INSTRUCTIONS } from "../src/engine/instructions.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair, obj } from "../src/lib/chord.ts";
-
-const context = BACKGROUND_CONTEXT;
-
-async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
-
-function deferred() {
-	const { promise, resolve, reject } = Promise.withResolvers<void>();
-	return { promise, resolve, reject };
-}
+import { obj } from "../src/lib/chord.ts";
+import { deferred, until } from "./support/wait.ts";
+import { connectPanel, context, fakeBrowser, openEngine, persistentStorage, serveBrowser, useModel } from "./support/world.ts";
 
 async function fixture(responses: FauxResponseStep[], options: {
 	storage?: Storage;
@@ -48,59 +28,31 @@ async function fixture(responses: FauxResponseStep[], options: {
 	let resume = () => {};
 	let closed = false;
 	let wakeTimer: ReturnType<typeof setTimeout> | undefined;
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
-			attach: async () => null, hasAccess: async () => false,
-			armWake: async ({ at }) => {
-				if (wakeTimer !== undefined) clearTimeout(wakeTimer);
-				wakeTimer = undefined;
-				if (at !== undefined) wakeTimer = setTimeout(() => { wakeTimer = undefined; resume(); }, Math.max(0, at - Date.now()));
-				return null;
-			},
-		} }));
-	}) }], context);
+	const broker = await serveBrowser(fakeBrowser({
+		armWake: async ({ at }) => {
+			if (wakeTimer !== undefined) clearTimeout(wakeTimer);
+			wakeTimer = undefined;
+			if (at !== undefined) wakeTimer = setTimeout(() => { wakeTimer = undefined; resume(); }, Math.max(0, at - Date.now()));
+			return null;
+		},
+	}), onError);
 	const faux = fauxProvider({ models: [{ id: "faux-1" }] });
 	faux.setResponses(responses);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
 	const files = options.files ?? new MemoryFileBackend();
-	const engine = await startEngine({
-		storage: options.storage ?? new MemoryStorage(), models, credentials: new InMemoryCredentialStore(), files,
-		broker: async () => {
-			const [engineEnd, brokerEnd] = memoryLinkPair();
-			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-			return engineEnd;
-		},
-		tab: async () => { throw new Error("unused"); }, extensions: options.extensions,
-		titleTimeoutMs: options.titleTimeoutMs, onError,
-	}, context);
+	const engine = await openEngine(broker, { ...options, models, files, onError });
 	resume = () => { if (!closed) engine.harness.resume(); };
-	const panel = createHost<Principal>({ onError });
-	const [panelEnd, engineEnd] = memoryLinkPair();
-	engine.acceptPanel(engineEnd, "panel-1");
-	panel.connect(panelEnd, { principal: { kind: "engine" } }, context);
-	await panel.load([], context);
-	const workspace = await panel.get(Workspace, {}, context);
-	assert.equal(workspace.variant, "owner");
-	const model = faux.getModel();
-	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
-	const chats = new Set<{ release(): void }>();
+	const panel = await connectPanel(engine, { onError });
+	const { workspace } = panel;
+	await useModel(workspace, faux);
 	return {
 		faux, engine, workspace, files, errors,
-		async chat(id: number) {
-			const held = await panel.get(Chat, { id }, context);
-			assert.equal(held.variant, "owner");
-			chats.add(held);
-			return held;
-		},
+		chat: (id: number) => panel.chat(id),
 		async close() {
 			closed = true;
 			if (wakeTimer !== undefined) clearTimeout(wakeTimer);
-			for (const chat of chats) chat.release();
-			workspace.release();
-			await panel.close(context);
+			await panel.close();
 			await engine.close();
 			await broker.close(context);
 			assert.deepEqual(errors, []);
@@ -121,14 +73,7 @@ test("list status distinguishes queued waits and ignores intentional aborts", ()
 });
 
 test("conversation preferences and global instructions survive an Engine restart", async () => {
-	const memory = new MemoryStorage();
-	const storage = new Proxy(memory, {
-		get(target, key) {
-			if (key === "close") return async () => {};
-			const value = Reflect.get(target, key, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-	});
+	const storage = persistentStorage();
 	const first = await fixture([], { storage });
 	let id = 0;
 	await first.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
@@ -153,13 +98,8 @@ test("conversation preferences and global instructions survive an Engine restart
 
 test("chat metadata and preferences synchronize across panels", async () => {
 	const f = await fixture([]);
-	const secondPanel = createHost<Principal>({ onError: (error) => f.errors.push(error) });
-	const [panelEnd, engineEnd] = memoryLinkPair();
-	f.engine.acceptPanel(engineEnd, "panel-2");
-	secondPanel.connect(panelEnd, { principal: { kind: "engine" } }, context);
-	await secondPanel.load([], context);
-	const other = await secondPanel.get(Workspace, {}, context);
-	assert.equal(other.variant, "owner");
+	const second = await connectPanel(f.engine, { onError: (error) => f.errors.push(error) });
+	const other = second.workspace;
 	try {
 		const id = await f.workspace.createChat({ title: "Before sync" }, context);
 		await until(() => other.chats.value.some((chat) => chat.id === id) ? true : undefined, "the second panel's chat");
@@ -169,8 +109,7 @@ test("chat metadata and preferences synchronize across panels", async () => {
 		await other.renameChat({ id, title: "After sync" }, context);
 		await until(() => summary(f.workspace, id)?.title === "After sync" ? true : undefined, "the renamed title in panel one");
 	} finally {
-		other.release();
-		await secondPanel.close(context);
+		await second.close();
 		await f.close();
 	}
 });
@@ -401,14 +340,7 @@ test("clearing the title of an unsent chat still shows the first message and nev
 });
 
 test("a disabled retry policy applies to runs recovered by a restarted Engine", async () => {
-	const memory = new MemoryStorage();
-	const storage = new Proxy(memory, {
-		get(target, key) {
-			if (key === "close") return async () => {};
-			const value = Reflect.get(target, key, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-	});
+	const storage = persistentStorage();
 	const started = deferred();
 	const first = await fixture([async (_request, options) => {
 		started.resolve();

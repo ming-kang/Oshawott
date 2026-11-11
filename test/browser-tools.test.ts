@@ -1,27 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { MemoryStorage } from "@earendil-works/pi-durable";
-import { Browser, NO_ACCESS_CODE, type Tab } from "../src/contracts/browser.ts";
-import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal, TabHost } from "../src/contracts/hosts.ts";
-import { Page } from "../src/contracts/page.ts";
+import { NO_ACCESS_CODE, type Tab } from "../src/contracts/browser.ts";
 import { Approvals, DECLINED } from "../src/engine/approvals.ts";
-import { startEngine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair } from "../src/lib/chord.ts";
-
-const context = BACKGROUND_CONTEXT;
-
-async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
+import { until } from "./support/wait.ts";
+import { connectPanel, context, fakeBrowser, linkTo, openEngine, serveBrowser, servePage, useModel } from "./support/world.ts";
 
 type ToolResult = { role: "toolResult"; toolName: string; isError: boolean; details?: unknown; content: { type: string; text?: string }[] };
 
@@ -29,62 +12,35 @@ type ToolResult = { role: "toolResult"; toolName: string; isError: boolean; deta
 async function fixture(tabs: Tab[]) {
 	const opened: string[] = [];
 	const clicks: number[] = [];
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			listTabs: async () => tabs,
-			activeTab: async () => tabs[0] ?? null,
-			getTab: async ({ tabId }) => tabs.find((tab) => tab.tabId === tabId) ?? null,
-			openTab: async ({ url }) => {
-				opened.push(url);
-				return { tabId: 50, windowId: 1, url, title: "Opened", active: true, access: false };
-			},
-			navigateTab: async (): Promise<never> => { throw new Error("unused"); },
-			activateTab: async (): Promise<never> => { throw new Error("unused"); },
-			closeTab: async () => null,
-			attach: async () => null,
-			hasAccess: async ({ url }) => tabs.some((tab) => tab.access && new URL(tab.url).host === new URL(url).host),
-			armWake: async () => null,
-		} }));
-	}) }], context);
-	const pageHost = (tabId: number) => {
-		const page = createHost<Principal>({ address: TabHost({ tabId }), principal: { kind: "tab", tabId }, onError: () => {} });
-		const done = async () => ({ ok: true });
-		void page.load([{ name: "page", facet: defineFacet<Principal>((host) => {
-			host.serve(Page, () => ({ variant: "engine", members: {
-				page_snapshot: async () => ({ url: "https://example.com/", title: "Example", text: "", truncated: false, elements: [] }),
-				page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
-				page_click: async () => {
-					clicks.push(tabId);
-					return { ok: true };
-				},
-				page_type: done, page_select: done, page_press: done, page_hover: done, page_scroll: done, page_wait: done,
-				describe: async () => ({ role: "button", name: "Buy now" }),
-			} }));
-		}) }], context);
-		return page;
-	};
-	const linkTo = (target: typeof broker) => {
-		const [engineEnd, otherEnd] = memoryLinkPair();
-		target.accept(otherEnd, { principal: { kind: "engine" } }, context);
-		return engineEnd;
-	};
+	const broker = await serveBrowser(fakeBrowser({
+		listTabs: async () => tabs,
+		activeTab: async () => tabs[0] ?? null,
+		getTab: async ({ tabId }) => tabs.find((tab) => tab.tabId === tabId) ?? null,
+		openTab: async ({ url }) => {
+			opened.push(url);
+			return { tabId: 50, windowId: 1, url, title: "Opened", active: true, access: false };
+		},
+		hasAccess: async ({ url }) => tabs.some((tab) => tab.access && new URL(tab.url).host === new URL(url).host),
+	}));
+	const done = async () => ({ ok: true });
+	const page = (tabId: number) => servePage(tabId, {
+		page_snapshot: async () => ({ url: "https://example.com/", title: "Example", text: "", truncated: false, elements: [] }),
+		page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
+		page_click: async () => {
+			clicks.push(tabId);
+			return { ok: true };
+		},
+		page_type: done, page_select: done, page_press: done, page_hover: done, page_scroll: done, page_wait: done,
+		describe: async () => ({ role: "button", name: "Buy now" }),
+	});
 	const faux = fauxProvider({ models: [{ id: "faux-1", name: "Faux" }] });
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
-	const engine = await startEngine({
-		storage: new MemoryStorage(), models, credentials: new InMemoryCredentialStore(), files: new MemoryFileBackend(), onError: () => {},
-		broker: async () => linkTo(broker), tab: async (tabId) => linkTo(pageHost(tabId)),
-	}, context);
-	const panel = createHost<Principal>({ onError: () => {} });
-	const [panelEnd, engineEnd] = memoryLinkPair();
-	engine.acceptPanel(engineEnd, "panel");
-	panel.connect(panelEnd, { principal: { kind: "engine" } }, context);
-	await panel.load([], context);
-	const workspace = await panel.get(Workspace, {}, context);
-	const model = faux.getModel();
-	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
-	const chat = await panel.get(Chat, { id: await workspace.createChat({}, context) }, context);
+	const engine = await openEngine(broker, { models, tab: async (tabId) => linkTo(await page(tabId)) });
+	const panel = await connectPanel(engine);
+	const { workspace } = panel;
+	await useModel(workspace, faux);
+	const chat = await panel.chat(await workspace.createChat({}, context));
 	let request = 0;
 	/** Sends a prompt the model answers with one tool call, and returns that call's result once the run has ended. */
 	const call = async (tool: string, args: Record<string, unknown>, tabId?: number, during?: () => Promise<void>) => {
@@ -103,9 +59,7 @@ async function fixture(tabs: Tab[]) {
 	return {
 		workspace, chat, call, clicks, opened,
 		close: async () => {
-			chat.release();
-			workspace.release();
-			await panel.close(context);
+			await panel.close();
 			await engine.close();
 			await broker.close(context);
 		},

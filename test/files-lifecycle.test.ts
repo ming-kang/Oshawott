@@ -1,56 +1,29 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool, MemoryStorage, type Extension } from "@earendil-works/pi-durable";
+import { defineExtension, defineTool, type Extension } from "@earendil-works/pi-durable";
 import { type ExecutionEnv, getOrThrow } from "@earendil-works/pi-durable/env";
 import { obj } from "@earendil-works/pi-schema";
-import { Browser } from "../src/contracts/browser.ts";
-import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
 import { WorkspaceDoc } from "../src/engine/docs.ts";
-import { startEngine, type Engine } from "../src/engine/engine.ts";
+import type { Engine } from "../src/engine/engine.ts";
 import { ChatFiles, type FileBackend, MemoryFileBackend } from "../src/engine/files.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, type Host, memoryLinkPair, type Reference } from "../src/lib/chord.ts";
+import { connectPanel, context, openEngine, type Panel, persistentStorage, serveBrowser, useModel } from "./support/world.ts";
 
-const context = BACKGROUND_CONTEXT;
-type WorkspaceRef = Extract<Reference<typeof Workspace>, { variant: "owner" }>;
-type ChatRef = Extract<Reference<typeof Chat>, { variant: "owner" }>;
-type Panel = { host: Host<Principal>; workspace: WorkspaceRef; chat(id: number): Promise<ChatRef> };
 type World = { engine(): Engine; panel(): Promise<Panel>; restart(): Promise<void>; faux: ReturnType<typeof fauxProvider> };
 
 async function withWorld(files: FileBackend, use: (world: World) => Promise<void>, extensions: readonly Extension[] = []) {
-	const raw = new MemoryStorage();
-	const storage = new Proxy(raw, { get(target, key) {
-		if (key === "close") return async () => {};
-		const value = Reflect.get(target, key, target);
-		return typeof value === "function" ? value.bind(target) : value;
-	} });
+	const storage = persistentStorage();
 	const faux = fauxProvider({ models: [{ id: "faux-1" }] });
 	const credentials = new InMemoryCredentialStore();
 	const models = createModels({ credentials });
 	models.setProvider(faux.provider);
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
-			attach: async () => null, hasAccess: async () => false, armWake: async () => null,
-		} }));
-	}) }], context);
-	const clients = new Set<Host<Principal>>();
-	const open = () => startEngine({
-		storage, models, credentials, files, extensions, onError: () => {},
-		broker: async () => {
-			const [engineEnd, brokerEnd] = memoryLinkPair();
-			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-			return engineEnd;
-		},
-		tab: async () => { throw new Error("unused"); },
-	}, context);
+	const broker = await serveBrowser();
+	const panels = new Set<Panel>();
+	const open = () => openEngine(broker, { storage, models, credentials, files, extensions });
 	let engine = await open();
 	const close = async () => {
-		for (const client of clients) await client.close(context);
-		clients.clear();
+		for (const panel of panels) await panel.close();
+		panels.clear();
 		await engine.close();
 	};
 	try {
@@ -58,27 +31,15 @@ async function withWorld(files: FileBackend, use: (world: World) => Promise<void
 			engine: () => engine, faux,
 			restart: async () => { await close(); engine = await open(); },
 			panel: async () => {
-				const client = createHost<Principal>({ onError: () => {} });
-				clients.add(client);
-				const [panelEnd, engineEnd] = memoryLinkPair();
-				engine.acceptPanel(engineEnd, crypto.randomUUID());
-				client.connect(panelEnd, { principal: { kind: "engine" } }, context);
-				await client.load([], context);
-				const workspace = await client.get(Workspace, {}, context);
-				if (workspace.variant !== "owner") throw new Error("not a panel");
-				const model = faux.getModel();
-				await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
-				return { host: client, workspace, chat: async (id) => {
-					const chat = await client.get(Chat, { id }, context);
-					if (chat.variant !== "owner") throw new Error("no chat");
-					return chat;
-				} };
+				const panel = await connectPanel(engine);
+				panels.add(panel);
+				await useModel(panel.workspace, faux);
+				return panel;
 			},
 		});
 	} finally {
 		await close();
 		await broker.close(context);
-		await raw.close(context);
 	}
 }
 

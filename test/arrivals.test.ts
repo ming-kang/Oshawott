@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Arrivals } from "../src/engine/arrivals.ts";
 import { BACKGROUND_CONTEXT, type Context } from "../src/lib/chord.ts";
 import { portLink } from "../src/link/port-link.ts";
-import { fakePortPair } from "./fake-port.ts";
+import { fakePortPair } from "./support/fake-port.ts";
 
 const link = () => portLink(fakePortPair()[0]);
 

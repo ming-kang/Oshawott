@@ -1,4 +1,3 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -6,16 +5,12 @@ import { test } from "node:test";
 import {
 	createModels, fauxProvider, InMemoryCredentialStore, type AuthEvent, type MutableModels, type OAuthAuth, type OAuthCredential, type Provider,
 } from "@earendil-works/pi-ai";
-import { MemoryStorage } from "@earendil-works/pi-durable";
-import { Browser } from "../src/contracts/browser.ts";
-import { type LoginView, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
+import type { LoginView } from "../src/contracts/chat.ts";
 import { BROWSER_OAUTH, browserBuiltinProviders } from "../src/engine/builtin-providers.ts";
 import { IndexedDbCredentialStore } from "../src/engine/credentials.ts";
-import { startEngine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
 import { loginFailure, LoginSessions, type OAuthSetups } from "../src/engine/oauth.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair } from "../src/lib/chord.ts";
+import { until } from "./support/wait.ts";
+import { connectPanel, context, openEngine, serveBrowser } from "./support/world.ts";
 // @ts-expect-error The build helper is plain JavaScript without declarations.
 import * as piOAuth from "../scripts/lib/pi-oauth.mjs";
 
@@ -24,20 +19,9 @@ const { BROWSER_FLOWS, loaderSource, staticNodeImports } = piOAuth as {
 	loaderSource: () => string;
 	staticNodeImports: (source: string) => string[];
 };
-const context = BACKGROUND_CONTEXT;
 const SECRETS = /access-\w+|refresh-\w+|pasted-code/;
 const token = (n: number, extra: Record<string, unknown> = {}): OAuthCredential =>
 	({ type: "oauth", access: `access-${n}`, refresh: `refresh-${n}`, expires: Date.now() + 3_600_000, ...extra });
-
-async function until<T>(read: () => T | undefined | false, message = "state did not settle"): Promise<T> {
-	const deadline = Date.now() + 2500;
-	for (;;) {
-		const value = read();
-		if (value) return value;
-		if (Date.now() >= deadline) throw new Error(message);
-		await new Promise((resolve) => setTimeout(resolve, 5));
-	}
-}
 
 function account(id: string, login: OAuthAuth["login"], more: Partial<OAuthAuth> & Pick<Provider, "filterModels"> = {}): Provider {
 	const { filterModels, ...oauth } = more;
@@ -162,33 +146,12 @@ test("a setup answers the method and domain questions; other questions reach the
 });
 
 async function engineWith(models: MutableModels, credentials: InMemoryCredentialStore, oauth: OAuthSetups) {
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
-			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
-			hasAccess: async () => false, armWake: async () => null,
-		} }));
-	}) }], context);
-	const engine = await startEngine({
-		storage: new MemoryStorage(), models, credentials, oauth, files: new MemoryFileBackend(), onError: () => {},
-		broker: async () => {
-			const [engineEnd, brokerEnd] = memoryLinkPair();
-			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-			return engineEnd;
-		},
-		tab: async () => { throw new Error("unused"); },
-	}, context);
+	const broker = await serveBrowser();
+	const engine = await openEngine(broker, { models, credentials, oauth });
 	const open = async () => {
-		const panel = createHost<Principal>({ onError: () => {} });
-		const [panelEnd, engineEnd] = memoryLinkPair();
-		engine.acceptPanel(engineEnd, crypto.randomUUID());
-		panel.connect(panelEnd, { principal: { kind: "engine" } }, context);
-		await panel.load([], context);
-		const workspace = await panel.get(Workspace, {}, context);
-		assert.equal(workspace.variant, "owner");
-		await until(() => workspace.providers.value.length > 0);
-		return { workspace, close: async () => { workspace.release(); await panel.close(context); } };
+		const panel = await connectPanel(engine);
+		await until(() => panel.workspace.providers.value.length > 0, "the provider list");
+		return { workspace: panel.workspace, close: () => panel.close() };
 	};
 	return { engine, open, close: async () => { await engine.close(); await broker.close(context); } };
 }

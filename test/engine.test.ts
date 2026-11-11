@@ -1,105 +1,43 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { MemoryStorage } from "@earendil-works/pi-durable";
-import { Browser } from "../src/contracts/browser.ts";
-import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal, TabHost } from "../src/contracts/hosts.ts";
+import { Chat } from "../src/contracts/chat.ts";
 import { Page } from "../src/contracts/page.ts";
-import { startEngine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../src/lib/chord.ts";
-import { portLink } from "../src/link/port-link.ts";
-import { fakePortPair } from "./fake-port.ts";
-
-const context = BACKGROUND_CONTEXT;
-
-async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
+import { until } from "./support/wait.ts";
+import { connectPanel, context, fakeBrowser, linkTo, openEngine, portPair, serveBrowser, servePage, useModel } from "./support/world.ts";
 
 test("a panel's prompt runs a page tool on its tab and the answer reaches the panel", async () => {
 	const errors: unknown[] = [];
 	const onError = (error: unknown) => errors.push(error);
 	const wakes: { active: boolean; at?: number }[] = [];
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
-	await broker.load(
-		[
-			{
-				name: "broker",
-				facet: defineFacet<Principal>((host) => {
-					host.serve(Browser, (_params, principal) => {
-						assert.equal(principal.kind, "engine");
-						const tab = { tabId: 7, windowId: 1, url: "https://example.com/", title: "Example", active: true, access: true };
-						return {
-							variant: "engine",
-							members: {
-								...unusedTabActions, getTab: async () => tab, listTabs: async () => [tab],
-								activeTab: async () => tab,
-								openTab: async () => tab,
-								attach: async () => null,
-								hasAccess: async () => false,
-								armWake: async (wake) => {
-									wakes.push(wake);
-									return null;
-								},
-							},
-						};
-					});
-				}),
-			},
-		],
-		context,
-	);
+	const tab = { tabId: 7, windowId: 1, url: "https://example.com/", title: "Example", active: true, access: true };
+	const broker = await serveBrowser(fakeBrowser({
+		getTab: async () => tab, listTabs: async () => [tab], activeTab: async () => tab, openTab: async () => tab,
+		armWake: async (wake) => {
+			wakes.push(wake);
+			return null;
+		},
+	}), onError);
 
 	const snapshots: number[] = [];
-	const page = createHost<Principal>({ address: TabHost({ tabId: 7 }), principal: { kind: "tab", tabId: 7 }, onError });
-	await page.load(
-		[
-			{
-				name: "page",
-				facet: defineFacet<Principal>((host) => {
-					host.serve(Page, () => ({
-						variant: "engine",
-						members: {
-							page_snapshot: async () => {
-								snapshots.push(Date.now());
-								return {
-									url: "https://example.com/",
-									title: "Example Domain",
-									text: "This domain is for use in examples.",
-									truncated: false,
-									elements: [{ ref: "e1", role: "link", name: "More information" }],
-								};
-							},
-							page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
-							page_click: async () => ({ ok: true }),
-							page_type: async () => ({ ok: true }),
-							page_scroll: async () => ({ ok: true }),
-							page_select: async () => ({ ok: true }), page_press: async () => ({ ok: true }), page_hover: async () => ({ ok: true }),
-							page_wait: async () => ({ ok: true }), describe: async () => ({ role: "link", name: "More information" }),
-						},
-					}));
-				}),
-			},
-		],
-		context,
-	);
+	const done = async () => ({ ok: true });
+	const page = await servePage(7, {
+		page_snapshot: async () => {
+			snapshots.push(Date.now());
+			return {
+				url: "https://example.com/",
+				title: "Example Domain",
+				text: "This domain is for use in examples.",
+				truncated: false,
+				elements: [{ ref: "e1", role: "link", name: "More information" }],
+			};
+		},
+		page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
+		page_click: done, page_type: done, page_scroll: done, page_select: done, page_press: done, page_hover: done, page_wait: done,
+		describe: async () => ({ role: "link", name: "More information" }),
+	}, onError);
 
 	const tabResolves: number[] = [];
-	const linkTo = (target: typeof broker) => {
-		const [engineEnd, otherEnd] = fakePortPair();
-		target.accept(portLink(otherEnd), { principal: { kind: "engine" } }, context);
-		return portLink(engineEnd);
-	};
-
 	const faux = fauxProvider({ models: [{ id: "faux-1", name: "Faux" }] });
 	faux.setResponses([
 		fauxAssistantMessage(fauxToolCall("page_snapshot", {}), { stopReason: "toolUse" }),
@@ -108,33 +46,20 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
 
-	const engine = await startEngine(
-		{
-			storage: new MemoryStorage(),
-			models,
-			credentials: new InMemoryCredentialStore(),
-			files: new MemoryFileBackend(),
-			broker: async () => linkTo(broker),
-			tab: async (tabId) => {
-				tabResolves.push(tabId);
-				return linkTo(page);
-			},
-			now: () => 1_700_000_000_000,
-			onError,
+	const engine = await openEngine(broker, {
+		models,
+		pair: portPair,
+		tab: async (tabId) => {
+			tabResolves.push(tabId);
+			return linkTo(page, portPair);
 		},
-		context,
-	);
+		now: () => 1_700_000_000_000,
+		onError,
+	});
+	const { host: panel, workspace } = await connectPanel(engine, { pair: portPair, onError });
 
-	const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
-	engine.acceptPanel(portLink(engineEnd), "panel-1");
-	const panel = createHost<Principal>({ onError });
-	panel.connect(portLink(panelEnd), { principal: { kind: "engine" } }, context);
-	await panel.load([], context);
-
-	const workspace = await panel.get(Workspace, {}, context);
-	assert.equal(workspace.variant, "owner");
+	await useModel(workspace, faux);
 	const model = faux.getModel();
-	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 	const id = await workspace.createChat({ title: "First" }, context);
 	await until(() => (workspace.chats.value.length === 1 ? true : undefined), "the chat in the workspace");
 	assert.equal(workspace.chats.value[0]?.title, "First");

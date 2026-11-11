@@ -1,23 +1,17 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { MemoryStorage, ToolResultEntry } from "@earendil-works/pi-durable";
+import { ToolResultEntry } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { InlineCodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codemode";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
-import { Browser } from "../src/contracts/browser.ts";
-import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
-import { startEngine } from "../src/engine/engine.ts";
 import { ChatFiles, type FileTx, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
 import { NO_ACCESS } from "../src/contracts/browser.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, withAbortSignal } from "../src/lib/chord.ts";
-import { portLink } from "../src/link/port-link.ts";
-import { fakePortPair } from "./fake-port.ts";
+import { withAbortSignal } from "../src/lib/chord.ts";
+import { until } from "./support/wait.ts";
+import { connectPanel, context, fakeBrowser, openEngine, portPair, serveBrowser, useModel } from "./support/world.ts";
 
-const context = BACKGROUND_CONTEXT;
 const decoder = new TextDecoder();
 
 const UNSUPPORTED = /^watch|exec|git ignores|symbolic/;
@@ -119,30 +113,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 	const errors: unknown[] = [];
 	const onError = (error: unknown) => errors.push(error);
 
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
-	await broker.load(
-		[
-			{
-				name: "broker",
-				facet: defineFacet<Principal>((host) => {
-					host.serve(Browser, () => ({
-						variant: "engine",
-						members: {
-							...unusedTabActions, listTabs: async () => [],
-							activeTab: async () => null,
-							openTab: async () => {
-								throw new Error("unused");
-							},
-							attach: async () => null,
-							hasAccess: async ({ url }) => new URL(url).hostname === "data.example",
-							armWake: async () => null,
-						},
-					}));
-				}),
-			},
-		],
-		context,
-	);
+	const broker = await serveBrowser(fakeBrowser({ hasAccess: async ({ url }) => new URL(url).hostname === "data.example" }), onError);
 
 	const requests: { url: string; init: RequestInit | undefined }[] = [];
 	const network: typeof fetch = async (input, init) => {
@@ -176,42 +147,19 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 	models.setProvider(faux.provider);
 
 	const backend = new MemoryFileBackend();
-	const engine = await startEngine(
-		{
-			storage: new MemoryStorage(),
-			models,
-			credentials: new InMemoryCredentialStore(),
-			files: backend,
-			fetch: network,
-			extensions: [createCodemodeExtension({ sandbox: new InlineCodemodeSandbox({ wasm: loadQuickJSWasm() }), models: false })],
-			broker: async () => {
-				const [engineEnd, brokerEnd] = fakePortPair();
-				broker.accept(portLink(brokerEnd), { principal: { kind: "engine" } }, context);
-				return portLink(engineEnd);
-			},
-			tab: async () => {
-				throw new Error("no tabs here");
-			},
-			onError,
-		},
-		context,
-	);
-	const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
-	engine.acceptPanel(portLink(engineEnd), "panel-1");
-	const panel = createHost<Principal>({ onError });
-	panel.connect(portLink(panelEnd), { principal: { kind: "engine" } }, context);
-	await panel.load([], context);
+	const engine = await openEngine(broker, {
+		models, files: backend, fetch: network, pair: portPair, onError,
+		extensions: [createCodemodeExtension({ sandbox: new InlineCodemodeSandbox({ wasm: loadQuickJSWasm() }), models: false })],
+	});
+	const panel = await connectPanel(engine, { pair: portPair, onError });
 
 	try {
-		const workspace = await panel.get(Workspace, {}, context);
-		assert.equal(workspace.variant, "owner");
-		const model = faux.getModel();
-		await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
+		const { workspace } = panel;
+		await useModel(workspace, faux);
 		const id = await workspace.createChat({}, context);
 		const large = JSON.stringify({ padding: "x".repeat(64 * 1024), ending: "complete" });
 		getOrThrow(await new ChatFiles(backend, id).writeFile("large.json", large, context));
-		const chat = await panel.get(Chat, { id }, context);
-		assert.equal(chat.variant, "owner");
+		const chat = await panel.chat(id);
 		await chat.send({ text: "Save the items.", requestId: "r1" }, context);
 
 		type Result = { kind: string; model?: { toolName?: string; isError?: boolean; details?: unknown; content?: { type: string; text?: string }[] }[] };
@@ -256,7 +204,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		assert.deepEqual(getOrThrow(await new ChatFiles(backend, id).workspaceFiles(context)), []);
 
 	} finally {
-		await panel.close(context);
+		await panel.close();
 		await engine.close();
 		await broker.close(context);
 	}
@@ -265,13 +213,3 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		[],
 	);
 });
-
-async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}

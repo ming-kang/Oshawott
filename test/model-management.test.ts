@@ -1,72 +1,30 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from "@earendil-works/pi-ai";
 import { AgentDoc, MemoryStorage } from "@earendil-works/pi-durable";
 import { ProvidersDoc } from "../src/engine/docs.ts";
-import { Browser } from "../src/contracts/browser.ts";
-import { Chat, Workspace, type ProviderProfile } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
-import { startEngine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
+import type { ProviderProfile } from "../src/contracts/chat.ts";
 import { DEFAULT_INSTRUCTIONS } from "../src/engine/instructions.ts";
 import { ProviderManager } from "../src/engine/providers.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair } from "../src/lib/chord.ts";
-
-const context = BACKGROUND_CONTEXT;
-async function until<T>(read: () => T | undefined, message = "state did not refresh"): Promise<T> {
-	const deadline = Date.now() + 2500;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() >= deadline) throw new Error(message);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
+import { until } from "./support/wait.ts";
+import { connectPanel, context, openEngine, persistentStorage, serveBrowser } from "./support/world.ts";
 
 async function fixture(fetcher?: typeof fetch, modelsStore = new InMemoryModelsStore()) {
 	const credentials = new InMemoryCredentialStore();
 	const models = createModels({ credentials, modelsStore });
 	const faux = fauxProvider({ models: [{ id: "faux-a", reasoning: true }, { id: "faux-b" }] });
 	models.setProvider(faux.provider);
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
-			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
-			hasAccess: async () => false, armWake: async () => null,
-		} }));
-	}) }], context);
+	const broker = await serveBrowser();
 	const storage = new MemoryStorage();
-	const engine = await startEngine({
-		storage, models, credentials, modelsStore, files: new MemoryFileBackend(), fetch: fetcher, onError: () => {},
-		broker: async () => {
-			const [engineEnd, brokerEnd] = memoryLinkPair();
-			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-			return engineEnd;
-		},
-		tab: async () => { throw new Error("unused"); },
-	}, context);
-	const panel = createHost<Principal>({ onError: () => {} });
-	const [panelEnd, engineEnd] = memoryLinkPair();
-	engine.acceptPanel(engineEnd, crypto.randomUUID());
-	panel.connect(panelEnd, { principal: { kind: "engine" } }, context);
-	await panel.load([], context);
-	const holding = panel.get(Workspace, {}, context);
-	const workspace = await holding;
-	assert.equal(workspace.variant, "owner");
-	await until(() => workspace.providers.value.length ? true : undefined);
+	const engine = await openEngine(broker, { storage, models, credentials, modelsStore, fetch: fetcher });
+	const panel = await connectPanel(engine);
+	const { workspace } = panel;
+	await until(() => workspace.providers.value.length > 0, "the provider list");
 	return {
 		credentials, modelsStore, models, faux, engine, storage, workspace,
-		chat: async (id: number) => {
-			const held = await panel.get(Chat, { id }, context);
-			assert.equal(held.variant, "owner");
-			return held;
-		},
+		chat: (id: number) => panel.chat(id),
 		close: async () => {
-			workspace.release();
-			await holding.catch(() => {});
-			await panel.close(context);
+			await panel.close();
 			await engine.close();
 			await broker.close(context);
 		},
@@ -263,31 +221,9 @@ test("provider profiles and discovered catalogs restore before a new Engine resu
 		input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, reasoning: false,
 		contextWindow: 64_000, maxTokens: 8_192,
 	}] });
-	const memory = new MemoryStorage();
-	const storage = new Proxy(memory, {
-		get(target, key) {
-			if (key === "close") return async () => {};
-			const value = Reflect.get(target, key, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-	});
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
-			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
-			hasAccess: async () => false, armWake: async () => null,
-		} }));
-	}) }], context);
-	const boot = async (models: ReturnType<typeof createModels>) => startEngine({
-		storage, models, credentials, modelsStore, files: new MemoryFileBackend(), onError: () => {},
-		broker: async () => {
-			const [engineEnd, brokerEnd] = memoryLinkPair();
-			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-			return engineEnd;
-		},
-		tab: async () => { throw new Error("unused"); },
-	}, context);
+	const storage = persistentStorage();
+	const broker = await serveBrowser();
+	const boot = (models: ReturnType<typeof createModels>) => openEngine(broker, { storage, models, credentials, modelsStore });
 	const firstModels = createModels({ credentials, modelsStore });
 	const first = await boot(firstModels);
 	await first.harness.commit(async (tx) => {

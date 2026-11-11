@@ -1,23 +1,11 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { MemoryStorage } from "@earendil-works/pi-durable";
-import { Browser } from "../src/contracts/browser.ts";
 import { Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
-import { startEngine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair } from "../src/lib/chord.ts";
-
-const context = BACKGROUND_CONTEXT;
-async function until(read: () => boolean) {
-	const deadline = Date.now() + 2000;
-	while (!read()) {
-		if (Date.now() >= deadline) throw new Error("provider state did not refresh");
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
+import type { Principal } from "../src/contracts/hosts.ts";
+import { createHost, memoryLinkPair } from "../src/lib/chord.ts";
+import { until } from "./support/wait.ts";
+import { context, openEngine, serveBrowser } from "./support/world.ts";
 
 test("provider auth checks run concurrently and key changes refresh the shared summary schema", async () => {
 	const credentials = new InMemoryCredentialStore();
@@ -34,23 +22,9 @@ test("provider auth checks run concurrently and key changes refresh the shared s
 		if (id === "broken") throw new Error("auth failed");
 		return id === "ready" || await credentials.read(id) ? { type: "api_key" } : undefined;
 	};
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
-			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
-			hasAccess: async () => false, armWake: async () => null,
-		} }));
-	}) }], context);
-	const engine = await startEngine({
-		storage: new MemoryStorage(), models, credentials, files: new MemoryFileBackend(), onError: () => {},
-		broker: async () => {
-			const [engineEnd, brokerEnd] = memoryLinkPair();
-			broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-			return engineEnd;
-		},
-		tab: async () => { throw new Error("unused"); },
-	}, context);
+	const broker = await serveBrowser();
+	const engine = await openEngine(broker, { models, credentials });
+	// Not `connectPanel`: the Workspace must be requested before the auth checks it waits for can finish.
 	const panel = createHost<Principal>({ onError: () => {} });
 	const [panelEnd, engineEnd] = memoryLinkPair();
 	engine.acceptPanel(engineEnd, "provider-test");

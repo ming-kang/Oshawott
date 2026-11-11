@@ -1,35 +1,23 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import type { ToolExecutionApi, ToolExecutionResult } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { Browser, NO_ACCESS } from "../src/contracts/browser.ts";
+import { NO_ACCESS } from "../src/contracts/browser.ts";
 import { BrokerHost, EngineHost, type Principal } from "../src/contracts/hosts.ts";
 import { ChatFiles, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
 import { filesExtension, MAX_READ_CHARS, redirectGuesses } from "../src/engine/files-tools.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair, type Context } from "../src/lib/chord.ts";
+import { createHost, type Context } from "../src/lib/chord.ts";
 import { formatBytes } from "../src/lib/bytes.ts";
 import { sitePattern } from "../src/platform/patterns.ts";
+import { context, fakeBrowser, linkTo, serveBrowser } from "./support/world.ts";
 
-const context = BACKGROUND_CONTEXT;
 type FetchCall = (args: Record<string, unknown>, ctx?: Context) => Promise<ToolExecutionResult>;
 
 async function withFetch(network: typeof fetch, use: (call: FetchCall, files: ChatFiles) => Promise<void>, allowed = (url: string) => new URL(url).hostname === "data.example") {
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
-	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
-		host.serve(Browser, () => ({ variant: "engine", members: {
-			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
-			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
-			hasAccess: async ({ url }) => allowed(url), armWake: async () => null,
-		} }));
-	}) }], context);
+	const broker = await serveBrowser(fakeBrowser({ hasAccess: async ({ url }) => allowed(url) }));
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError: () => {} });
-	host.route(BrokerHost, { authorize: (principal) => principal.kind === "engine", resolve: async () => {
-		const [engineEnd, brokerEnd] = memoryLinkPair();
-		broker.accept(brokerEnd, { principal: { kind: "engine" } }, context);
-		return { link: engineEnd, principal: { kind: "broker" } };
-	} }, context);
+	host.route(BrokerHost, { authorize: (principal) => principal.kind === "engine", resolve: async () => ({ link: linkTo(broker), principal: { kind: "broker" } }) }, context);
 	await host.load([], context);
 	const files = new ChatFiles(new MemoryFileBackend(), 1);
 	const tool = filesExtension({ host, fetch: network }).tools!.find((tool) => tool.name === "fetch")!;

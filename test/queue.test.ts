@@ -1,39 +1,15 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type Message, type UserMessage } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool, type InboxItem, type InboxState, MemoryStorage, type Storage, type SubmissionId } from "@earendil-works/pi-durable";
-import { Browser } from "../src/contracts/browser.ts";
+import { defineExtension, defineTool, type InboxItem, type InboxState, type Storage, type SubmissionId } from "@earendil-works/pi-durable";
 import { USER_ENTRY, userInput } from "../src/lib/attachments.ts";
 import { fromBase64, toBase64 } from "../src/lib/base64.ts";
-import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
 import { completeAttachmentDeletes } from "../src/engine/attachments.ts";
 import { AttachmentDeletesDoc } from "../src/engine/docs.ts";
-import { startEngine } from "../src/engine/engine.ts";
 import { type FileBackend, type FileTx, MemoryFileBackend } from "../src/engine/files.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet, obj, type Reference } from "../src/lib/chord.ts";
-import { portLink } from "../src/link/port-link.ts";
-import { fakePortPair } from "./fake-port.ts";
-
-const context = BACKGROUND_CONTEXT;
-type ChatRef = Extract<Reference<typeof Chat>, { variant: "owner" }>;
-
-function deferred() {
-	let resolve!: () => void;
-	const promise = new Promise<void>((done) => { resolve = done; });
-	return { promise, resolve };
-}
-
-async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
+import { obj } from "../src/lib/chord.ts";
+import { deferred, until } from "./support/wait.ts";
+import { type ChatRef, connectPanel, context, fakeBrowser, openEngine, persistentStorage, portPair, serveBrowser, useModel } from "./support/world.ts";
 
 function userTexts(messages: readonly Message[]): string[] {
 	return messages.filter((message) => message.role === "user").map((message) =>
@@ -75,63 +51,30 @@ async function fixture(responses: FauxResponseStep[], options: { storage?: Stora
 		// Injected failures are reported through `onError` by design; anything else fails the test.
 		if (!/closed|released|aborted|injected/i.test(JSON.stringify(error) + String(error))) throw error;
 	};
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
-	await broker.load([{
-		name: "broker",
-		facet: defineFacet<Principal>((host) => {
-			host.serve(Browser, () => ({
-				variant: "engine",
-				members: {
-					...unusedTabActions, listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
-					attach: async () => null, hasAccess: async () => false, armWake: async () => null,
-				},
-			}));
-		}),
-	}], context);
+	const broker = await serveBrowser(fakeBrowser(), onError);
 	const faux = fauxProvider({ models: [{ id: "faux-1", ...(options.modelInput ? { input: options.modelInput } : {}) }] });
 	faux.setResponses(responses);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
-	const engine = await startEngine({
-		storage: options.storage ?? new MemoryStorage(), models, credentials: new InMemoryCredentialStore(), files: options.files ?? new MemoryFileBackend(),
-		broker: async () => {
-			const [engineEnd, brokerEnd] = fakePortPair();
-			broker.accept(portLink(brokerEnd), { principal: { kind: "engine" } }, context);
-			return portLink(engineEnd);
-		},
-		tab: async () => { throw new Error("unused"); },
+	const engine = await openEngine(broker, {
+		storage: options.storage, models, files: options.files, pair: portPair,
 		extensions: [defineExtension({ name: "queue-test", tools: [hold] })],
 		onError,
-	}, context);
-	const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
-	engine.acceptPanel(portLink(engineEnd), "panel-1");
-	const panel = createHost<Principal>({ onError });
-	panel.connect(portLink(panelEnd), { principal: { kind: "engine" } }, context);
-	await panel.load([], context);
-	const workspace = await panel.get(Workspace, {}, context);
-	assert.equal(workspace.variant, "owner");
-	const model = faux.getModel();
-	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
+	});
+	const panel = await connectPanel(engine, { pair: portPair, onError });
+	const { workspace } = panel;
+	await useModel(workspace, faux);
 	const id = options.chatId ?? await workspace.createChat({}, context);
-	const chat = await panel.get(Chat, { id }, context);
-	assert.equal(chat.variant, "owner");
+	const chat = await panel.chat(id);
 	return {
 		chat, workspace, engine, id, started, release, faux,
 		async connectChat() {
-			const [otherPanelEnd, otherEngineEnd] = fakePortPair("oshawott:panel");
-			engine.acceptPanel(portLink(otherEngineEnd), "panel-2");
-			const otherPanel = createHost<Principal>({ onError });
-			otherPanel.connect(portLink(otherPanelEnd), { principal: { kind: "engine" } }, context);
-			await otherPanel.load([], context);
-			const otherChat = await otherPanel.get(Chat, { id }, context);
-			assert.equal(otherChat.variant, "owner");
-			return { chat: otherChat, close: async () => { otherChat.release(); await otherPanel.close(context); } };
+			const other = await connectPanel(engine, { pair: portPair, onError });
+			return { chat: await other.chat(id), close: () => other.close() };
 		},
 		async close() {
 			release.resolve();
-			chat.release();
-			workspace.release();
-			await panel.close(context);
+			await panel.close();
 			await engine.close();
 			await broker.close(context);
 		},
@@ -268,14 +211,7 @@ test("two panels share one canonical inbox and stale edits cannot revive a cance
 });
 
 test("queued submissions and their IDs survive an Engine restart", async () => {
-	const memory = new MemoryStorage();
-	const storage = new Proxy(memory, {
-		get(target, key) {
-			if (key === "close") return async () => {};
-			const value = Reflect.get(target, key, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-	});
+	const storage = persistentStorage();
 	const hanging = async (_request: unknown, options?: { signal?: AbortSignal }) => {
 		await new Promise((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
 		return fauxAssistantMessage("unused");

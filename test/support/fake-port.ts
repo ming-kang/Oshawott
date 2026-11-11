@@ -1,7 +1,7 @@
 // Two connected `runtime.Port` ends with the browsers' semantics that matter to `portLink`: messages are delivered
 // asynchronously and in order, serialized as JSON (Chromium), `disconnect()` fires `onDisconnect` on the other end
 // only, and posting on a disconnected port throws.
-import type { RuntimePort, WebExtEvent } from "../src/platform/webext.ts";
+import type { RuntimePort, WebExtEvent } from "../../src/platform/webext.ts";
 
 class FakeEvent<L extends (...args: never[]) => unknown> implements WebExtEvent<L> {
 	readonly listeners = new Set<L>();

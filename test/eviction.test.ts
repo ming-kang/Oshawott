@@ -1,55 +1,16 @@
-import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { MemoryStorage } from "@earendil-works/pi-durable";
-import { Browser } from "../src/contracts/browser.ts";
 import { Chat, Workspace } from "../src/contracts/chat.ts";
-import { BrokerHost, type Principal } from "../src/contracts/hosts.ts";
-import { type Engine, startEngine } from "../src/engine/engine.ts";
+import type { Principal } from "../src/contracts/hosts.ts";
+import type { Engine } from "../src/engine/engine.ts";
 import { MemoryFileBackend } from "../src/engine/files.ts";
-import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../src/lib/chord.ts";
-import { portLink } from "../src/link/port-link.ts";
-import { fakePortPair } from "./fake-port.ts";
-
-const context = BACKGROUND_CONTEXT;
-
-async function until<T>(read: () => T | undefined, what: string, ms = 5_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value !== undefined) return value;
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
+import { createHost } from "../src/lib/chord.ts";
+import { until } from "./support/wait.ts";
+import { context, ignore, openEngine, persistentStorage, portPair, serveBrowser } from "./support/world.ts";
 
 test("a run cut off by the Engine's eviction finishes on the next Engine, and the panel sees it", async () => {
-	const onError = () => {};
-	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
-	await broker.load(
-		[
-			{
-				name: "broker",
-				facet: defineFacet<Principal>((host) => {
-					host.serve(Browser, () => ({
-						variant: "engine",
-						members: {
-							...unusedTabActions, listTabs: async () => [],
-							activeTab: async () => null,
-							openTab: async () => {
-								throw new Error("unused");
-							},
-							attach: async () => null,
-							hasAccess: async () => false,
-							armWake: async () => null,
-						},
-					}));
-				}),
-			},
-		],
-		context,
-	);
+	const broker = await serveBrowser();
 
 	let firstRequestStarted = false;
 	const faux = fauxProvider({ models: [{ id: "faux-1" }] });
@@ -66,45 +27,17 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 	]);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
-	// IndexedDB outlives the document that had it open: the next Engine opens the same data. Here, a memory storage
-	// whose `close` keeps it.
-	const memory = new MemoryStorage();
-	const storage = new Proxy(memory, {
-		get(target, key) {
-			if (key === "close") return async () => {};
-			const value = Reflect.get(target, key, target);
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-	});
-
+	const storage = persistentStorage();
 	const files = new MemoryFileBackend();
-	const open = () =>
-		startEngine(
-			{
-				storage,
-				models,
-				credentials: new InMemoryCredentialStore(),
-				files,
-				broker: async () => {
-					const [engineEnd, brokerEnd] = fakePortPair();
-					broker.accept(portLink(brokerEnd), { principal: { kind: "engine" } }, context);
-					return portLink(engineEnd);
-				},
-				tab: async () => {
-					throw new Error("no tabs here");
-				},
-				onError,
-			},
-			context,
-		);
+	const open = () => openEngine(broker, { storage, models, files, pair: portPair });
 	const attachPanel = (engine: Engine) => {
-		const [panelEnd, engineEnd] = fakePortPair("oshawott:panel");
-		engine.acceptPanel(portLink(engineEnd), "panel-1");
-		return portLink(panelEnd);
+		const [panelEnd, engineEnd] = portPair();
+		engine.acceptPanel(engineEnd, "panel-1");
+		return panelEnd;
 	};
 
 	let engine = await open();
-	const panel = createHost<Principal>({ onError });
+	const panel = createHost<Principal>({ onError: ignore });
 	const first = attachPanel(engine);
 	panel.connect(first, { principal: { kind: "engine" } }, context);
 	await panel.load([], context);
