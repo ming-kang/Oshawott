@@ -1,16 +1,16 @@
-import { DEFAULT_BUSY_MODE, type BusyMode, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
+import { DEFAULT_BUSY_MODE, type BusyMode, type Preference, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";
 import { saveLanguage, savedLanguagePreference, t, type LanguagePreference } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
-import { h, icon, logo, toast } from "./ui.ts";
+import { segmented } from "./segmented.ts";
+import { h, icon, logo, toast, toastError } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"providers" | "busyMode" | "setBusyMode"
-	| "autoTitle" | "autoCompaction" | "autoRetry" | "setAutoTitle" | "setAutoCompaction" | "setAutoRetry"
+	| Preference | "setPreference"
 	| "instructions" | "setInstructions" | "resetInstructions"
 >;
-type Preference = "autoTitle" | "autoCompaction" | "autoRetry";
 type Theme = "system" | "light" | "dark";
 const context = BACKGROUND_CONTEXT;
 const THEME_KEY = "oshawott:theme";
@@ -29,9 +29,15 @@ export class SettingsSheet implements OverlayView {
 	readonly element: HTMLElement;
 	readonly #source: () => Source | undefined;
 	readonly #card = h("div", { class: "card providers", id: "providers" });
-	readonly #delivery = h("div", { class: "segmented", id: "settings-delivery", role: "radiogroup", "aria-label": t("settings.messaging") });
+	readonly #delivery = segmented<BusyMode>({
+		id: "settings-delivery", label: t("settings.messaging"), selected: DEFAULT_BUSY_MODE,
+		options: [{ value: "steer", label: t("queue.steer") }, { value: "followUp", label: t("queue.followUp") }],
+		onChoose: (mode, focus) => void this.#chooseDelivery(mode, focus),
+	});
 	readonly #onEditProvider: (id?: string) => void;
 	readonly #preferences: { key: Preference; input: HTMLInputElement }[] = [];
+	readonly #instructionsPreview = h("span", { class: "fold-preview", id: "settings-instructions-preview" });
+	readonly #instructionsDetails = h("details", { class: "fold", id: "settings-instructions-details" });
 	readonly #instructions = h("textarea", {
 		class: "instructions-input", id: "settings-instructions", rows: 9, spellcheck: "false",
 		"aria-labelledby": "settings-instructions-label", "aria-describedby": "settings-instructions-hint settings-instructions-status",
@@ -55,7 +61,6 @@ export class SettingsSheet implements OverlayView {
 	constructor(source: () => Source | undefined, onClose: () => void, onEditProvider: (id?: string) => void) {
 		this.#source = source;
 		this.#onEditProvider = onEditProvider;
-		this.#buildDelivery();
 		this.#instructions.addEventListener("input", () => {
 			if (this.#instructionsAwaitingSync !== undefined) this.#instructionsBaseline = this.#instructionsAwaitingSync;
 			this.#instructionsAwaitingSync = undefined;
@@ -72,6 +77,17 @@ export class SettingsSheet implements OverlayView {
 			this.#refreshInstructions();
 			this.#instructions.focus({ preventScroll: true });
 		});
+		this.#instructionsDetails.append(
+			h("summary", null,
+				h("span", { class: "fold-title", id: "settings-instructions-label" }, t("settings.instructions")),
+				this.#instructionsPreview, icon("chevron", 14)),
+			h("div", { class: "fold-body" },
+				this.#instructions,
+				h("div", { class: "provider-section-action" }, this.#instructionsSave, this.#instructionsRestore),
+				this.#instructionsStatus,
+				h("p", { class: "section-hint", id: "settings-instructions-hint" }, h("span", null, t("settings.instructionsHint")))));
+		// A draft or a conflict notice must not be hidden by collapsing the section.
+		this.#instructionsDetails.addEventListener("toggle", () => this.#keepInstructionsOpen());
 		this.element = h(
 			"section", { class: "sheet", id: "settings", role: "dialog", "aria-modal": "true", "aria-label": t("settings.title") },
 			h("div", { class: "panel-head" },
@@ -83,11 +99,9 @@ export class SettingsSheet implements OverlayView {
 						h("button", { class: "btn small", id: "add-provider", type: "button", onclick: () => this.#onEditProvider() }, icon("plus", 14), t("settings.addProvider"))),
 					this.#card,
 					h("p", { class: "section-hint" }, icon("lock", 12), h("span", null, t("settings.providersHint")))),
-				h("section", { class: "section" }, h("h3", { id: "settings-instructions-label" }, t("settings.instructions")),
-					this.#instructions,
-					h("div", { class: "provider-section-action" }, this.#instructionsSave, this.#instructionsRestore),
-					this.#instructionsStatus,
-					h("p", { class: "section-hint", id: "settings-instructions-hint" }, h("span", null, t("settings.instructionsHint")))),
+				h("section", { class: "section" }, h("h3", null, t("settings.safety")),
+					this.#preference("confirmActions", t("settings.confirmActions")),
+					h("p", { class: "section-hint" }, h("span", null, t("settings.confirmActionsHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.conversation")),
 					this.#preference("autoTitle", t("settings.autoTitle")),
 					h("p", { class: "section-hint" }, h("span", null, t("settings.autoTitleHint"))),
@@ -95,11 +109,12 @@ export class SettingsSheet implements OverlayView {
 					h("p", { class: "section-hint" }, h("span", null, t("settings.autoCompactionHint"))),
 					this.#preference("autoRetry", t("settings.autoRetry")),
 					h("p", { class: "section-hint" }, h("span", null, t("settings.autoRetryHint")))),
-				h("section", { class: "section" }, h("h3", null, t("settings.messaging")), this.#delivery,
+				h("section", { class: "section" }, h("h3", null, t("settings.messaging")), this.#delivery.element,
 					h("p", { class: "section-hint" }, h("span", null, t("settings.messagingHint")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.appearance")), this.#themes()),
 				h("section", { class: "section" }, h("h3", null, t("settings.language")), this.#languages(),
 					h("p", { class: "section-hint" }, h("span", null, t("settings.languageHint")))),
+				h("section", { class: "section" }, this.#instructionsDetails),
 				h("section", { class: "section" }, h("h3", null, t("settings.about")),
 					h("div", { class: "card about" }, logo(34), h("div", null, h("strong", null, "Oshawott"), h("span", null, t("settings.version", ext.runtime.getManifest().version))))),
 			),
@@ -137,31 +152,12 @@ export class SettingsSheet implements OverlayView {
 		);
 	}
 
-	#buildDelivery() {
-		const modes: BusyMode[] = ["steer", "followUp"];
-		for (const [index, mode] of modes.entries()) {
-			this.#delivery.append(h("button", {
-				type: "button", role: "radio", "data-value": mode,
-				onclick: () => void this.#chooseDelivery(mode),
-				onkeydown: (event: KeyboardEvent) => {
-					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (index + 1) % modes.length
-						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (index + modes.length - 1) % modes.length
-							: event.key === "Home" ? 0 : event.key === "End" ? modes.length - 1 : -1;
-					if (next < 0) return;
-					event.preventDefault();
-					void this.#chooseDelivery(modes[next]!, true);
-				},
-			}, t(mode === "steer" ? "queue.steer" : "queue.followUp")));
-		}
-		this.#refreshDelivery();
-	}
-
 	async #chooseDelivery(mode: BusyMode, focus = false) {
 		if (this.#deliveryPending) return;
 		const source = this.#source();
 		if (!source) return toast(t("reconnecting"), "error");
 		if (source.busyMode.value === mode) {
-			if (focus) this.#delivery.querySelector<HTMLButtonElement>(`[data-value="${mode}"]`)?.focus({ preventScroll: true });
+			if (focus) this.#delivery.select(mode, true);
 			return;
 		}
 		this.#deliveryPending = true;
@@ -169,25 +165,17 @@ export class SettingsSheet implements OverlayView {
 		try {
 			await source.setBusyMode(mode, context);
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#deliveryPending = false;
 			this.#refreshDelivery();
-			if (focus) {
-				const selected = this.#source()?.busyMode.value ?? mode;
-				this.#delivery.querySelector<HTMLButtonElement>(`[data-value="${selected}"]`)?.focus({ preventScroll: true });
-			}
+			if (focus) this.#delivery.select(this.#source()?.busyMode.value ?? mode, true);
 		}
 	}
 
 	#refreshDelivery() {
-		const selected = this.#source()?.busyMode.value ?? DEFAULT_BUSY_MODE;
-		for (const button of this.#delivery.querySelectorAll<HTMLButtonElement>("button")) {
-			const active = button.dataset.value === selected;
-			button.setAttribute("aria-checked", String(active));
-			button.tabIndex = active ? 0 : -1;
-			button.disabled = this.#deliveryPending;
-		}
+		this.#delivery.select(this.#source()?.busyMode.value ?? DEFAULT_BUSY_MODE);
+		this.#delivery.setDisabled(this.#deliveryPending);
 	}
 
 	#preference(key: Preference, label: string) {
@@ -204,11 +192,9 @@ export class SettingsSheet implements OverlayView {
 		this.#preferencePending = true;
 		this.#refreshPreferences();
 		try {
-			if (key === "autoTitle") await source.setAutoTitle(enabled, context);
-			else if (key === "autoCompaction") await source.setAutoCompaction(enabled, context);
-			else await source.setAutoRetry(enabled, context);
+			await source.setPreference({ key, enabled }, context);
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#preferencePending = false;
 			this.#refreshPreferences();
@@ -218,7 +204,7 @@ export class SettingsSheet implements OverlayView {
 	#refreshPreferences() {
 		const source = this.#source();
 		for (const { key, input } of this.#preferences) {
-			input.checked = source?.[key].value ?? (key !== "autoTitle");
+			input.checked = source?.[key].value ?? (key === "autoCompaction" || key === "autoRetry");
 			input.disabled = this.#preferencePending || !source;
 		}
 	}
@@ -243,7 +229,16 @@ export class SettingsSheet implements OverlayView {
 		const message = t(conflict ? "settings.instructionsChangedElsewhere" : "settings.instructionsWaitingForSync");
 		if (this.#instructionsStatusText.textContent !== message) this.#instructionsStatusText.textContent = message;
 		this.#instructionsStatus.hidden = this.#instructionsPending || !(conflict || waiting);
+		const preview = this.#instructionsDirty ? t("settings.instructionsUnsaved") : (value ?? "").replace(/\s+/g, " ").trim();
+		const clipped = !this.#instructionsDirty && preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
+		if (this.#instructionsPreview.textContent !== clipped) this.#instructionsPreview.textContent = clipped;
+		this.#instructionsPreview.dataset.dirty = String(this.#instructionsDirty);
+		this.#keepInstructionsOpen();
 		this.#instructions.disabled = this.#instructionsSave.disabled = this.#instructionsRestore.disabled = this.#instructionsLoadLatest.disabled = this.#instructionsPending || !source;
+	}
+
+	#keepInstructionsOpen() {
+		if (this.#instructionsDirty || !this.#instructionsStatus.hidden) this.#instructionsDetails.open = true;
 	}
 
 	/** Save and Restore share one lifecycle; the Engine returns the text it stored, so normalization is never guessed. */
@@ -262,7 +257,7 @@ export class SettingsSheet implements OverlayView {
 				: await source.setInstructions({ instructions }, context);
 			toast(t(instructions === undefined ? "settings.instructionsRestored" : "settings.instructionsSaved"));
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#instructionsPending = false;
 			this.#clearRestoreConfirmation();
@@ -292,71 +287,32 @@ export class SettingsSheet implements OverlayView {
 	}
 
 	#languages() {
-		const languages: { value: LanguagePreference; label: string }[] = [
-			{ value: "system", label: t("settings.theme.system") },
-			{ value: "zh-CN", label: "中文" },
-			{ value: "en", label: "English" },
-		];
-		const preference = savedLanguagePreference();
-		const segmented = h("div", { class: "segmented", id: "settings-language", role: "radiogroup", "aria-label": t("settings.language") });
-		const choose = (language: LanguagePreference, focus = false) => {
-			for (const button of segmented.querySelectorAll<HTMLButtonElement>("button")) {
-				const selected = button.dataset.value === language;
-				button.setAttribute("aria-checked", String(selected));
-				button.tabIndex = selected ? 0 : -1;
-				if (selected && focus) button.focus({ preventScroll: true });
-			}
-			if (language === savedLanguagePreference()) return;
-			saveLanguage(language);
-			location.reload();
-		};
-		for (const [index, language] of languages.entries()) {
-			segmented.append(h("button", {
-				type: "button", role: "radio", "data-value": language.value, "aria-checked": String(preference === language.value),
-				tabindex: preference === language.value ? 0 : -1,
-				onclick: () => choose(language.value),
-				onkeydown: (event: KeyboardEvent) => {
-					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (index + 1) % languages.length
-						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (index + languages.length - 1) % languages.length
-							: event.key === "Home" ? 0 : event.key === "End" ? languages.length - 1 : -1;
-					if (next < 0) return;
-					event.preventDefault();
-					choose(languages[next]!.value, true);
-				},
-			}, language.label));
-		}
-		return segmented;
+		const picker = segmented<LanguagePreference>({
+			id: "settings-language", label: t("settings.language"), selected: savedLanguagePreference(),
+			options: [
+				{ value: "system", label: t("settings.theme.system") },
+				{ value: "zh-CN", label: "中文" },
+				{ value: "en", label: "English" },
+			],
+			onChoose(language, focus) {
+				picker.select(language, focus);
+				if (language === savedLanguagePreference()) return;
+				saveLanguage(language);
+				location.reload();
+			},
+		});
+		return picker.element;
 	}
 
 	#themes() {
-		const themes: Theme[] = ["system", "light", "dark"];
-		const segmented = h("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.appearance") });
-		const choose = (theme: Theme, focus = false) => {
-			applyTheme(theme);
-			for (const button of segmented.querySelectorAll<HTMLButtonElement>("button")) {
-				const selected = button.dataset.value === theme;
-				button.setAttribute("aria-checked", String(selected));
-				button.tabIndex = selected ? 0 : -1;
-				if (selected && focus) button.focus({ preventScroll: true });
-			}
-		};
-		for (const theme of themes) {
-			const button = h("button", {
-				type: "button", role: "radio", "data-value": theme, "aria-checked": String(savedTheme() === theme),
-				tabindex: savedTheme() === theme ? 0 : -1,
-				onclick: () => choose(theme),
-				onkeydown: (event: KeyboardEvent) => {
-					const at = themes.indexOf(theme);
-					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (at + 1) % themes.length
-						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (at + themes.length - 1) % themes.length
-							: event.key === "Home" ? 0 : event.key === "End" ? themes.length - 1 : -1;
-					if (next < 0) return;
-					event.preventDefault();
-					choose(themes[next]!, true);
-				},
-			}, t(`settings.theme.${theme}`));
-			segmented.append(button);
-		}
-		return segmented;
+		const picker = segmented<Theme>({
+			label: t("settings.appearance"), selected: savedTheme(),
+			options: (["system", "light", "dark"] as const).map((value) => ({ value, label: t(`settings.theme.${value}`) })),
+			onChoose(theme, focus) {
+				applyTheme(theme);
+				picker.select(theme, focus);
+			},
+		});
+		return picker.element;
 	}
 }

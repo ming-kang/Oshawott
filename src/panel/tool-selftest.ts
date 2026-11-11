@@ -61,7 +61,7 @@ export async function testToolCards() {
 	inspect.setResult("{}", false, { inspect: { matched: 30, shown: 5 } });
 	const inspectMeta = metaOf(inspect);
 
-	const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array() });
+	const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined, allowed: () => {} });
 	const conversationId = ROOT_CONVERSATION_ID;
 	const entries: EntryRecord[] = [{
 		id: 1 as EntryId, conversationId, kind: "pi.assistant",

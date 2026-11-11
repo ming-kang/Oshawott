@@ -9,7 +9,7 @@ import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
-import { copyText, h, type IconName, icon, mascot } from "./ui.ts";
+import { copyText, h, type IconName, icon, mascot, toastError } from "./ui.ts";
 
 const FAILURE_LABELS = {
 	no_model: "failure.no_model", model_error: "failure.model_error", interrupted: "failure.interrupted", turn_limit: "failure.turn_limit",
@@ -20,6 +20,10 @@ export interface TranscriptActions {
 	suggest(text: string): void;
 	openSettings(): void;
 	chooseModel(): void;
+	/** Tries a failed run again from where it stopped. */
+	retry(): Promise<unknown>;
+	/** The user allowed the site a tool call was refused on. */
+	allowed(site: string): void;
 	readFile(path: string): Promise<Uint8Array>;
 }
 
@@ -147,7 +151,7 @@ export class Transcript {
 					return h("div", { hidden: true });
 				}
 				// The call itself is before the window: a card of its own.
-				const orphan = new ToolCard(message.toolName, {});
+				const orphan = new ToolCard(message.toolName, {}, this.#actions.allowed);
 				orphan.setResult(text, message.isError, message.details, diagnostics);
 				return h("div", { class: "msg assistant" }, h("div", { class: "tools" }, orphan.element));
 			}
@@ -251,7 +255,7 @@ export class Transcript {
 				root.append(markdown(block.text, live && last));
 			} else if (block.type === "toolCall") {
 				tools ??= root.appendChild(h("div", { class: "tools" }));
-				const card = new ToolCard(block.name, block.arguments);
+				const card = new ToolCard(block.name, block.arguments, this.#actions.allowed);
 				if (live) card.setStatus("streaming");
 				else this.#cards.set(block.id, card);
 				tools.append(card.element);
@@ -307,10 +311,19 @@ export class Transcript {
 		const label = FAILURE_LABELS[failure.reason];
 		const node = notice("error", label ? t(label) : t("failure.other", failure.reason), failure.detail);
 		node.dataset.reason = failure.reason;
+		const body = node.querySelector(".notice-body")!;
 		if (failure.reason === "no_model") {
-			node.querySelector(".notice-body")!.append(
-				h("button", { class: "btn small", type: "button", onclick: () => this.#actions.chooseModel() }, t("failure.chooseModel")),
-			);
+			body.append(h("button", { class: "btn small", type: "button", onclick: () => this.#actions.chooseModel() }, t("failure.chooseModel")));
+		} else {
+			const retry = h("button", { class: "btn small", id: "retry", type: "button" }, icon("refresh", 13), t("failure.retry"));
+			retry.addEventListener("click", () => {
+				retry.disabled = true;
+				void this.#actions.retry().catch((error) => {
+					retry.disabled = false;
+					toastError(error);
+				});
+			});
+			body.append(retry);
 		}
 		return node;
 	}

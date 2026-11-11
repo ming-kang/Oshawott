@@ -121,3 +121,62 @@
 	font-size: 11px;
 }
 
+
+/* Actions waiting for the user's yes or no; they sit above the queue because the run cannot go on without them. */
+.approvals {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-width: 760px;
+	margin: 0 auto 8px;
+}
+
+.approval {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line));
+	border-radius: 12px;
+	background: var(--warn-soft);
+	box-shadow: var(--shadow-1);
+	font-size: 13px;
+	animation: rise 0.22s var(--ease);
+}
+
+.approval-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.approval-head strong {
+	flex: none;
+}
+
+.approval-site {
+	overflow: hidden;
+	margin-left: auto;
+	color: var(--text-2);
+	font-size: 12px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.approval-target {
+	display: -webkit-box;
+	overflow: hidden;
+	color: var(--text);
+	overflow-wrap: anywhere;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+}
+
+.approval-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 6px;
+}

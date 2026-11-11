@@ -74,6 +74,7 @@
 }
 
 .chat-item {
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 2px;
@@ -125,14 +126,13 @@
 .chat-meta {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 6px;
+	justify-content: flex-end;
+	gap: 8px;
 	min-height: 14px;
 }
 
 .chat-item time {
 	flex: none;
-	margin-left: auto;
 	color: var(--text-3);
 	font-size: 11px;
 	font-variant-numeric: tabular-nums;
@@ -175,16 +175,30 @@
 	align-items: center;
 }
 
-.chat-item .chat-action {
-	width: 23px;
+/* Hover actions overlay the row's right edge instead of reserving empty space; they stay focusable while hidden. */
+.chat-item > .chat-actions {
+	position: absolute;
+	top: 50%;
+	right: 4px;
+	padding-left: 14px;
+	border-radius: 0 8px 8px 0;
+	background: linear-gradient(to right, transparent, var(--surface-2) 14px);
 	opacity: 0;
-	color: var(--text-3);
+	pointer-events: none;
+	transform: translateY(-50%);
+	transition: opacity 0.12s;
 }
 
-.chat-item:hover .chat-action,
-.chat-item:focus-within .chat-action,
-.chat-item .chat-action[data-confirm] {
+.chat-item:hover > .chat-actions,
+.chat-item:focus-within > .chat-actions,
+.chat-item > .chat-actions:has([data-confirm]) {
 	opacity: 1;
+	pointer-events: auto;
+}
+
+.chat-item .chat-action {
+	width: 23px;
+	color: var(--text-3);
 }
 
 .chat-item .remove:hover,
@@ -238,6 +252,62 @@
 	color: var(--text-3);
 	font-size: 12px;
 	font-weight: 500;
+}
+
+.fold > summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--surface);
+	cursor: pointer;
+	list-style: none;
+	transition: background 0.12s;
+}
+
+.fold > summary::-webkit-details-marker {
+	display: none;
+}
+
+.fold > summary:hover {
+	background: var(--surface-2);
+}
+
+.fold[open] > summary {
+	margin-bottom: 10px;
+}
+
+.fold > summary > .icon {
+	color: var(--text-3);
+	transition: transform 0.15s;
+}
+
+.fold[open] > summary > .icon {
+	transform: rotate(180deg);
+}
+
+.fold-title {
+	flex: none;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.fold-preview {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--text-3);
+	font-size: 12px;
+	text-align: right;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.fold-preview[data-dirty="true"] {
+	color: var(--warn);
 }
 
 .section-hint {
@@ -485,6 +555,50 @@
 
 .provider-actions {
 	flex-wrap: wrap;
+}
+
+.provider-picker {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+
+.provider-list {
+	max-height: 260px;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--bg);
+}
+
+.provider-option .pill {
+	margin-left: auto;
+}
+
+.provider-chosen {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 3px 4px 3px 11px;
+	border: 1px solid var(--line-strong);
+	border-radius: 8px;
+	background: var(--bg);
+	color: var(--text);
+	font-size: 13px;
+}
+
+.provider-chosen-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.provider-field > .section-hint {
+	margin: 0 2px;
 }
 
 .login-card,

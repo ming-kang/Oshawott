@@ -120,6 +120,20 @@
 	background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+/* The tab a running task acts on, when the user is looking at another one. */
+.tab-chip.working {
+	border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+	background: var(--accent-soft);
+	color: var(--accent);
+	cursor: pointer;
+}
+
+.tab-chip.working .spinner {
+	flex: none;
+	width: 11px;
+	height: 11px;
+}
+
 #prompt {
 	display: block;
 	width: 100%;

@@ -12,13 +12,14 @@ export class ThinkingMenu implements OverlayView {
 	readonly element: HTMLElement;
 	readonly #actions: Actions;
 	readonly #levels: readonly ThinkingLevel[];
-	readonly #list = h("div", { class: "menu-list", role: "listbox", "aria-label": t("thinking.title") });
+	readonly #list = h("div", { class: "menu-list", role: "listbox", "aria-labelledby": "thinking-menu-title" });
 	#closed = false;
 
 	constructor(levels: readonly ThinkingLevel[], actions: Actions) {
 		this.#actions = actions;
 		this.#levels = levels;
-		this.element = h("div", { class: "popover thinking-menu", id: "thinking-menu" }, this.#list);
+		this.element = h("div", { class: "popover thinking-menu", id: "thinking-menu" },
+			h("div", { class: "menu-group", id: "thinking-menu-title" }, t("thinking.menuTitle")), this.#list);
 		this.refresh();
 	}
 

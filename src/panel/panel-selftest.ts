@@ -5,7 +5,7 @@ import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { OverlayController, type OverlayView } from "./overlays.ts";
 import { t } from "./i18n.ts";
 import { testAccountLogin } from "./login-selftest.ts";
-import { testModelManagement } from "./model-selftest.ts";
+import { pickBuiltin, testModelManagement } from "./model-selftest.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
 import { Transcript } from "./render.ts";
 import { h } from "./ui.ts";
@@ -13,7 +13,7 @@ import { h } from "./ui.ts";
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"chats" | "createChat" | "deleteChat" | "renameChat" | "busyMode" | "setBusyMode" | "providers" | "defaultModel" | "setDefaultConfiguration"
-	| "autoTitle" | "autoCompaction" | "autoRetry" | "setAutoTitle" | "setAutoCompaction" | "setAutoRetry"
+	| "autoTitle" | "autoCompaction" | "autoRetry" | "confirmActions" | "setPreference"
 	| "instructions" | "setInstructions" | "resetInstructions" | "logins" | "logout"
 >;
 async function until(read: () => boolean) {
@@ -43,18 +43,26 @@ export async function testPanel(source: Source, origin?: string) {
 		return (provider?.kind === "custom" || provider?.configured === true) && !row.querySelector(".provider-mark");
 	}), savedRows.map((row) => row.dataset.provider).join(", "));
 	click("#add-provider");
-	const builtinPicker = document.querySelector<HTMLSelectElement>("#builtin-provider-picker")!;
-	builtinPicker.value = "groq";
-	builtinPicker.dispatchEvent(new Event("change", { bubbles: true }));
-	step("the built-in provider dropdown reveals additional Pi-AI providers", builtinPicker.selectedOptions[0]?.textContent === "Groq"
+	const options = () => [...document.querySelectorAll<HTMLElement>("#builtin-provider-list [data-provider]")].map((option) => option.dataset.provider);
+	const providerSearch = document.querySelector<HTMLInputElement>("#builtin-provider-search")!;
+	step("a built-in provider must be chosen before its key field or Save appear", options().length > 1
+		&& document.querySelector<HTMLElement>("#provider-key")?.closest<HTMLElement>(".provider-field")?.hidden === true
+		&& document.querySelector<HTMLElement>("#provider-save")?.hidden === true);
+	step("well-known built-in providers are listed first", options()[0] === "anthropic", options().slice(0, 4).join(","));
+	providerSearch.value = "groq";
+	providerSearch.dispatchEvent(new Event("input", { bubbles: true }));
+	step("the built-in provider search filters by name", options().includes("groq") && !options().includes("anthropic"), options().join(","));
+	await pickBuiltin("groq");
+	step("the built-in provider list reveals additional Pi-AI providers", document.querySelector("#builtin-provider-chosen .provider-chosen-name")?.textContent === "Groq"
+		&& document.querySelector<HTMLElement>(".provider-picker")?.hidden === true
 		&& !document.querySelector('.provider[data-provider="groq"]'));
 	click("#provider-kind-custom");
 	const customOrder = [...document.querySelectorAll(".provider-editor-form .provider-field > :last-child")].map((field) => field.id);
 	step("custom fields and model sections follow the requested order", customOrder.join(",") === "provider-name,provider-base-url,provider-api,provider-key"
 		&& document.querySelector("#provider-discovery")!.compareDocumentPosition(document.querySelector("#provider-custom-models")!) === Node.DOCUMENT_POSITION_FOLLOWING);
 	click("#provider-kind-builtin");
-	builtinPicker.value = "anthropic";
-	builtinPicker.dispatchEvent(new Event("change", { bubbles: true }));
+	click("#builtin-provider-change");
+	await pickBuiltin("anthropic");
 	const input = document.querySelector<HTMLInputElement>("#provider-key")!;
 	input.value = "panel-smoke-key";
 	click("#provider-save");
@@ -87,8 +95,18 @@ export async function testPanel(source: Source, origin?: string) {
 	click("#settings-autoRetry");
 	await until(() => source.autoRetry.value);
 	step("conversation preferences default safely and round-trip through native checkboxes", defaultTitlePreference && source.autoCompaction.value && source.autoRetry.value);
+	const defaultConfirm = !source.confirmActions.value && !document.querySelector<HTMLInputElement>("#settings-confirmActions")?.checked;
+	click("#settings-confirmActions");
+	await until(() => source.confirmActions.value && document.querySelector<HTMLInputElement>("#settings-confirmActions")?.checked === true);
+	click("#settings-confirmActions");
+	await until(() => !source.confirmActions.value);
+	step("asking before page actions is off by default and round-trips through its checkbox", defaultConfirm);
 	const originalInstructions = source.instructions.value;
 	const instructions = document.querySelector<HTMLTextAreaElement>("#settings-instructions")!;
+	const details = document.querySelector<HTMLDetailsElement>("#settings-instructions-details")!;
+	step("global instructions start collapsed with a one-line preview", !details.open && details.contains(instructions)
+		&& Boolean(document.querySelector("#settings-instructions-preview")?.textContent));
+	details.open = true;
 	instructions.value = "Panel smoke unsaved instructions";
 	instructions.dispatchEvent(new Event("input", { bubbles: true }));
 	await source.setInstructions({ instructions: "Other panel instructions" }, BACKGROUND_CONTEXT);
@@ -252,7 +270,7 @@ export async function testPanel(source: Source, origin?: string) {
 		document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 		step("popover outside dismissal excludes its trigger", kept && !controller.current && third.closes() === 1);
 
-		const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array() });
+		const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined, allowed: () => {} });
 		fixture.append(transcript.element);
 		transcript.update({ kind: "loading" });
 		const loading = Boolean(transcript.element.querySelector(".connecting"));

@@ -151,7 +151,7 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 			const error = await until(() => document.body.dataset.busy === "false" ? document.querySelector('.tool[data-tool="fetch"][data-status="error"] .tool-body')?.textContent : undefined, 20_000);
 			click("#files-toggle");
 			await until(() => document.querySelector("#files .files-empty"));
-			step(`${method} ${path} refused without saving`, error.includes("Redirects are not followed"));
+			step(`${method} ${path} refused without saving`, error.includes("request the final URL directly"));
 			click("#files-back");
 		}
 	} catch (error) {

@@ -120,6 +120,11 @@ export function toast(text: string, tone: "info" | "error" = "info") {
 	setTimeout(() => node.remove(), 2100);
 }
 
+/** Shows a failed action's reason; every caught panel error goes through here. */
+export function toastError(error: unknown) {
+	toast(String((error as Error)?.message ?? error), "error");
+}
+
 export async function copyText(text: string): Promise<boolean> {
 	try {
 		await navigator.clipboard.writeText(text);

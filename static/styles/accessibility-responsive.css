@@ -4,9 +4,18 @@
 }
 
 @media (hover: none) {
-	.msg-actions,
-	.chat-item .chat-action {
+	.msg-actions {
 		opacity: 1;
+	}
+
+	/* Touch has no hover to reveal them, so the actions take their own space again. */
+	.chat-item > .chat-actions {
+		position: static;
+		padding: 0;
+		background: none;
+		opacity: 1;
+		pointer-events: auto;
+		transform: none;
 	}
 }
 
@@ -15,7 +24,7 @@
 		padding: 0 4px;
 	}
 
-	.title-btn {
+	.title {
 		padding: 0 6px;
 	}
 

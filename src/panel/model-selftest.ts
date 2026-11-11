@@ -1,6 +1,7 @@
 import type { ThinkingLevel, Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";
+import { t } from "./i18n.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "defaultModel" | "setDefaultConfiguration">;
@@ -18,6 +19,11 @@ export const input = (selector: string, value: string) => {
 	element.value = value;
 	element.dispatchEvent(new Event("input", { bubbles: true }));
 };
+/** Chooses a built-in provider in the add-provider editor's searchable list. */
+export async function pickBuiltin(id: string) {
+	const option = await until(() => control<HTMLElement>(`#builtin-provider-list [data-provider="${id}"]`));
+	option.click();
+}
 export async function until<T>(read: () => T | undefined | null | false, ms = 10_000): Promise<T> {
 	const deadline = Date.now() + ms;
 	for (;;) {
@@ -75,8 +81,9 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		await until(() => !document.querySelector("#model-menu"));
 		click("#thinking");
 		const effortOptions = [...document.querySelectorAll<HTMLElement>("#thinking-menu [data-level]")];
-		step("Effort options use the raw Pi-AI level IDs", effortOptions.length > 0
-			&& effortOptions.every((option) => option.textContent?.trim() === option.dataset.level));
+		step("Effort options use translated level labels under a heading", effortOptions.length > 0
+			&& effortOptions.every((option) => option.textContent?.trim() === t(`thinking.level.${option.dataset.level as ThinkingLevel}`))
+			&& control("#thinking-menu-title")?.textContent === t("thinking.menuTitle"));
 		const effortAlignment = await until(() => {
 			const menu = control<HTMLElement>("#thinking-menu")!.getBoundingClientRect();
 			const button = document.querySelector<HTMLElement>("#thinking")!.getBoundingClientRect();
@@ -87,7 +94,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		click('#thinking-menu [data-level="high"]');
 		await until(() => !document.querySelector("#thinking-menu"));
 		await until(() => source.defaultModel.value?.provider === customId && document.querySelector<HTMLElement>("#thinking")?.dataset.level === "high"
-			&& document.querySelector("#thinking .model-name")?.textContent === "high");
+			&& document.querySelector("#thinking .model-name")?.textContent === t("thinking.level.high"));
 		step("model and thinking selections target the custom provider", true,
 			`${JSON.stringify(source.defaultModel.value)}; ${document.querySelector("#model")?.textContent}; ${document.querySelector("#thinking")?.textContent}`);
 		input("#prompt", "local protocol check");

@@ -2,7 +2,7 @@ import type { ChatStatus, ChatSummary, Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { LANG, t } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
-import { h, icon, logo, toast, type IconName } from "./ui.ts";
+import { h, icon, logo, toast, toastError, type IconName } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "chats" | "deleteChat" | "renameChat">;
 interface Actions {
@@ -156,7 +156,7 @@ class ChatRow {
 				if (id === this.#actions.currentId()) this.#actions.select(undefined);
 			}
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#revertConfirmation(action);
 			this.#pending = false;
@@ -229,7 +229,7 @@ class ChatRow {
 			if (this.#draft.trim() !== this.#summary.title) await source.renameChat({ id: this.#summary.id, title: this.#draft }, context);
 			saved = true;
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#pending = false;
 			this.#refreshControls();

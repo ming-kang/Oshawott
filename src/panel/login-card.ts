@@ -2,13 +2,12 @@ import type { LoginView, ProviderSummary, Workspace } from "../contracts/chat.ts
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { t } from "./i18n.ts";
 import { requestOrigins } from "./model-permissions.ts";
-import { copyText, h, icon, toast } from "./ui.ts";
+import { copyText, h, icon, toast, toastError } from "./ui.ts";
 
 export type LoginSource = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"logins" | "startLogin" | "answerLogin" | "cancelLogin" | "dismissLogin" | "logout"
 >;
 const context = BACKGROUND_CONTEXT;
-const fail = (error: unknown) => toast(String((error as Error)?.message ?? error), "error");
 
 /** Account sign-in for one built-in provider. The Engine owns the session; this card only shows it and answers it. */
 export class LoginCard {
@@ -90,7 +89,7 @@ export class LoginCard {
 		if (session.prompt) parts.push(this.#prompt(session, session.prompt));
 		parts.push(h("button", {
 			class: "btn ghost", id: "login-cancel", type: "button",
-			onclick: () => void this.#source()?.cancelLogin({ id: session.id }, context).catch(fail),
+			onclick: () => void this.#source()?.cancelLogin({ id: session.id }, context).catch(toastError),
 		}, t("login.cancel")));
 		return parts;
 	}
@@ -110,7 +109,7 @@ export class LoginCard {
 				submit.disabled = true;
 				const value = field.value;
 				field.value = "";
-				void this.#source()?.answerLogin({ id: session.id, promptId: prompt.id, value }, context).catch(fail);
+				void this.#source()?.answerLogin({ id: session.id, promptId: prompt.id, value }, context).catch(toastError);
 			},
 		}, h("label", { class: "provider-field" }, h("span", null, prompt.kind === "code" ? t("login.pasteCode") : prompt.message), field), submit);
 	}
@@ -140,7 +139,7 @@ export class LoginCard {
 			if (!source) throw new Error(t("reconnecting"));
 			await work(source);
 		} catch (error) {
-			fail(error);
+			toastError(error);
 		} finally {
 			this.#busy = false;
 			this.refresh();

@@ -143,6 +143,10 @@
 	max-width: calc(100vw - 24px);
 }
 
+.thinking-menu .menu-group {
+	padding: 10px 14px 0;
+}
+
 .menu-item-id {
 	max-width: 40%;
 	overflow: hidden;

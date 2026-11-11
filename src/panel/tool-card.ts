@@ -4,7 +4,7 @@ import { formatBytes } from "../lib/bytes.ts";
 import { sitePattern } from "../platform/patterns.ts";
 import { ext } from "../platform/webext.ts";
 import { t } from "./i18n.ts";
-import { h, type IconName, icon, toast } from "./ui.ts";
+import { h, type IconName, icon, toast, toastError } from "./ui.ts";
 
 export type ToolStatus = "pending" | "running" | "done" | "error" | "stopped" | "streaming";
 
@@ -20,7 +20,7 @@ function hostOf(url: unknown) {
 	}
 }
 
-function look(name: string, args: Record<string, unknown>): Look {
+export function toolLook(name: string, args: Record<string, unknown>): Look {
 	switch (name) {
 		case "page_snapshot":
 			return { icon: "eye", label: t("tool.snapshot"), meta: String(args.ref ?? args.selector ?? "") };
@@ -30,12 +30,26 @@ function look(name: string, args: Record<string, unknown>): Look {
 			return { icon: "pointer", label: t("tool.click"), meta: String(args.ref ?? "") };
 		case "page_type":
 			return { icon: "keyboard", label: t("tool.type"), meta: `“${clip(String(args.text ?? ""), 40)}”` };
+		case "page_select":
+			return { icon: "list", label: t("tool.select"), meta: String(args.option ?? "") };
+		case "page_press":
+			return { icon: "keyboard", label: t("tool.press"), meta: [...(Array.isArray(args.modifiers) ? args.modifiers : []), args.key ?? ""].join("+") };
+		case "page_hover":
+			return { icon: "pointer", label: t("tool.hover"), meta: String(args.ref ?? "") };
+		case "page_wait":
+			return { icon: "refresh", label: t("tool.wait"), meta: String(args.selector ?? args.text ?? (args.timeoutMs ? `${args.timeoutMs} ms` : "")) };
 		case "page_scroll":
 			return { icon: "scroll", label: t("tool.scroll"), meta: args.ref ? String(args.ref) : args.pixels ? `${args.pixels}px` : "" };
 		case "tabs_list":
 			return { icon: "tabs", label: t("tool.tabs") };
 		case "tab_open":
 			return { icon: "external", label: t("tool.open"), meta: hostOf(args.url) };
+		case "tab_navigate":
+			return { icon: args.back ? "back" : "globe", label: t(args.back ? "tool.back" : "tool.navigate"), meta: args.back ? "" : hostOf(args.url) };
+		case "tab_activate":
+			return { icon: "tabs", label: t("tool.activate"), meta: String(args.tabId ?? "") };
+		case "tab_close":
+			return { icon: "x", label: t("tool.close"), meta: String(args.tabId ?? "") };
 		case "codemode":
 			return { icon: "code", label: t("tool.code") };
 		case "read":
@@ -103,14 +117,17 @@ export class ToolCard {
 	readonly #body: HTMLElement;
 	readonly #summary: HTMLElement;
 	readonly #initialMeta: string;
+	readonly #onAllowed: ((site: string) => void) | undefined;
 	#grant: HTMLButtonElement | undefined;
 	#result: HTMLElement | undefined;
 	#output: HTMLElement | undefined;
 	#status: ToolStatus = "pending";
 
-	constructor(name: string, args: Record<string, unknown>) {
+	/** `onAllowed`: the user granted the site this call was refused on, so the task can go on. */
+	constructor(name: string, args: Record<string, unknown>, onAllowed?: (site: string) => void) {
 		this.#name = name;
-		const { icon: iconName, label, meta } = look(name, args);
+		this.#onAllowed = onAllowed;
+		const { icon: iconName, label, meta } = toolLook(name, args);
 		this.#initialMeta = meta ?? "";
 		this.#meta = h("span", { class: "tool-meta" }, this.#initialMeta);
 		this.#state = h("span", { class: "tool-state", role: "status", "aria-live": "polite" });
@@ -190,15 +207,15 @@ export class ToolCard {
 				const allowed = await ext.permissions.request({ origins: [pattern] });
 				if (allowed) {
 					button.replaceChildren(icon("check", 12), t("tool.allowed"));
-					button.title = t("tool.retryHint");
-					toast(t("tool.retryHint"));
+					if (this.#onAllowed) this.#onAllowed(new URL(url).host);
+					else toast(t("tool.retryHint"));
 				} else {
 					button.disabled = false;
 					toast(t("tab.denied"), "error");
 				}
 			} catch (error) {
 				button.disabled = false;
-				toast(String((error as Error)?.message ?? error), "error");
+				toastError(error);
 			}
 		});
 		this.#grant = button;

@@ -7,13 +7,20 @@ import { LoginCard, type LoginSource } from "./login-card.ts";
 import { compactTokens } from "./models.ts";
 import { requestModelAccess } from "./model-permissions.ts";
 import type { OverlayView } from "./overlays.ts";
-import { h, icon, toast } from "./ui.ts";
+import { segmented } from "./segmented.ts";
+import { h, icon, toast, toastError } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"providers" | "setApiKey" | "clearApiKey" | "saveProvider" | "deleteProvider" | "refreshProvider"
 > & LoginSource;
 type ProviderKind = "builtin" | "custom";
 const context = BACKGROUND_CONTEXT;
+/** Listed first, in this order, when the registry offers them. */
+const WELL_KNOWN = ["anthropic", "openai", "google", "openrouter", "deepseek", "xai", "github-copilot", "openai-codex", "mistral", "groq"];
+const providerRank = (provider: ProviderSummary) => {
+	const at = WELL_KNOWN.indexOf(provider.id);
+	return at < 0 ? WELL_KNOWN.length : at;
+};
 const DEFAULT_MODEL = (): ModelConfig => ({
 	id: "", name: "", contextWindow: 128_000, maxTokens: 16_384, vision: false, thinkingLevels: ["off"],
 });
@@ -26,9 +33,29 @@ export class ProviderEditorSheet implements OverlayView {
 	readonly #draft: ProviderProfile;
 	readonly #title = h("span", { class: "panel-title" });
 	readonly #typeSection = h("section", { class: "section", id: "provider-type-section" });
-	readonly #type = h("div", { class: "segmented", id: "provider-kind", role: "radiogroup", "aria-label": t("settings.providerType") });
+	readonly #type = segmented<ProviderKind>({
+		id: "provider-kind", label: t("settings.providerType"), selected: "builtin",
+		options: [
+			{ value: "builtin", label: t("settings.providerType.builtin"), id: "provider-kind-builtin" },
+			{ value: "custom", label: t("settings.providerType.custom"), id: "provider-kind-custom" },
+		],
+		onChoose: (kind, focus) => this.#chooseKind(kind, focus),
+	});
 	readonly #form = h("div", { class: "card provider-editor-form" });
-	readonly #builtinPicker = h("select", { class: "input", id: "builtin-provider-picker", "aria-label": t("settings.builtinProvider") });
+	readonly #search = h("input", {
+		class: "input", id: "builtin-provider-search", type: "search", autocomplete: "off", spellcheck: "false",
+		placeholder: t("settings.searchProviders"), "aria-label": t("settings.searchProviders"),
+		role: "combobox", "aria-autocomplete": "list", "aria-expanded": "true", "aria-controls": "builtin-provider-list",
+	});
+	readonly #list = h("div", { class: "menu-list provider-list", id: "builtin-provider-list", role: "listbox", "aria-label": t("settings.builtinProvider") });
+	readonly #picker = h("div", { class: "provider-picker" }, this.#search, this.#list);
+	readonly #chosenName = h("span", { class: "provider-chosen-name" });
+	readonly #chosenBadge = h("span", { class: "pill", "data-on": true, hidden: true }, t("settings.signInBadge"));
+	readonly #change = h("button", { class: "btn small", id: "builtin-provider-change", type: "button" }, t("settings.changeProvider"));
+	readonly #chosen = h("div", { class: "provider-chosen", id: "builtin-provider-chosen" }, this.#chosenName, this.#chosenBadge, this.#change);
+	readonly #pickHint = h("p", { class: "section-hint", id: "builtin-provider-hint" }, t("settings.chooseProvider"));
+	readonly #pickerField = h("div", { class: "provider-field", id: "builtin-provider-field" },
+		h("span", null, t("settings.builtinProvider")), this.#chosen, this.#picker, this.#pickHint);
 	readonly #name = h("input", { class: "input", id: "provider-name", autocomplete: "off" });
 	readonly #baseUrl = h("input", { class: "input", id: "provider-base-url", placeholder: "https://example.com/v1", autocomplete: "off", spellcheck: "false" });
 	readonly #api = h("select", { class: "input", id: "provider-api" },
@@ -49,6 +76,7 @@ export class ProviderEditorSheet implements OverlayView {
 	#kind: ProviderKind;
 	#kindLocked: boolean;
 	#builtinId = "";
+	#listKey = "";
 	#closed = false;
 	#busy = false;
 
@@ -82,12 +110,9 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#baseUrl.addEventListener("input", () => { this.#draft.baseUrl = this.#baseUrl.value; });
 		this.#api.value = this.#draft.api;
 		this.#api.addEventListener("change", () => { this.#draft.api = this.#api.value as ModelApi; });
-		this.#builtinPicker.addEventListener("change", () => {
-			this.#builtinId = this.#builtinPicker.value;
-			this.refresh();
-			this.#setBusy(this.#busy);
-		});
-		this.#buildTypePicker();
+		this.#search.addEventListener("input", () => this.#renderList());
+		this.#search.addEventListener("keydown", (event) => this.#searchKey(event));
+		this.#change.addEventListener("click", () => this.#changeProvider());
 		this.#save.addEventListener("click", () => void this.#saveProvider());
 		this.#refresh.addEventListener("click", () => void this.#discoverModels());
 		this.#delete.addEventListener("click", () => void this.#removeProvider());
@@ -95,7 +120,7 @@ export class ProviderEditorSheet implements OverlayView {
 			this.#draft.models.push(DEFAULT_MODEL());
 			this.#renderManual(true);
 		} }, icon("plus", 14), t("settings.addModel"));
-		this.#typeSection.append(h("h3", null, t("settings.providerType")), this.#type);
+		this.#typeSection.append(h("h3", null, t("settings.providerType")), this.#type.element);
 		this.#discoverySection.append(
 			h("div", { class: "section-heading" }, h("h3", null, t("settings.discoveredModels")), this.#refresh),
 			this.#discovered, this.#status,
@@ -132,42 +157,19 @@ export class ProviderEditorSheet implements OverlayView {
 		return h("label", { class: "provider-field" }, h("span", null, label), input);
 	}
 
-	#buildTypePicker() {
-		const kinds: ProviderKind[] = ["builtin", "custom"];
-		for (const [index, kind] of kinds.entries()) {
-			this.#type.append(h("button", {
-				type: "button", id: `provider-kind-${kind}`, role: "radio", "data-value": kind,
-				"aria-checked": String(this.#kind === kind), tabindex: this.#kind === kind ? 0 : -1,
-				onclick: () => this.#chooseKind(kind),
-				onkeydown: (event: KeyboardEvent) => {
-					const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? (index + 1) % kinds.length
-						: event.key === "ArrowLeft" || event.key === "ArrowUp" ? (index + kinds.length - 1) % kinds.length
-							: event.key === "Home" ? 0 : event.key === "End" ? kinds.length - 1 : -1;
-					if (next < 0) return;
-					event.preventDefault();
-					this.#chooseKind(kinds[next]!, true);
-				},
-			}, t(kind === "builtin" ? "settings.providerType.builtin" : "settings.providerType.custom")));
-		}
-	}
-
 	#chooseKind(kind: ProviderKind, focus = false) {
 		if (this.#kindLocked || this.#busy) return;
 		this.#kind = kind;
 		this.#renderKind();
-		if (focus) this.#type.querySelector<HTMLButtonElement>(`[data-value="${kind}"]`)?.focus({ preventScroll: true });
+		if (focus) this.#type.select(kind, true);
 	}
 
 	#renderKind() {
 		this.#title.textContent = this.#kindLocked ? t("settings.editProvider") : t("settings.addProvider");
 		this.#typeSection.hidden = this.#kindLocked;
-		for (const button of this.#type.querySelectorAll<HTMLButtonElement>("button")) {
-			const selected = button.dataset.value === this.#kind;
-			button.setAttribute("aria-checked", String(selected));
-			button.tabIndex = selected ? 0 : -1;
-		}
+		this.#type.select(this.#kind);
 		this.#form.replaceChildren(...(this.#kind === "builtin" ? [
-			this.#field(t("settings.builtinProvider"), this.#builtinPicker),
+			this.#pickerField,
 			this.#keyField,
 			this.#login.element,
 		] : [
@@ -183,18 +185,87 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#setBusy(this.#busy);
 	}
 
-	#refreshBuiltinOptions() {
-		const selected = this.#builtinId;
+	#refreshPicker() {
 		// A provider being signed in to stays selected although it becomes configured mid-flow.
-		const pinned = this.#kindLocked || this.#login.session !== undefined;
-		const providers = (this.#source()?.providers.value ?? []).filter((provider) => provider.kind === "builtin"
-			&& (pinned ? provider.id === selected : !provider.configured));
-		this.#builtinPicker.replaceChildren(...(providers.length
-			? providers.map((provider) => h("option", { value: provider.id }, provider.name))
-			: [h("option", { value: "" }, t("settings.noBuiltinProviders"))]));
-		if (providers.some((provider) => provider.id === selected)) this.#builtinPicker.value = selected;
-		this.#builtinId = this.#builtinPicker.value;
-		this.#builtinPicker.disabled = this.#busy || this.#kindLocked || !this.#builtinId;
+		const session = this.#login.session;
+		const pinned = this.#kindLocked || session !== undefined;
+		const offered = (this.#source()?.providers.value ?? []).filter((provider) => provider.kind === "builtin"
+			&& (pinned ? provider.id === this.#builtinId : !provider.configured));
+		const chosen = offered.find((provider) => provider.id === this.#builtinId);
+		if (!chosen) this.#builtinId = "";
+		this.#chosen.hidden = !chosen;
+		this.#chosen.dataset.provider = chosen?.id ?? "";
+		this.#chosenName.textContent = chosen?.name ?? "";
+		this.#chosenBadge.hidden = !chosen?.oauth;
+		this.#change.hidden = this.#kindLocked || (session !== undefined && session.status !== "failed");
+		this.#change.disabled = this.#search.disabled = this.#busy;
+		this.#picker.hidden = chosen !== undefined;
+		this.#pickHint.hidden = chosen !== undefined || offered.length === 0;
+		this.#search.hidden = offered.length === 0;
+		if (!chosen) this.#renderList(offered);
+	}
+
+	#renderList(offered = (this.#source()?.providers.value ?? []).filter((provider) => provider.kind === "builtin" && !provider.configured)) {
+		const query = this.#search.value.trim().toLowerCase();
+		const providers = offered
+			.filter((provider) => !query || `${provider.name} ${provider.id}`.toLowerCase().includes(query))
+			.sort((a, b) => providerRank(a) - providerRank(b) || a.name.localeCompare(b.name));
+		// Rebuilt only when what is listed changes, so a refresh never resets the scroll position or highlight.
+		const key = JSON.stringify([query, providers.map((provider) => [provider.id, provider.name, provider.oauth !== null, provider.apiKey])]);
+		if (key === this.#listKey) return;
+		this.#listKey = key;
+		const items = providers.map((provider, index) => h("button", {
+			class: "menu-item provider-option", id: `builtin-provider-option-${index}`, type: "button", role: "option", tabindex: -1,
+			"aria-selected": "false", "data-provider": provider.id, onclick: () => this.#pick(provider.id),
+		}, h("span", { class: "menu-item-name" }, provider.name,
+			provider.apiKey ? null : h("span", { class: "menu-item-details" }, t("settings.signInOnly"))),
+		provider.oauth ? h("span", { class: "pill", "data-on": true }, t("settings.signInBadge")) : null));
+		this.#list.replaceChildren(...(items.length
+			? items
+			: [h("div", { class: "list-empty", role: "status" }, t(query ? "settings.noProviderMatch" : "settings.noBuiltinProviders"))]));
+		this.#activate(items[0]);
+	}
+
+	#items() {
+		return [...this.#list.querySelectorAll<HTMLButtonElement>(".provider-option")];
+	}
+
+	#activate(item: HTMLButtonElement | undefined) {
+		for (const other of this.#items()) other.classList.toggle("active", other === item);
+		if (item) this.#search.setAttribute("aria-activedescendant", item.id);
+		else this.#search.removeAttribute("aria-activedescendant");
+		item?.scrollIntoView({ block: "nearest" });
+	}
+
+	#searchKey(event: KeyboardEvent) {
+		const items = this.#items();
+		const at = items.findIndex((item) => item.classList.contains("active"));
+		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			this.#activate(items[Math.max(0, Math.min(items.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))]);
+		} else if (event.key === "Enter") {
+			event.preventDefault();
+			items[at]?.click();
+		}
+	}
+
+	#pick(id: string) {
+		if (this.#busy) return;
+		this.#builtinId = id;
+		this.#key.value = "";
+		this.#search.value = "";
+		this.refresh();
+		this.#setBusy(this.#busy);
+		(this.#keyField.hidden ? this.#login.element.querySelector("button") : this.#key)?.focus({ preventScroll: true });
+	}
+
+	#changeProvider() {
+		if (this.#busy) return;
+		this.#builtinId = "";
+		this.#key.value = "";
+		this.refresh();
+		this.#setBusy(this.#busy);
+		this.#search.focus({ preventScroll: true });
 	}
 
 	#updateKeyPlaceholder() {
@@ -285,7 +356,7 @@ export class ProviderEditorSheet implements OverlayView {
 			toast(t("settings.providerSaved"));
 			this.#onClose();
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#setBusy(false, this.#save);
 		}
@@ -300,7 +371,7 @@ export class ProviderEditorSheet implements OverlayView {
 		try {
 			await this.#source()?.refreshProvider({ provider: provider.id }, context);
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#setBusy(false, this.#refresh);
 		}
@@ -340,7 +411,7 @@ export class ProviderEditorSheet implements OverlayView {
 			}
 			return true;
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 			return false;
 		} finally {
 			this.#setBusy(false, button);
@@ -364,7 +435,7 @@ export class ProviderEditorSheet implements OverlayView {
 			toast(t("settings.providerDeleted"));
 			this.#onClose();
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 			delete this.#delete.dataset.confirm;
 			this.#delete.textContent = t("settings.deleteProvider");
 		} finally {
@@ -378,8 +449,8 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#save.disabled = busy || (this.#kind === "builtin" && !this.#builtinId);
 		this.#refresh.disabled = busy || this.#currentSummary()?.refreshing === true;
 		this.#delete.disabled = busy;
-		this.#builtinPicker.disabled = busy || this.#kindLocked || !this.#builtinId;
-		for (const choice of this.#type.querySelectorAll<HTMLButtonElement>("button")) choice.disabled = busy || this.#kindLocked;
+		this.#search.disabled = this.#change.disabled = busy;
+this.#type.setDisabled(busy || this.#kindLocked);
 		if (button) {
 			button.toggleAttribute("aria-busy", busy);
 			if (busy) button.prepend(h("span", { class: "spinner" }));
@@ -389,11 +460,12 @@ export class ProviderEditorSheet implements OverlayView {
 
 	refresh() {
 		if (this.#closed) return;
-		this.#refreshBuiltinOptions();
+		this.#refreshPicker();
 		const summary = this.#currentSummary();
 		const builtin = this.#kind === "builtin";
 		this.#login.refresh();
-		this.#keyField.hidden = builtin && summary?.apiKey === false;
+		// Nothing but the picker is offered until a built-in provider has been chosen.
+		this.#keyField.hidden = builtin && (!summary || summary.apiKey === false);
 		this.#save.hidden = this.#keyField.hidden;
 		// A configured built-in provider lists what its key or account may use; only custom catalogs are editable.
 		this.#discoverySection.hidden = builtin && !summary?.configured;

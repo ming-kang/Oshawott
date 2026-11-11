@@ -96,6 +96,49 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 		const reloadError = await rejection("page_click", { ref: beforeLoad });
 		step("a page load invalidates refs", reloadError.includes("earlier page load") && (await counter()).includes(">0<"), reloadError);
 
+		await visit("/actions");
+		type Seen = { ref: string; role: string; name: string; value?: string; checked?: boolean; disabled?: boolean; expanded?: boolean; href?: string };
+		const see = async () => (await page("page_snapshot", {})).elements as Seen[];
+		const control = (elements: Seen[], name: string) => elements.find((each) => each.name === name)!;
+		const logged = async () => (await page("page_inspect", { selector: "#log", include: ["html"] })).elements[0].html as string;
+		let seen = await see();
+		step("a snapshot names controls by caption, label and image text", ["Size", "Query", "Search", "Picture link", "Agree", "Menu", "Rich"].every((name) => control(seen, name)), seen.map((each) => each.name).join("|"));
+		step("a snapshot carries each control's state and never a password", control(seen, "Size").value === "Small" && control(seen, "Agree").checked === true
+			&& control(seen, "Off").disabled === true && control(seen, "Menu").expanded === false && control(seen, "Picture link").href?.endsWith("#pic") === true
+			&& !JSON.stringify(seen).includes("hunter2"), JSON.stringify(control(seen, "Size")));
+
+		const typedIntoSelect = await rejection("page_type", { ref: control(seen, "Size").ref, text: "Medium" });
+		await page("page_select", { ref: control(seen, "Size").ref, option: "Medium" });
+		const missing = await rejection("page_select", { ref: control(seen, "Size").ref, option: "Large" });
+		step("page_select chooses an option and page_type leaves a dropdown intact", typedIntoSelect.includes("page_select") && missing.includes("Small | Medium")
+			&& (await logged()).includes("select:m") && control(await see(), "Size").value === "Medium", `${typedIntoSelect} / ${missing}`);
+
+		seen = await see();
+		await page("page_click", { ref: control(seen, "Menu").ref });
+		const disabled = await rejection("page_click", { ref: control(seen, "Off").ref });
+		await page("page_click", { ref: control(seen, "Agree").ref });
+		const afterClicks = await see();
+		step("page_click presses and releases like a pointer, and refuses a disabled control", (await logged()).includes("pointerdown mousedown click")
+			&& control(afterClicks, "Menu").expanded === true && control(afterClicks, "Agree").checked === false && disabled.includes("disabled"), disabled);
+
+		await page("page_hover", { ref: control(afterClicks, "Hover me").ref });
+		await page("page_type", { ref: control(afterClicks, "Query").ref, text: "otter", submit: true });
+		await page("page_press", { key: "a", ref: control(afterClicks, "Keys").ref, modifiers: ["Shift"] });
+		await page("page_type", { ref: control(afterClicks, "Query").ref, text: "seal" });
+		await page("page_press", { key: "Enter", ref: control(afterClicks, "Query").ref });
+		const actions = await logged();
+		step("hover, typed Enter and key presses reach the page", actions.includes("hover") && actions.includes("submit:otter") && actions.includes("key:a+shift") && actions.includes("submit:seal"), actions);
+
+		await page("page_type", { ref: control(afterClicks, "Rich").ref, text: "new text" });
+		const rich = (await page("page_inspect", { selector: "#rich", include: ["html"] })).elements[0].html as string;
+		step("page_type replaces the content of an editable element", rich.includes(">new text<"), rich);
+
+		await page("page_click", { ref: control(afterClicks, "Later").ref });
+		const arrived = await page("page_wait", { text: "Arrived" });
+		const never = await page("page_wait", { selector: "#never", timeoutMs: 200 });
+		const badSelector = await rejection("page_wait", { selector: "[" });
+		step("page_wait returns when the content arrives and reports a timeout", arrived.ok === true && never.ok === false && badSelector.includes("Invalid CSS selector"), `${arrived.detail} / ${never.detail}`);
+
 		await visit("/inspect-csp");
 		const strict = await page("page_snapshot", { selector: "#scope", structure: true });
 		const strictInspect = await page("page_inspect", { selector: "#inside" });

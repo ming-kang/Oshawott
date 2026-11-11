@@ -1,6 +1,6 @@
 import type { Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { click, control, input, until } from "./model-selftest.ts";
+import { click, control, input, pickBuiltin, until } from "./model-selftest.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "logins" | "logout">;
@@ -15,9 +15,7 @@ export async function testAccountLogin(source: Source): Promise<Step[]> {
 	try {
 		click("#settings-toggle");
 		click("#add-provider");
-		const picker = await until(() => control<HTMLSelectElement>("#builtin-provider-picker"));
-		picker.value = PROVIDER;
-		picker.dispatchEvent(new Event("change", { bubbles: true }));
+		await pickBuiltin(PROVIDER);
 		step("a sign-in-only provider offers no API key field", control<HTMLElement>("#provider-key")?.closest<HTMLElement>(".provider-field")?.hidden === true
 			&& control<HTMLElement>("#provider-save")?.hidden === true);
 
@@ -27,7 +25,8 @@ export async function testAccountLogin(source: Source): Promise<Step[]> {
 		const link = control<HTMLAnchorElement>("#login-open");
 		step("the device code and an HTTPS authorization link are shown", code === "DEMO-1234"
 			&& link?.protocol === "https:" && link.target === "_blank", `${code} ${link?.href}`);
-		step("the provider stays selected during sign-in", picker.value === PROVIDER && picker.options.length === 1);
+		step("the provider stays selected during sign-in", control<HTMLElement>("#builtin-provider-chosen")?.dataset.provider === PROVIDER
+			&& control<HTMLElement>("#builtin-provider-chosen")?.hidden === false && control<HTMLElement>("#builtin-provider-change")?.hidden !== false);
 
 		phase = "answering the code prompt";
 		await until(() => control("#login-answer"));
