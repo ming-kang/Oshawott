@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -36,11 +37,11 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 				facet: defineFacet<Principal>((host) => {
 					host.serve(Browser, (_params, principal) => {
 						assert.equal(principal.kind, "engine");
-						const tab = { tabId: 7, windowId: 1, url: "https://example.com/", title: "Example", active: true };
+						const tab = { tabId: 7, windowId: 1, url: "https://example.com/", title: "Example", active: true, access: true };
 						return {
 							variant: "engine",
 							members: {
-								listTabs: async () => [tab],
+								...unusedTabActions, getTab: async () => tab, listTabs: async () => [tab],
 								activeTab: async () => tab,
 								openTab: async () => tab,
 								attach: async () => null,
@@ -82,6 +83,8 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 							page_click: async () => ({ ok: true }),
 							page_type: async () => ({ ok: true }),
 							page_scroll: async () => ({ ok: true }),
+							page_select: async () => ({ ok: true }), page_press: async () => ({ ok: true }), page_hover: async () => ({ ok: true }),
+							page_wait: async () => ({ ok: true }), describe: async () => ({ role: "link", name: "More information" }),
 						},
 					}));
 				}),
@@ -131,7 +134,7 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	const workspace = await panel.get(Workspace, {}, context);
 	assert.equal(workspace.variant, "owner");
 	const model = faux.getModel();
-	await workspace.setDefaultModel({ provider: model.provider, modelId: model.id }, context);
+	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 	const id = await workspace.createChat({ title: "First" }, context);
 	await until(() => (workspace.chats.value.length === 1 ? true : undefined), "the chat in the workspace");
 	assert.equal(workspace.chats.value[0]?.title, "First");

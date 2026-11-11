@@ -28,6 +28,8 @@ export type WorkspaceState = {
 	autoTitle?: boolean;
 	autoCompaction?: boolean;
 	autoRetry?: boolean;
+	/** Ask before each action that changes a page. Absent in older documents: off. */
+	confirmActions?: boolean;
 	/** Global native Durable instructions, shared by every chat; absent means the built-in text. */
 	instructions?: string;
 	/** Optional for older v1 documents. An intent survives eviction between removing a chat and clearing its files. */

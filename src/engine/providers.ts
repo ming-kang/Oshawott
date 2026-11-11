@@ -6,7 +6,9 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import type { ModelApi, ModelRef, ProviderProfile, ProviderSummary } from "../contracts/chat.ts";
+import { KeyedSerial } from "../lib/serial.ts";
 import type { OAuthSetups } from "./oauth.ts";
+import { Published } from "./published.ts";
 import { discoverModels, modelFromConfig, normalizeProfile } from "./provider-discovery.ts";
 
 export interface ProviderManagerOptions {
@@ -63,7 +65,12 @@ function safeDiscoveryError(error: unknown): string {
 	return "Model discovery failed. Check the provider configuration and try again.";
 }
 
-/** Owns custom runtime registrations and non-secret discovery status; Durable owns their persistent profiles. */
+export type ProviderSnapshot = { list: ProviderSummary[] };
+
+/**
+ * Owns custom runtime registrations and non-secret discovery status; Durable owns their persistent profiles. It
+ * publishes the one provider list every Panel follows.
+ */
 export class ProviderManager {
 	readonly #models: MutableModels;
 	readonly #modelsStore?: ModelsStore;
@@ -72,7 +79,11 @@ export class ProviderManager {
 	readonly #profiles = new Map<string, ProviderProfile>();
 	readonly #refreshing = new Set<string>();
 	readonly #errors = new Map<string, string>();
-	readonly #lines = new Map<string, Promise<unknown>>();
+	readonly #lines = new KeyedSerial<string>();
+	readonly #published = new Published<ProviderSnapshot>({ list: [] });
+	#revision = 0;
+
+	readonly observe = this.#published.observe.bind(this.#published);
 
 	constructor(options: ProviderManagerOptions) {
 		this.#models = options.models;
@@ -95,6 +106,7 @@ export class ProviderManager {
 			this.#profiles.set(profile.id, profile);
 			this.#errors.delete(profile.id);
 			this.#models.setProvider(provider);
+			void this.changed();
 		};
 	}
 
@@ -114,6 +126,8 @@ export class ProviderManager {
 			this.#models.setProvider(customProvider(profile, this.#fetch));
 		}
 		await this.#models.refresh({ allowNetwork: false });
+		// Not awaited: the Engine must not wait for every provider's auth check before it starts.
+		void this.changed();
 	}
 
 	/** IDs in the prospective catalog: new manual entries plus raw discovery, never old manual-only entries. */
@@ -144,6 +158,7 @@ export class ProviderManager {
 			await this.#modelsStore?.delete(id);
 		}
 		await this.#models.refresh({ providers: [id], allowNetwork: false });
+		await this.changed();
 	}
 
 	async prepareDelete(id: string): Promise<() => void> {
@@ -152,7 +167,20 @@ export class ProviderManager {
 			this.#profiles.delete(id);
 			this.#errors.delete(id);
 			this.#models.deleteProvider(id);
+			void this.changed();
 		};
+	}
+
+	/** Publishes the list again: after a registration, a discovery step, or a credential the caller changed. */
+	async changed(): Promise<void> {
+		const revision = ++this.#revision;
+		const list = await this.summaries();
+		// A slower, older read must not replace a newer one.
+		if (revision === this.#revision) this.#published.set({ list });
+	}
+
+	close() {
+		this.#published.close();
 	}
 
 	async summaries(): Promise<ProviderSummary[]> {
@@ -189,11 +217,12 @@ export class ProviderManager {
 		}));
 	}
 
-	async refresh(id: string, force = true): Promise<void> {
-		const previous = this.#lines.get(id) ?? Promise.resolve();
-		const run = previous.catch(() => {}).then(async () => {
+	/** Discovers the provider's models; the published list shows the discovery while it runs and its outcome after. */
+	refresh(id: string, force = true): Promise<void> {
+		return this.#lines.run(id, async () => {
 			if (!this.#models.getProvider(id)) throw new Error(`Unknown provider ${id}.`);
 			this.#refreshing.add(id);
+			void this.changed();
 			try {
 				const result = await this.#models.refresh({ providers: [id], force });
 				const error = result.errors.get(id);
@@ -201,14 +230,9 @@ export class ProviderManager {
 				else this.#errors.delete(id);
 			} finally {
 				this.#refreshing.delete(id);
+				await this.changed();
 			}
 		});
-		this.#lines.set(id, run);
-		try {
-			await run;
-		} finally {
-			if (this.#lines.get(id) === run) this.#lines.delete(id);
-		}
 	}
 
 	model(ref: ModelRef): Model<Api> | undefined {

@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -127,7 +128,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 					host.serve(Browser, () => ({
 						variant: "engine",
 						members: {
-							listTabs: async () => [],
+							...unusedTabActions, listTabs: async () => [],
 							activeTab: async () => null,
 							openTab: async () => {
 								throw new Error("unused");
@@ -205,7 +206,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		const workspace = await panel.get(Workspace, {}, context);
 		assert.equal(workspace.variant, "owner");
 		const model = faux.getModel();
-		await workspace.setDefaultModel({ provider: model.provider, modelId: model.id }, context);
+		await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 		const id = await workspace.createChat({}, context);
 		const large = JSON.stringify({ padding: "x".repeat(64 * 1024), ending: "complete" });
 		getOrThrow(await new ChatFiles(backend, id).writeFile("large.json", large, context));

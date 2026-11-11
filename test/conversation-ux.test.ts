@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -50,7 +51,7 @@ async function fixture(responses: FauxResponseStep[], options: {
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
 	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
 		host.serve(Browser, () => ({ variant: "engine", members: {
-			listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
+			...unusedTabActions, listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
 			attach: async () => null, hasAccess: async () => false,
 			armWake: async ({ at }) => {
 				if (wakeTimer !== undefined) clearTimeout(wakeTimer);
@@ -84,7 +85,7 @@ async function fixture(responses: FauxResponseStep[], options: {
 	const workspace = await panel.get(Workspace, {}, context);
 	assert.equal(workspace.variant, "owner");
 	const model = faux.getModel();
-	await workspace.setDefaultModel({ provider: model.provider, modelId: model.id }, context);
+	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 	const chats = new Set<{ release(): void }>();
 	return {
 		faux, engine, workspace, files, errors,
@@ -130,9 +131,9 @@ test("conversation preferences and global instructions survive an Engine restart
 	});
 	const first = await fixture([], { storage });
 	let id = 0;
-	await first.workspace.setAutoTitle(true, context);
-	await first.workspace.setAutoCompaction(false, context);
-	await first.workspace.setAutoRetry(false, context);
+	await first.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
+	await first.workspace.setPreference({ key: "autoCompaction", enabled: false }, context);
+	await first.workspace.setPreference({ key: "autoRetry", enabled: false }, context);
 	await first.workspace.setInstructions({ instructions: "Persistent global instructions" }, context);
 	id = await first.workspace.createChat({ title: "Persistent title" }, context);
 	await first.close();
@@ -162,7 +163,7 @@ test("chat metadata and preferences synchronize across panels", async () => {
 	try {
 		const id = await f.workspace.createChat({ title: "Before sync" }, context);
 		await until(() => other.chats.value.some((chat) => chat.id === id) ? true : undefined, "the second panel's chat");
-		await f.workspace.setAutoTitle(true, context);
+		await f.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
 		await other.setInstructions({ instructions: "Instructions from panel two" }, context);
 		await until(() => f.workspace.autoTitle.value && f.workspace.instructions.value === "Instructions from panel two" ? true : undefined, "shared preferences");
 		await other.renameChat({ id, title: "After sync" }, context);
@@ -185,8 +186,8 @@ test("global instructions reach real requests and preferences and manual titles 
 		assert.equal(f.workspace.autoCompaction.value, true);
 		assert.equal(f.workspace.autoRetry.value, true);
 		await f.workspace.setInstructions({ instructions: "Always mention the otter checklist." }, context);
-		await f.workspace.setAutoCompaction(false, context);
-		await f.workspace.setAutoRetry(false, context);
+		await f.workspace.setPreference({ key: "autoCompaction", enabled: false }, context);
+		await f.workspace.setPreference({ key: "autoRetry", enabled: false }, context);
 		const id = await f.workspace.createChat({}, context);
 		const chat = await f.chat(id);
 		assert.equal((await f.engine.harness.snapshot(AgentDoc, id as never, context))?.instructions, "Always mention the otter checklist.");
@@ -233,8 +234,8 @@ test("automatic titles run once after a normal first answer and never overwrite 
 		fauxAssistantMessage("Model failed", { stopReason: "error", errorMessage: "injected failure" }),
 	]);
 	try {
-		await f.workspace.setAutoTitle(true, context);
-		await f.workspace.setAutoRetry(false, context);
+		await f.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
+		await f.workspace.setPreference({ key: "autoRetry", enabled: false }, context);
 		const first = await f.workspace.createChat({}, context);
 		const firstChat = await f.chat(first);
 		await firstChat.send({ text: "How do I reset onboarding?", requestId: "title-first" }, context);
@@ -281,7 +282,7 @@ test("a title timeout retains the fallback and does not retry", async () => {
 		},
 	], { titleTimeoutMs: 30 });
 	try {
-		await f.workspace.setAutoTitle(true, context);
+		await f.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
 		const id = await f.workspace.createChat({}, context);
 		const chat = await f.chat(id);
 		await chat.send({ text: "Keep the fallback", requestId: "title-timeout" }, context);
@@ -306,7 +307,7 @@ test("the failure-retry preference changes real retry behavior without a second 
 		await until(() => chat.view.value?.entries.some((entry) => entry.model?.some((message) => message.role === "assistant" && message.content.some((part) => part.type === "text" && part.text === "Recovered"))) ? true : undefined, "the bounded retry response");
 		assert.equal(f.faux.state.callCount, 2);
 
-		await f.workspace.setAutoRetry(false, context);
+		await f.workspace.setPreference({ key: "autoRetry", enabled: false }, context);
 		f.faux.setResponses([transient, fauxAssistantMessage("Must remain unused")]);
 		const stoppedId = await f.workspace.createChat({}, context);
 		const stopped = await f.chat(stoppedId);
@@ -383,7 +384,7 @@ test("blank or built-in instructions select the built-in text and other text is 
 test("clearing the title of an unsent chat still shows the first message and never generates a title", async () => {
 	const f = await fixture([fauxAssistantMessage("Answer"), fauxAssistantMessage("Unwanted title")]);
 	try {
-		await f.workspace.setAutoTitle(true, context);
+		await f.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
 		const id = await f.workspace.createChat({ title: "Named" }, context);
 		await f.workspace.renameChat({ id, title: "" }, context);
 		await until(() => summary(f.workspace, id)?.title === "" ? true : undefined, "the cleared title");
@@ -416,7 +417,7 @@ test("a disabled retry policy applies to runs recovered by a restarted Engine", 
 		});
 		return fauxAssistantMessage("Unreachable");
 	}], { storage });
-	await first.workspace.setAutoRetry(false, context);
+	await first.workspace.setPreference({ key: "autoRetry", enabled: false }, context);
 	const id = await first.workspace.createChat({}, context);
 	const chat = await first.chat(id);
 	await chat.send({ text: "Survive a restart", requestId: "recovered" }, context);

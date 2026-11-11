@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type Message, type UserMessage } from "@earendil-works/pi-ai";
@@ -81,7 +82,7 @@ async function fixture(responses: FauxResponseStep[], options: { storage?: Stora
 			host.serve(Browser, () => ({
 				variant: "engine",
 				members: {
-					listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
+					...unusedTabActions, listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
 					attach: async () => null, hasAccess: async () => false, armWake: async () => null,
 				},
 			}));
@@ -110,7 +111,7 @@ async function fixture(responses: FauxResponseStep[], options: { storage?: Stora
 	const workspace = await panel.get(Workspace, {}, context);
 	assert.equal(workspace.variant, "owner");
 	const model = faux.getModel();
-	await workspace.setDefaultModel({ provider: model.provider, modelId: model.id }, context);
+	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 	const id = options.chatId ?? await workspace.createChat({}, context);
 	const chat = await panel.get(Chat, { id }, context);
 	assert.equal(chat.variant, "owner");

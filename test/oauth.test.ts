@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -164,7 +165,7 @@ async function engineWith(models: MutableModels, credentials: InMemoryCredential
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
 	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
 		host.serve(Browser, () => ({ variant: "engine", members: {
-			listTabs: async () => [], activeTab: async () => null,
+			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
 			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
 			hasAccess: async () => false, armWake: async () => null,
 		} }));

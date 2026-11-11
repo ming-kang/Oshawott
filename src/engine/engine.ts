@@ -7,11 +7,13 @@ import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/ho
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
 import { completeAttachmentDeletes } from "./attachments.ts";
 import { ConversationActivity } from "./activity.ts";
+import { Approvals } from "./approvals.ts";
 import { ProvidersDoc, WorkspaceDoc, type WorkspaceState } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
 import { writeInstructions } from "./instructions.ts";
 import { LoginSessions, type OAuthSetups } from "./oauth.ts";
 import { ChatTitles, TITLE_TIMEOUT_MS } from "./titles.ts";
+import { ProviderAdmin } from "./provider-admin.ts";
 import { ProviderManager } from "./providers.ts";
 import { ChatFiles, type FileBackend, resolvePath, WORKSPACE } from "./files.ts";
 import { resumeFileDeletes } from "./files-lifecycle.ts";
@@ -50,6 +52,9 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const now = options.now ?? Date.now;
 	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, fetch: options.fetch, oauth: options.oauth });
 	const logins = new LoginSessions({ models: options.models, setups: options.oauth, now, timeoutMs: options.loginTimeoutMs });
+	const approvals = new Approvals();
+	/** Set from the stored Workspace before scheduling starts; the defaults only cover the open itself. */
+	let execution = { autoCompaction: true, autoRetry: true, confirmActions: false };
 
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError });
 	host.route(
@@ -73,7 +78,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	);
 
 	const registry = createRegistry();
-	registry.install(browserExtension(host));
+	registry.install(browserExtension({ host, approvals, confirmActions: () => execution.confirmActions }));
 	registry.install(filesExtension({ host, fetch: options.fetch ?? ((input, init) => fetch(input, init)) }));
 	for (const extension of options.extensions ?? []) registry.install(extension);
 
@@ -87,8 +92,6 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		);
 	};
 
-	/** Set from the stored Workspace before scheduling starts; the defaults only cover the open itself. */
-	let execution = { autoCompaction: true, autoRetry: true };
 	const harness: Harness = await Harness.open(
 		options.storage,
 		{
@@ -113,7 +116,8 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 				if (cwd !== undefined) files.cwd = resolvePath(WORKSPACE, cwd);
 				return files;
 			},
-			identity: { attribution: { name: "Oshawott", url: "https://github.com/" } },
+			// No attribution headers: they would need a public page of this app to point at, and there is none.
+			identity: { attribution: null },
 			onWake: armWake,
 			onReport: (report) => onError(report),
 		},
@@ -133,7 +137,9 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const activity = new ConversationActivity({ harness, now, onError });
 	await activity.start(context);
 	const acceptWorkspace = (value: WorkspaceState | undefined, ctx: Context) => {
-		execution = { autoCompaction: value?.autoCompaction ?? true, autoRetry: value?.autoRetry ?? true };
+		execution = {
+			autoCompaction: value?.autoCompaction ?? true, autoRetry: value?.autoRetry ?? true, confirmActions: value?.confirmActions ?? false,
+		};
 		activity.setChats(value?.chats ?? [], ctx);
 	};
 	let workspaceRevision = 0;
@@ -152,11 +158,28 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const titles = new ChatTitles({ harness, models: options.models, providers, timeoutMs: options.titleTimeoutMs ?? TITLE_TIMEOUT_MS });
 	await resumeFileDeletes(harness, options.files, context, onError);
 	await completeAttachmentDeletes(harness, options.files, context, onError);
+	const admin = new ProviderAdmin({ harness, models: options.models, credentials: options.credentials, providers, logins, onError });
+	// A finished sign-in changes the provider's auth, and the account decides which models it may use.
+	const signedIn = new Set<string>();
+	const loginObservation = await logins.observe({
+		advance: (call) => {
+			if (call.kind !== "value") return;
+			for (const item of call.value.items) {
+				if (item.status !== "done" || signedIn.has(item.id)) continue;
+				signedIn.add(item.id);
+				void admin.refresh(item.provider).catch(onError);
+			}
+		},
+		end: () => {},
+	});
 	await host.load(
 		[
 			{
 				name: "oshawott.panel",
-				facet: panelFacet({ harness, models: options.models, credentials: options.credentials, providers, logins, files: options.files, now, activity, titles, onError }),
+				facet: panelFacet({
+					harness, models: options.models, credentials: options.credentials, providers, admin, logins, approvals,
+					files: options.files, now, activity, titles, onError,
+				}),
 			},
 		],
 		context,
@@ -173,7 +196,10 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 			// Links first: holders go `loading` and re-hold on the next Engine, instead of seeing their objects fail.
 			closing = true;
 			await host.close(context);
+			loginObservation.detach();
 			logins.close();
+			approvals.close();
+			providers.close();
 			titles.close();
 			workspaceObservation.detach();
 			activity.close();

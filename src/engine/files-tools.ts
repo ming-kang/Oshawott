@@ -1,12 +1,12 @@
 import { defineExtension, defineTool, type Extension, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
-import { Browser, NO_ACCESS, NO_ACCESS_CODE } from "../contracts/browser.ts";
+import { Browser } from "../contracts/browser.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { arr, bool, int, map, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import type { Host } from "../lib/chord.ts";
 import { ChatFiles, MAX_FILE_BYTES } from "./files.ts";
-import { using } from "./tools.ts";
+import { noAccess, using } from "./tools.ts";
 
 const FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CHARS = 20_000;
@@ -107,6 +107,29 @@ async function readBody(response: Response, limit: number): Promise<Uint8Array> 
 	return body;
 }
 
+/** Where sites most often redirect a plain address: its https form, with or without `www.`, with or without a final slash. */
+export function redirectGuesses(url: URL): string[] {
+	const guesses = new Set<string>();
+	const named = /[a-z]/i.test(url.hostname) && url.hostname.includes(".");
+	const hosts = [url.hostname, ...(!named ? [] : [url.hostname.startsWith("www.") ? url.hostname.slice(4) : `www.${url.hostname}`])];
+	const paths = [url.pathname, url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : `${url.pathname}/`].filter(Boolean);
+	for (const protocol of url.protocol === "http:" ? ["https:", "http:"] : ["https:"]) {
+		for (const hostname of hosts) {
+			for (const pathname of paths) {
+				const guess = new URL(url.href);
+				// An upgraded address drops a port that only made sense for http.
+				if (protocol !== url.protocol) guess.port = "";
+				guess.protocol = protocol;
+				guess.hostname = hostname;
+				guess.pathname = pathname;
+				guesses.add(guess.href);
+			}
+		}
+	}
+	guesses.delete(url.href);
+	return [...guesses];
+}
+
 export interface FilesToolsOptions {
 	readonly host: Host<Principal>;
 	readonly fetch: typeof fetch;
@@ -119,7 +142,8 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 			"Request a URL over HTTP(S), without the user's cookies or logins. Returns the status and the body as text, " +
 			`at most maxChars characters (default ${DEFAULT_MAX_CHARS}); with saveTo, saves the whole body (any type, ` +
 			`up to ${MAX_FILE_BYTES / 1024 / 1024} MiB) to that file instead. Only sites the user has allowed: on another ` +
-			"site the call fails, and the user can allow it from the panel. Redirects are refused: request the final URL directly.",
+			"site the call fails, and the user can allow it from the panel. A GET that is redirected to the https or www " +
+			"form of the same address is followed; any other redirect is refused: request the final URL directly.",
 		parameters: obj({
 			url: str({ description: "An http or https URL." }),
 			method: opt(oneOf(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])),
@@ -148,45 +172,51 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 				throw new Error(`Not a URL: ${args.url}`);
 			}
 			if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http and https URLs can be fetched.");
-			const allowed = await using(host, Browser, {}, context, (browser) => browser.hasAccess({ url: url.href }, context));
-			if (!allowed) {
-				return {
-					output: [],
-					isError: true,
-					details: { access: { url: url.href } },
-					// Rendered by the harness just like the former thrown error, without exposing the code to the model.
-					diagnostics: [{
-						severity: "error",
-						code: NO_ACCESS_CODE,
-						message: `${NO_ACCESS} ${url.host}: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.`,
-					}],
-				};
-			}
+			const allowed = (href: string) => using(host, Browser, {}, context, (browser) => browser.hasAccess({ url: href }, context));
+			if (!await allowed(url.href)) return noAccess(url.href);
 			const method = args.method ?? "GET";
-			const signals = [AbortSignal.timeout(FETCH_TIMEOUT_MS), ...(context.abortSignal ? [context.abortSignal] : [])];
-			let response: Response;
-			try {
-				response = await request(url.href, {
-					method,
-					...(args.headers ? { headers: args.headers } : {}),
-					...(args.body !== undefined && method !== "GET" && method !== "HEAD" ? { body: args.body } : {}),
-					credentials: "omit",
-					cache: "no-store",
-					// A browser cannot inspect an opaque manual redirect before following it. Refuse redirects rather
-					// than make an unchecked request to a site the user did not allow.
-					redirect: "error",
-					referrerPolicy: "no-referrer",
-					signal: AbortSignal.any(signals),
-				});
-			} catch (error) {
-				if ((error as Error)?.name === "TimeoutError") throw new Error(`No response from ${url.host} within ${FETCH_TIMEOUT_MS / 1000} s.`);
-				if ((error as Error)?.name === "TypeError") {
-					throw new Error(`Could not fetch ${url.host}: ${(error as Error).message}. Redirects are not followed; request the final URL directly.`, { cause: error });
+			const signal = AbortSignal.any([AbortSignal.timeout(FETCH_TIMEOUT_MS), ...(context.abortSignal ? [context.abortSignal] : [])]);
+			const attempt = (href: string) => request(href, {
+				method,
+				...(args.headers ? { headers: args.headers } : {}),
+				...(args.body !== undefined && method !== "GET" && method !== "HEAD" ? { body: args.body } : {}),
+				credentials: "omit",
+				cache: "no-store",
+				// A browser cannot inspect an opaque manual redirect before following it. Refuse redirects rather
+				// than make an unchecked request to a site the user did not allow.
+				redirect: "error",
+				referrerPolicy: "no-referrer",
+				signal,
+			});
+			const refused = (response: Response) => [301, 302, 303, 307, 308].includes(response.status);
+			let response: Response | undefined;
+			let failure: unknown;
+			// The redirect's target is unreadable, but the usual ones can be named: each is a request the model could
+			// have made itself, checked against the user's permissions like any other.
+			for (const href of [url.href, ...(method === "GET" || method === "HEAD" ? redirectGuesses(url) : [])]) {
+				if (href !== url.href && !await allowed(href)) continue;
+				try {
+					const answer = await attempt(href);
+					// A guess counts only when it finds the page; its own error would hide the redirect that was refused.
+					if (!refused(answer) && (href === url.href || answer.ok)) {
+						response = answer;
+						break;
+					}
+					failure ??= new TypeError("redirected");
+				} catch (error) {
+					if ((error as Error)?.name !== "TypeError") {
+						failure = error;
+						break;
+					}
+					failure ??= error;
 				}
-				throw error;
 			}
-			if ([301, 302, 303, 307, 308].includes(response.status)) {
-				throw new Error("Redirects are not followed; request the final URL directly.");
+			if (!response) {
+				if ((failure as Error)?.name === "TimeoutError") throw new Error(`No response from ${url.host} within ${FETCH_TIMEOUT_MS / 1000} s.`);
+				if ((failure as Error)?.name === "TypeError") {
+					throw new Error(`Could not fetch ${url.host}: ${(failure as Error).message}. Only redirects to the https or www form of the same address are followed; request the final URL directly.`, { cause: failure });
+				}
+				throw failure;
 			}
 			const body = method === "HEAD" ? new Uint8Array() : await readBody(response, MAX_FILE_BYTES);
 			const contentType = response.headers.get("content-type") ?? "";

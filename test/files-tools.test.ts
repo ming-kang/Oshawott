@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
@@ -6,7 +7,7 @@ import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { Browser, NO_ACCESS } from "../src/contracts/browser.ts";
 import { BrokerHost, EngineHost, type Principal } from "../src/contracts/hosts.ts";
 import { ChatFiles, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
-import { filesExtension, MAX_READ_CHARS } from "../src/engine/files-tools.ts";
+import { filesExtension, MAX_READ_CHARS, redirectGuesses } from "../src/engine/files-tools.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet, memoryLinkPair, type Context } from "../src/lib/chord.ts";
 import { formatBytes } from "../src/lib/bytes.ts";
 import { sitePattern } from "../src/platform/patterns.ts";
@@ -18,7 +19,7 @@ async function withFetch(network: typeof fetch, use: (call: FetchCall, files: Ch
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
 	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
 		host.serve(Browser, () => ({ variant: "engine", members: {
-			listTabs: async () => [], activeTab: async () => null,
+			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
 			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
 			hasAccess: async ({ url }) => allowed(url), armWake: async () => null,
 		} }));
@@ -129,16 +130,16 @@ test("fetch rejects redirects instead of sending an unchecked request to a diffe
 	const server = createServer((req, res) => {
 		if (req.url === "/redirect") {
 			res.writeHead(302, { location: `http://localhost:${(server.address() as { port: number }).port}/target` }).end();
-		} else {
+		} else if (req.url === "/target") {
 			targetRequests++;
 			res.end("must not be reached");
-		}
+		} else res.writeHead(404).end();
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	try {
 		await withFetch(fetch, async (call) => {
 			const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/redirect`;
-			await assert.rejects(call({ url }), /Redirects are not followed/);
+			await assert.rejects(call({ url }), /Only redirects to the https or www form/);
 			assert.equal(targetRequests, 0);
 		}, (url) => new URL(url).hostname === "127.0.0.1");
 	} finally {
@@ -199,4 +200,25 @@ test("site patterns omit ports on both browsers and sizes use binary units", () 
 	assert.equal(sitePattern("file:///tmp/private"), undefined);
 	assert.equal(sitePattern("bad"), undefined);
 	assert.deepEqual([0, 17, 1024, 1536, 20 * 1024 * 1024].map(formatBytes), ["0 B", "17 B", "1 KiB", "1.5 KiB", "20 MiB"]);
+});
+
+test("fetch follows a redirect only to the https or www form of the same address", async () => {
+	assert.deepEqual(redirectGuesses(new URL("http://example.com/docs")), [
+		"https://example.com/docs", "https://example.com/docs/", "https://www.example.com/docs", "https://www.example.com/docs/",
+		"http://example.com/docs/", "http://www.example.com/docs", "http://www.example.com/docs/",
+	]);
+	// An address without a registrable name has no www form.
+	assert.deepEqual(redirectGuesses(new URL("https://127.0.0.1:8443/x")), ["https://127.0.0.1:8443/x/"]);
+	const requested: string[] = [];
+	const fake = (async (input: RequestInfo | URL) => {
+		const href = String(input);
+		requested.push(href);
+		if (href === "https://www.example.com/docs") return new Response("found", { headers: { "content-type": "text/plain" } });
+		throw new TypeError("redirected");
+	}) as typeof fetch;
+	await withFetch(fake, async (call) => {
+		const result = await call({ url: "http://example.com/docs" });
+		assert.match((result.output![0] as { text: string }).text, /found/);
+		assert.deepEqual(requested, ["http://example.com/docs", "https://example.com/docs", "https://example.com/docs/", "https://www.example.com/docs"]);
+	}, (url) => new URL(url).hostname.endsWith("example.com"));
 });

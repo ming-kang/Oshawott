@@ -88,6 +88,16 @@ export const LoginView = obj({
 });
 export type LoginView = Static<typeof LoginView>;
 
+/** A switch of the Workspace; `confirmActions` asks before each action that changes a page. */
+export const Preference = oneOf("autoTitle", "autoCompaction", "autoRetry", "confirmActions");
+export type Preference = Static<typeof Preference>;
+
+export const ApprovalDecision = oneOf("allow", "allow_chat", "deny");
+export type ApprovalDecision = Static<typeof ApprovalDecision>;
+/** An action waiting for the user's yes or no: the tool, what it acts on (an element, a URL) and the site. */
+export const ApprovalView = obj({ id: str(), tool: str(), target: str(), site: str() });
+export type ApprovalView = Static<typeof ApprovalView>;
+
 export const ChatConfiguration = obj({ model: ModelRef, thinkingLevel: opt(ThinkingLevel) });
 export type ChatConfiguration = Static<typeof ChatConfiguration>;
 
@@ -120,7 +130,7 @@ export type ChatSummary = Static<typeof ChatSummary>;
 export const MAX_INSTRUCTIONS_CHARS = 100_000;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 6,
+	version: 7,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -133,6 +143,7 @@ export const Workspace = remote("oshawott.workspace", {
 				autoTitle: bool(),
 				autoCompaction: bool(),
 				autoRetry: bool(),
+				confirmActions: bool(),
 				instructions: str(),
 				providers: arr(ProviderSummary),
 				logins: arr(LoginView),
@@ -144,9 +155,7 @@ export const Workspace = remote("oshawott.workspace", {
 				deleteChat: method(obj({ id: int() })),
 				/** Empty titles restore the first-message fallback but still count as a manual title decision. */
 				renameChat: method(obj({ id: int(), title: str({ max: 500 }) })),
-				setAutoTitle: method(bool()),
-				setAutoCompaction: method(bool()),
-				setAutoRetry: method(bool()),
+				setPreference: method(obj({ key: Preference, enabled: bool() })),
 				/** Blank text restores the built-in instructions; both return the instructions now in effect. */
 				setInstructions: method(obj({ instructions: str({ max: MAX_INSTRUCTIONS_CHARS }) }), str()),
 				resetInstructions: method(undefined, str()),
@@ -163,7 +172,6 @@ export const Workspace = remote("oshawott.workspace", {
 				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
 				deleteProvider: method(obj({ provider: str() })),
 				refreshProvider: method(obj({ provider: str() })),
-				setDefaultModel: method(ModelRef),
 				setDefaultConfiguration: method(ChatConfiguration),
 				setBusyMode: method(BusyMode),
 			},
@@ -172,7 +180,7 @@ export const Workspace = remote("oshawott.workspace", {
 });
 
 export const Chat = remote("oshawott.chat", {
-	version: 5,
+	version: 6,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -180,6 +188,10 @@ export const Chat = remote("oshawott.chat", {
 			state: {
 				/** Null until Durable produces its first conversation view. */
 				view: typed<ConversationView | null>(unknown()),
+				/** The tab the page tools act on; null before the first message and after that tab is closed. */
+				target: union([int(), nul()]),
+				/** Actions of this chat waiting for the user's answer. */
+				approvals: arr(ApprovalView),
 			},
 			methods: {
 				/**
@@ -206,8 +218,10 @@ export const Chat = remote("oshawott.chat", {
 					QueueUpdateResult,
 				),
 				cancelQueued: method(obj({ id: int() }), QueueCancelResult),
-				/** Continue an idle failed run, placing any inputs its `keep` policy left queued. */
+				/** Continue an idle failed run: tries again from where it stopped, placing any inputs left queued. */
 				continueQueued: method(undefined, int()),
+				/** `allow_chat` also allows this chat's later actions without asking, until it is reset. */
+				decide: method(obj({ id: str(), decision: ApprovalDecision })),
 				abort: method(),
 				/** Cancel the old run and its queued inputs, then start a new context without deleting this chat's files. */
 				reset: method(),

@@ -1,7 +1,6 @@
 import type { AuthEvent, AuthPrompt, Models } from "@earendil-works/pi-ai";
-import type { Observation, Observer } from "@earendil-works/pi-durable";
 import type { LoginError, LoginView } from "../contracts/chat.ts";
-import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
+import { Published } from "./published.ts";
 
 /** How a browser completes one provider's Pi-AI sign-in. */
 export interface OAuthSetup {
@@ -71,9 +70,10 @@ export class LoginSessions {
 	readonly #timeoutMs: number;
 	readonly #settledMs: number;
 	readonly #sessions = new Map<string, Session>();
-	readonly #observers = new Set<Observer<LoginSnapshot>>();
-	#value: LoginSnapshot = { items: [] };
+	readonly #published = new Published<LoginSnapshot>({ items: [] });
 	#closed = false;
+
+	readonly observe = this.#published.observe.bind(this.#published);
 
 	constructor(options: LoginSessionsOptions) {
 		this.#models = options.models;
@@ -81,12 +81,6 @@ export class LoginSessions {
 		this.#now = options.now ?? Date.now;
 		this.#timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
 		this.#settledMs = options.settledMs ?? SETTLED_MS;
-	}
-
-	/** A Chord-followable snapshot, as `ConversationActivity.observe`. */
-	observe(observer: Observer<LoginSnapshot>): Promise<Observation<LoginSnapshot>> {
-		this.#observers.add(observer);
-		return Promise.resolve({ value: this.#value, detach: () => { this.#observers.delete(observer); } });
 	}
 
 	start(provider: string): string {
@@ -149,8 +143,7 @@ export class LoginSessions {
 			this.#abort(session, "cancelled");
 			this.#forget(id);
 		}
-		for (const observer of this.#observers) observer.end({ kind: "ended" });
-		this.#observers.clear();
+		this.#published.close();
 	}
 
 	#abort(session: Session, reason: "cancelled" | "timeout") {
@@ -225,10 +218,6 @@ export class LoginSessions {
 
 	#publish() {
 		if (this.#closed) return;
-		const value = { items: [...this.#sessions.values()].map((session) => structuredClone(session.view)) };
-		this.#value = value;
-		for (const observer of this.#observers) {
-			observer.advance({ kind: "value", value, ops: [["r", value]], retired: false }, BACKGROUND_CONTEXT);
-		}
+		this.#published.set({ items: [...this.#sessions.values()].map((session) => structuredClone(session.view)) });
 	}
 }

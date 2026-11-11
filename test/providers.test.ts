@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -36,7 +37,7 @@ test("provider auth checks run concurrently and key changes refresh the shared s
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
 	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
 		host.serve(Browser, () => ({ variant: "engine", members: {
-			listTabs: async () => [], activeTab: async () => null,
+			...unusedTabActions, listTabs: async () => [], activeTab: async () => null,
 			openTab: async () => { throw new Error("unused"); }, attach: async () => null,
 			hasAccess: async () => false, armWake: async () => null,
 		} }));

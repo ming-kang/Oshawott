@@ -160,6 +160,17 @@ export function demoProvider() {
 				{ stopReason: "toolUse" },
 			);
 		}
+		// "Click …": read the page, click its first button and say what happened. Exercises an action that changes a page.
+		const clicking = /\bclick\b|点击/i.test(requested);
+		if (last?.role === "toolResult" && last.toolName === "page_click") {
+			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			return fauxAssistantMessage(last.isError ? (zh ? `没有点击：${text}` : `I did not click: ${text}`) : (zh ? "点好了。" : "Clicked."));
+		}
+		if (last?.role === "toolResult" && last.toolName === "page_snapshot" && clicking && !last.isError) {
+			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			const button = (JSON.parse(text) as Snapshot).elements?.find((element) => element.role === "button");
+			if (button) return fauxAssistantMessage([fauxToolCall("page_click", { ref: button.ref })], { stopReason: "toolUse" });
+		}
 		if (last?.role === "toolResult") {
 			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 			let snapshot: Snapshot | undefined;

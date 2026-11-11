@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -32,7 +33,7 @@ async function withWorld(files: FileBackend, use: (world: World) => Promise<void
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError: () => {} });
 	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
 		host.serve(Browser, () => ({ variant: "engine", members: {
-			listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
+			...unusedTabActions, listTabs: async () => [], activeTab: async () => null, openTab: async () => { throw new Error("unused"); },
 			attach: async () => null, hasAccess: async () => false, armWake: async () => null,
 		} }));
 	}) }], context);
@@ -66,7 +67,7 @@ async function withWorld(files: FileBackend, use: (world: World) => Promise<void
 				const workspace = await client.get(Workspace, {}, context);
 				if (workspace.variant !== "owner") throw new Error("not a panel");
 				const model = faux.getModel();
-				await workspace.setDefaultModel({ provider: model.provider, modelId: model.id }, context);
+				await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 				return { host: client, workspace, chat: async (id) => {
 					const chat = await client.get(Chat, { id }, context);
 					if (chat.variant !== "owner") throw new Error("no chat");

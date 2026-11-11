@@ -1,3 +1,4 @@
+import { unusedTabActions } from "./fake-browser.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -34,7 +35,7 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 					host.serve(Browser, () => ({
 						variant: "engine",
 						members: {
-							listTabs: async () => [],
+							...unusedTabActions, listTabs: async () => [],
 							activeTab: async () => null,
 							openTab: async () => {
 								throw new Error("unused");
@@ -110,7 +111,7 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 
 	const workspace = await panel.get(Workspace, {}, context);
 	const model = faux.getModel();
-	await workspace.setDefaultModel({ provider: model.provider, modelId: model.id }, context);
+	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
 	const id = await workspace.createChat({}, context);
 	const chat = await panel.get(Chat, { id }, context);
 	await chat.send({ text: "Hello", requestId: "r1" }, context);
