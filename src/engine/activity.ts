@@ -1,10 +1,11 @@
 import {
-	type Harness, InboxDoc, type InboxState, LiveDoc, type LiveState, type Observation, type Observer, type TaskGraph,
-	type TaskGraphNode, type WatchEnd,
+	type Harness, InboxDoc, type InboxState, LiveDoc, type LiveState, type Observation, type TaskGraph, type TaskGraphNode,
+	type WatchEnd,
 } from "@earendil-works/pi-durable";
 import type { ChatStatus } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Context } from "../lib/chord.ts";
 import { WorkspaceDoc, type WorkspaceChat } from "./docs.ts";
+import { Published } from "./published.ts";
 
 export type ChatActivity = { id: number; status: ChatStatus };
 export type ActivitySnapshot = { items: ChatActivity[] };
@@ -40,7 +41,7 @@ type Attached = { live?: Observation<LiveState | undefined>; inbox?: Observation
  */
 export class ConversationActivity {
 	readonly #options: ActivityOptions;
-	readonly #observers = new Set<Observer<ActivitySnapshot>>();
+	readonly #published = new Published<ActivitySnapshot>({ items: [] });
 	readonly #docs = new Map<number, Docs>();
 	readonly #attached = new Map<number, Attached>();
 	readonly #failures = new Map<number, number>();
@@ -48,7 +49,6 @@ export class ConversationActivity {
 	#graphObservation: Observation<TaskGraph> | undefined;
 	#graph: TaskGraph = { tasks: {} };
 	#chats: readonly WorkspaceChat[] = [];
-	#value: ActivitySnapshot = { items: [] };
 	#syncTail: Promise<void> = Promise.resolve();
 	#activityTail: Promise<void> = Promise.resolve();
 	#closed = false;
@@ -79,22 +79,15 @@ export class ConversationActivity {
 		this.#queueSync();
 	}
 
-	/** A Chord-followable snapshot. Attachment never owns or stops the Engine-wide observations. */
-	observe(observer: Observer<ActivitySnapshot>): Promise<Observation<ActivitySnapshot>> {
-		this.#observers.add(observer);
-		return Promise.resolve({
-			value: this.#value,
-			detach: () => { this.#observers.delete(observer); },
-		});
-	}
+	/** A Chord-followable snapshot. Following it never owns or stops the Engine-wide observations. */
+	readonly observe = this.#published.observe.bind(this.#published);
 
 	close() {
 		if (this.#closed) return;
 		this.#closed = true;
 		this.#graphObservation?.detach();
 		for (const id of [...this.#attached.keys()]) this.#detach(id);
-		for (const observer of this.#observers) observer.end({ kind: "ended" });
-		this.#observers.clear();
+		this.#published.close();
 	}
 
 	#queueSync() {
@@ -181,15 +174,9 @@ export class ConversationActivity {
 			this.#statuses.set(id, status);
 			if (previous === "running" && status !== "running") this.#recordActivity(id);
 		}
-		if (items.length === this.#value.items.length && items.every((item, index) => {
-			const previous = this.#value.items[index];
-			return previous?.id === item.id && previous.status === item.status;
-		})) return;
-		const value = { items };
-		this.#value = value;
-		for (const observer of this.#observers) {
-			observer.advance({ kind: "value", value, ops: [["r", value]], retired: false }, context);
-		}
+		const shown = this.#published.value.items;
+		if (items.length === shown.length && items.every((item, index) => shown[index]?.id === item.id && shown[index].status === item.status)) return;
+		this.#published.set({ items }, context);
 	}
 
 	/** A finished run is activity; streaming entries are not, so the Workspace is written once per run. */

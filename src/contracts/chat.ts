@@ -91,6 +91,10 @@ export type LoginView = Static<typeof LoginView>;
 /** A switch of the Workspace; `confirmActions` asks before each action that changes a page. */
 export const Preference = oneOf("autoTitle", "autoCompaction", "autoRetry", "confirmActions");
 export type Preference = Static<typeof Preference>;
+/** Each switch until the user sets it: automatic titles and confirmations are opt-in. */
+export const PREFERENCE_DEFAULTS: Readonly<Record<Preference, boolean>> = {
+	autoTitle: false, autoCompaction: true, autoRetry: true, confirmActions: false,
+};
 
 export const ApprovalDecision = oneOf("allow", "allow_chat", "deny");
 export type ApprovalDecision = Static<typeof ApprovalDecision>;
@@ -130,7 +134,7 @@ export type ChatSummary = Static<typeof ChatSummary>;
 export const MAX_INSTRUCTIONS_CHARS = 100_000;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 7,
+	version: 8,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -160,15 +164,14 @@ export const Workspace = remote("oshawott.workspace", {
 				setInstructions: method(obj({ instructions: str({ max: MAX_INSTRUCTIONS_CHARS }) }), str()),
 				resetInstructions: method(undefined, str()),
 				setApiKey: method(obj({ provider: str(), key: str({ min: 1 }) })),
-				clearApiKey: method(obj({ provider: str() })),
+				/** Signs out or forgets the API key: cancels any pending sign-in and deletes the provider's stored credential. */
+				removeCredential: method(obj({ provider: str() })),
 				/** Starts an account sign-in, or returns the one already pending for this provider. */
 				startLogin: method(obj({ provider: str() }), str()),
 				answerLogin: method(obj({ id: str(), promptId: str(), value: str({ max: 8192 }) })),
 				cancelLogin: method(obj({ id: str() })),
 				/** Forgets a finished sign-in's outcome. */
 				dismissLogin: method(obj({ id: str() })),
-				/** Cancels any pending sign-in and deletes the provider's stored credential. */
-				logout: method(obj({ provider: str() })),
 				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
 				deleteProvider: method(obj({ provider: str() })),
 				refreshProvider: method(obj({ provider: str() })),

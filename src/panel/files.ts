@@ -3,13 +3,12 @@ import { formatBytes } from "../lib/bytes.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { LANG, t } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
-import { h, icon, toast } from "./ui.ts";
+import { download, errorMessage, h, icon, toast, toastError } from "./ui.ts";
 
 type FileSource = Pick<Extract<Reference<typeof Chat>, { variant: "owner" }>, "files" | "readFile" | "removeFile">;
 type FileInfo = Awaited<ReturnType<FileSource["files"]>>[number];
 const context = BACKGROUND_CONTEXT;
 const dateFormat = new Intl.DateTimeFormat(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const errorText = (error: unknown) => String((error as Error)?.message ?? error);
 
 export class FilesSheet implements OverlayView {
 	readonly element: HTMLElement;
@@ -71,7 +70,7 @@ export class FilesSheet implements OverlayView {
 		} catch (error) {
 			if (this.#closed || revision !== this.#revision) return;
 			this.#summary.textContent = "";
-			this.#list.replaceChildren(h("div", { class: "files-error", role: "alert" }, icon("alert", 18), h("span", null, errorText(error))));
+			this.#list.replaceChildren(h("div", { class: "files-error", role: "alert" }, icon("alert", 18), h("span", null, errorMessage(error))));
 		} finally {
 			if (!this.#closed && revision === this.#revision) {
 				this.#refresh.disabled = false;
@@ -88,24 +87,18 @@ export class FilesSheet implements OverlayView {
 	}
 
 	#row(file: FileInfo) {
-		const download = h("button", { class: "icon-btn small file-download", type: "button", title: t("files.download"), "aria-label": `${t("files.download")}: ${file.path}` }, icon("download", 16));
-		download.addEventListener("click", async () => {
-			download.disabled = true;
+		const save = h("button", { class: "icon-btn small file-download", type: "button", title: t("files.download"), "aria-label": `${t("files.download")}: ${file.path}` }, icon("download", 16));
+		save.addEventListener("click", async () => {
+			save.disabled = true;
 			try {
 				const bytes = await this.#source.readFile({ path: file.path }, context);
 				if (this.#closed) return;
-				const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }));
-				const link = h("a", { href: url, download: file.path.split("/").at(-1) || "download", hidden: true });
-				document.body.append(link);
-				link.click();
-				link.remove();
-				// Firefox may begin its download after the click returns. Keep the URL briefly, then release its bytes.
-				setTimeout(() => URL.revokeObjectURL(url), 30_000);
+				download(bytes, file.path.split("/").at(-1) || "download");
 				toast(t("files.downloadStarted"));
 			} catch (error) {
-				if (!this.#closed) toast(errorText(error), "error");
+				if (!this.#closed) toastError(error);
 			} finally {
-				download.disabled = false;
+				save.disabled = false;
 			}
 		});
 
@@ -128,7 +121,7 @@ export class FilesSheet implements OverlayView {
 				toast(t("files.removed", file.path));
 				await this.refresh();
 			} catch (error) {
-				if (!this.#closed) toast(errorText(error), "error");
+				if (!this.#closed) toastError(error);
 			} finally {
 				remove.disabled = false;
 				delete remove.dataset.confirm;
@@ -145,7 +138,7 @@ export class FilesSheet implements OverlayView {
 				h("span", { class: "file-path", title: file.path }, file.path),
 				h("div", { class: "file-meta" }, h("span", null, formatBytes(file.size)), h("time", { datetime: new Date(file.mtimeMs).toISOString() }, dateFormat.format(file.mtimeMs))),
 			),
-			h("div", { class: "file-actions" }, download, remove),
+			h("div", { class: "file-actions" }, save, remove),
 		);
 	}
 }

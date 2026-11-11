@@ -1,5 +1,5 @@
 import type { Observation, Observer } from "@earendil-works/pi-durable";
-import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
+import { BACKGROUND_CONTEXT, type Context } from "../lib/chord.ts";
 
 /**
  * A value the Engine owns and every Panel follows: one copy, so two open panels can never disagree. `observe` has the
@@ -23,10 +23,10 @@ export class Published<T> {
 		return Promise.resolve({ value: this.#value, detach: () => { this.#observers.delete(observer); } });
 	}
 
-	set(value: T) {
+	set(value: T, context: Context = BACKGROUND_CONTEXT) {
 		if (this.#closed) return;
 		this.#value = value;
-		for (const observer of this.#observers) observer.advance({ kind: "value", value, ops: [["r", value as never]], retired: false }, BACKGROUND_CONTEXT);
+		for (const observer of this.#observers) observer.advance({ kind: "value", value, ops: [["r", value as never]], retired: false }, context);
 	}
 
 	close() {

@@ -3,7 +3,7 @@ import { DEFAULT_BUSY_MODE, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { userInput } from "../lib/attachments.ts";
 import { ChordError, type Context, type FacetHost } from "../lib/chord.ts";
-import { WorkspaceDoc } from "./docs.ts";
+import { preference, WorkspaceDoc } from "./docs.ts";
 import { type FacetServices, forbidden, gone } from "./facet.ts";
 import { deleteChatFiles } from "./files-lifecycle.ts";
 import { currentInstructions, writeInstructions } from "./instructions.ts";
@@ -46,10 +46,10 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 				defaultModel: self.derive([workspace], ([value]) => value.defaultModel),
 				defaultThinkingLevel: self.derive([workspace], ([value]) => value.defaultThinkingLevel ?? "off"),
 				busyMode: self.derive([workspace], ([value]) => value.busyMode ?? DEFAULT_BUSY_MODE),
-				autoTitle: self.derive([workspace], ([value]) => value.autoTitle ?? false),
-				autoCompaction: self.derive([workspace], ([value]) => value.autoCompaction ?? true),
-				autoRetry: self.derive([workspace], ([value]) => value.autoRetry ?? true),
-				confirmActions: self.derive([workspace], ([value]) => value.confirmActions ?? false),
+				autoTitle: self.derive([workspace], ([value]) => preference(value, "autoTitle")),
+				autoCompaction: self.derive([workspace], ([value]) => preference(value, "autoCompaction")),
+				autoRetry: self.derive([workspace], ([value]) => preference(value, "autoRetry")),
+				confirmActions: self.derive([workspace], ([value]) => preference(value, "confirmActions")),
 				instructions: self.derive([workspace], ([value]) => currentInstructions(value)),
 				providers: self.derive([providers], ([value]) => value.list),
 				logins: self.derive([logins], ([value]) => value.items),
@@ -108,7 +108,7 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 					await admin.setApiKey(provider, key);
 					return null;
 				},
-				clearApiKey: async ({ provider }) => {
+				removeCredential: async ({ provider }) => {
 					await admin.removeCredential(provider);
 					return null;
 				},
@@ -133,10 +133,6 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 				},
 				dismissLogin: async ({ id }) => {
 					services.logins.dismiss(id);
-					return null;
-				},
-				logout: async ({ provider }) => {
-					await admin.removeCredential(provider);
 					return null;
 				},
 				saveProvider: async ({ profile, key }, ctx) => {

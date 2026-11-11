@@ -55,7 +55,7 @@ test("provider auth checks run concurrently and key changes refresh the shared s
 		await workspace.setApiKey({ provider: "missing", key: " test-key " }, context);
 		await until(() => workspace.providers.value.find((provider) => provider.id === "missing")?.configured === true);
 		assert.deepEqual(await credentials.read("missing"), { type: "api_key", key: "test-key" });
-		await workspace.clearApiKey({ provider: "missing" }, context);
+		await workspace.removeCredential({ provider: "missing" }, context);
 		await until(() => workspace.providers.value.find((provider) => provider.id === "missing")?.configured === false);
 		workspace.release();
 	} finally {

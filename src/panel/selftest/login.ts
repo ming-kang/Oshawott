@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
 import { click, control, input, pickBuiltin, until } from "./models.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
-type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "logins" | "logout">;
+type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "logins" | "removeCredential">;
 const PROVIDER = "demo-account";
 
 /** The account sign-in UI against the dev build's `demo-account` provider: no real account, the real Engine path. */
@@ -51,7 +51,7 @@ export async function testAccountLogin(source: Source): Promise<Step[]> {
 	} catch (error) {
 		step("account sign-in browser flow", false, `${phase}: ${String(error)}; logins=${JSON.stringify(source.logins.value)}`);
 	} finally {
-		await source.logout({ provider: PROVIDER }, BACKGROUND_CONTEXT).catch(() => null);
+		await source.removeCredential({ provider: PROVIDER }, BACKGROUND_CONTEXT).catch(() => null);
 		for (let index = 0; index < 3 && document.querySelector(".overlay:not(.leaving)"); index++) {
 			document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 			await new Promise((resolve) => setTimeout(resolve, 200));

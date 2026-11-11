@@ -1,8 +1,7 @@
-import { MESSAGES, PORTS } from "../contracts/hosts.ts";
 import { startBroker, WAKE_ALARM } from "../broker/broker.ts";
+import { MESSAGES, PORTS, type Principal } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, type Host } from "../lib/chord.ts";
 import { type PortLink, portLink } from "../link/port-link.ts";
-import type { Principal } from "../contracts/hosts.ts";
 import { ext } from "../platform/webext.ts";
 
 const context = BACKGROUND_CONTEXT;

@@ -159,5 +159,3 @@ export function portLink(port: RuntimePort, lastError: () => string | undefined 
 		},
 	};
 }
-
-export { fromBase64, toBase64 } from "../lib/base64.ts";

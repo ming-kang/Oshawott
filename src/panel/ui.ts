@@ -120,9 +120,23 @@ export function toast(text: string, tone: "info" | "error" = "info") {
 	setTimeout(() => node.remove(), 2100);
 }
 
+/** A caught error's message, as the panel shows it. */
+export const errorMessage = (error: unknown) => String((error as Error)?.message ?? error);
+
 /** Shows a failed action's reason; every caught panel error goes through here. */
 export function toastError(error: unknown) {
-	toast(String((error as Error)?.message ?? error), "error");
+	toast(errorMessage(error), "error");
+}
+
+/** Hands `bytes` to the browser as a download named `name`. */
+export function download(bytes: Uint8Array, name: string, type = "application/octet-stream") {
+	const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type }));
+	const link = h("a", { href: url, download: name, hidden: true });
+	document.body.append(link);
+	link.click();
+	link.remove();
+	// Firefox may begin its download after the click returns. Keep the URL briefly, then release its bytes.
+	setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 export async function copyText(text: string): Promise<boolean> {

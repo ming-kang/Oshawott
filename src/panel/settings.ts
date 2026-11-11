@@ -1,4 +1,4 @@
-import { DEFAULT_BUSY_MODE, type BusyMode, type Preference, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
+import { DEFAULT_BUSY_MODE, type BusyMode, PREFERENCE_DEFAULTS, type Preference, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";
 import { saveLanguage, savedLanguagePreference, t, type LanguagePreference } from "./i18n.ts";
@@ -204,7 +204,7 @@ export class SettingsSheet implements OverlayView {
 	#refreshPreferences() {
 		const source = this.#source();
 		for (const { key, input } of this.#preferences) {
-			input.checked = source?.[key].value ?? (key === "autoCompaction" || key === "autoRetry");
+			input.checked = source?.[key].value ?? PREFERENCE_DEFAULTS[key];
 			input.disabled = this.#preferencePending || !source;
 		}
 	}

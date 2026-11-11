@@ -14,7 +14,7 @@ type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"chats" | "createChat" | "deleteChat" | "renameChat" | "busyMode" | "setBusyMode" | "providers" | "defaultModel" | "setDefaultConfiguration"
 	| "autoTitle" | "autoCompaction" | "autoRetry" | "confirmActions" | "setPreference"
-	| "instructions" | "setInstructions" | "resetInstructions" | "logins" | "logout"
+	| "instructions" | "setInstructions" | "resetInstructions" | "logins" | "removeCredential"
 >;
 async function until(read: () => boolean) {
 	const deadline = Date.now() + 5000;

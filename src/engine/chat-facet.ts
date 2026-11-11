@@ -7,24 +7,31 @@ import {
 	attachmentPaths, completeAttachmentDeletes, inputForSend, inputForUpdate, intendAttachmentDeletes, type QueuedInput,
 	requireContentVision, rollbackAttachments, safeAttachmentPath, storeAttachments,
 } from "./attachments.ts";
-import { TargetDoc, WorkspaceDoc } from "./docs.ts";
+import { preference, TargetDoc, WorkspaceDoc } from "./docs.ts";
 import { type FacetServices, forbidden, gone } from "./facet.ts";
 import { ChatFiles, resolvePath, WORKSPACE } from "./files.ts";
 import { titleOf } from "./titles.ts";
 
-/** Withdraw inputs and record attachment deletion in the same commit, before abort/reset waits for the old run. */
-async function withdrawInputs(target: Conversation, chatId: number, ctx: Context) {
-	await target.commit(async (tx) => {
+/**
+ * Withdraws the queued inputs (only the input `only`, when given) as `abortSubmission` does, recording their files for
+ * deletion in the same commit; whether any was. An input still in the inbox is queued: the commit that places one
+ * removes it there.
+ */
+async function withdrawInputs(target: Conversation, chatId: number, ctx: Context, only?: number): Promise<boolean> {
+	return target.commit(async (tx) => {
 		const inbox = await tx.doc(InboxDoc, target.id);
 		const paths: string[] = [];
+		let withdrawn = false;
 		for (let index = inbox.items.length - 1; index >= 0; index--) {
 			const item = inbox.items[index]!;
-			if (item.mode === "write") continue;
+			if (item.mode === "write" || (only !== undefined && item.id !== only)) continue;
 			paths.push(...attachmentPaths(item as QueuedInput));
 			inbox.items.splice(index, 1);
 			tx.settleSubmission(item.id, { status: "unanswered", reason: "aborted" });
+			withdrawn = true;
 		}
 		await intendAttachmentDeletes(tx, chatId, paths);
+		return withdrawn;
 	}, ctx);
 }
 
@@ -100,7 +107,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 							// The first input is the only title opportunity; it is stored, so a restart or retry never repeats it.
 							if (!summary.titleInitialized) {
 								summary.titleInitialized = true;
-								if (workspace.autoTitle && source === "fallback" && summary.title) titleFallback = summary.title;
+								if (preference(workspace, "autoTitle") && source === "fallback" && summary.title) titleFallback = summary.title;
 							}
 							return submitted;
 						}, ctx);
@@ -128,7 +135,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 					try {
 						result = await target.commit(async (tx) => {
 							const inbox = await tx.doc(InboxDoc, target.id);
-							const item = inbox.items.find((item) => item.id === submissionId && (item.mode === "steer" || item.mode === "followUp"));
+							const item = inbox.items.find((item) => item.id === submissionId);
 							if (!item || item.mode === "write") return "not_found" as const;
 							if (text !== undefined || prepared.length || removed.size) {
 								const next = inputForUpdate(item as QueuedInput, text, prepared, removed);
@@ -151,19 +158,10 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 				}),
 				cancelQueued: locked(async ({ id: submissionId }, ctx) => {
 					const target = await conversation(ctx);
-					// Withdraw as `abortSubmission` does, recording the input's files for deletion in the same commit. An input
-					// still in the inbox is queued: placement removes it there in the commit that places it.
-					const withdrawn = await target.commit(async (tx) => {
-						const inbox = await tx.doc(InboxDoc, target.id);
-						const index = inbox.items.findIndex((item) => item.id === submissionId);
-						const item = inbox.items[index];
-						if (!item || item.mode === "write") return false;
-						await intendAttachmentDeletes(tx, id, attachmentPaths(item as QueuedInput));
-						inbox.items.splice(index, 1);
-						tx.settleSubmission(item.id, { status: "unanswered", reason: "aborted" });
-						return true;
-					}, ctx);
-					if (!withdrawn) return await harness.abortSubmission(submissionId as SubmissionId, ctx, conversationId);
+					// Not queued (any more): the input is placed or settled, which `abortSubmission` tells apart.
+					if (!await withdrawInputs(target, id, ctx, submissionId)) {
+						return await harness.abortSubmission(submissionId as SubmissionId, ctx, conversationId);
+					}
 					await completeDeletes(ctx);
 					return "aborted" as const;
 				}),
@@ -173,7 +171,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 						harness.snapshot(InboxDoc, conversationId, ctx), harness.snapshot(AgentDoc, conversationId, ctx), harness.snapshot(WorkspaceDoc, ctx),
 					]);
 					for (const item of inbox?.items ?? []) {
-						if (item.mode === "steer" || item.mode === "followUp") requireContentVision(services, agent?.model ?? workspace?.defaultModel, item.content);
+						if (item.mode !== "write") requireContentVision(services, agent?.model ?? workspace?.defaultModel, item.content);
 					}
 					const submission = await target.submit({ type: "continue" }, ctx);
 					return submission.id;
@@ -211,7 +209,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 						const configuration = admin.configuration(input, agent.thinkingLevel ?? "off");
 						const inbox = await tx.doc(InboxDoc, target.id);
 						for (const item of inbox.items) {
-							if (item.mode === "steer" || item.mode === "followUp") requireContentVision(services, configuration.model, item.content);
+							if (item.mode !== "write") requireContentVision(services, configuration.model, item.content);
 						}
 						await configureAgent(tx, target.id, configuration);
 					}, ctx);

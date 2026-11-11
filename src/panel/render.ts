@@ -9,7 +9,7 @@ import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
-import { copyText, h, type IconName, icon, mascot, toastError } from "./ui.ts";
+import { copyText, download, errorMessage, h, type IconName, icon, mascot, toastError } from "./ui.ts";
 
 const FAILURE_LABELS = {
 	no_model: "failure.no_model", model_error: "failure.model_error", interrupted: "failure.interrupted", turn_limit: "failure.turn_limit",
@@ -199,16 +199,10 @@ export class Transcript {
 		card.addEventListener("click", async () => {
 			card.setAttribute("disabled", "");
 			try {
-				const data = await load();
-				const url = URL.createObjectURL(new Blob([new Uint8Array(data)], { type: ref.mimeType }));
-				const link = h("a", { href: url, download: ref.name, hidden: true });
-				document.body.append(link);
-				link.click();
-				link.remove();
-				setTimeout(() => URL.revokeObjectURL(url), 30_000);
+				download(await load(), ref.name, ref.mimeType);
 			} catch (error) {
 				card.classList.add("failed");
-				card.append(h("span", { class: "sr-only" }, String((error as Error)?.message ?? error)));
+				card.append(h("span", { class: "sr-only" }, errorMessage(error)));
 			} finally {
 				card.removeAttribute("disabled");
 			}

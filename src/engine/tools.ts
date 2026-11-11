@@ -66,6 +66,14 @@ function detailsOf(name: PageToolName, result: unknown): { details: Record<strin
 	return undefined;
 }
 
+/** What a confirmation quotes of an action's input after the element it acts on. */
+function quoted(name: PageToolName, args: Record<string, unknown>): string {
+	if (name === "page_type") return `: “${String(args.text ?? "").slice(0, 80)}”`;
+	if (name === "page_select") return `: ${String(args.option ?? "")}`;
+	if (name === "page_press") return `: ${String(args.key ?? "")}`;
+	return "";
+}
+
 export interface BrowserToolsOptions {
 	readonly host: EngineHost;
 	readonly approvals: Approvals;
@@ -110,9 +118,8 @@ export function browserExtension({ host, approvals, confirmActions }: BrowserToo
 				if (spec.replay === "unsafe" && confirmActions()) {
 					const element = rest.ref === undefined ? undefined
 						: await callPage(host, tab.tabId, "describe", { ref: rest.ref }, context) as { role: string; name: string };
-					const said = name === "page_type" ? `: “${String(rest.text ?? "").slice(0, 80)}”` : name === "page_select" ? `: ${String(rest.option ?? "")}`
-						: name === "page_press" ? `: ${String(rest.key ?? "")}` : "";
-					await approve(api, name, `${element ? `${element.name || element.role} (${element.role})` : tab.title}${said}`, tab.url, context);
+					const target = element ? `${element.name || element.role} (${element.role})` : tab.title;
+					await approve(api, name, `${target}${quoted(name, rest)}`, tab.url, context);
 				}
 				const result = await callPage(host, tab.tabId, name, rest, context);
 				return { output: text(result), structuredOutput: result as never, ...detailsOf(name, result) };

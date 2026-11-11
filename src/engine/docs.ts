@@ -1,5 +1,7 @@
 import { defineDoc } from "@earendil-works/pi-durable";
-import { DEFAULT_BUSY_MODE, type BusyMode, type ModelRef, type ProviderProfile, type ThinkingLevel } from "../contracts/chat.ts";
+import {
+	DEFAULT_BUSY_MODE, type BusyMode, type ModelRef, PREFERENCE_DEFAULTS, type Preference, type ProviderProfile, type ThinkingLevel,
+} from "../contracts/chat.ts";
 
 /** `fallback` follows the first message; `manual` and `auto` are never replaced by a generated title. */
 export type TitleSource = "fallback" | "manual" | "auto";
@@ -24,11 +26,11 @@ export type WorkspaceState = {
 	defaultThinkingLevel?: ThinkingLevel;
 	/** Absent in older documents, whose delivery preference is Steer. */
 	busyMode?: BusyMode;
-	/** Optional in older documents. Automatic titles are opt-in; the other policies retain Durable's defaults. */
+	/** The switches; an older document may lack some, which then have their `PREFERENCE_DEFAULTS` value. */
 	autoTitle?: boolean;
 	autoCompaction?: boolean;
 	autoRetry?: boolean;
-	/** Ask before each action that changes a page. Absent in older documents: off. */
+	/** Ask before each action that changes a page. */
 	confirmActions?: boolean;
 	/** Global native Durable instructions, shared by every chat; absent means the built-in text. */
 	instructions?: string;
@@ -41,11 +43,14 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	version: 1,
 	scope: "session",
 	initial: () => ({
-		chats: [], defaultModel: null, defaultThinkingLevel: "off", busyMode: DEFAULT_BUSY_MODE,
-		autoTitle: false, autoCompaction: true, autoRetry: true, pendingFileDeletes: [],
+		chats: [], defaultModel: null, defaultThinkingLevel: "off", busyMode: DEFAULT_BUSY_MODE, ...PREFERENCE_DEFAULTS,
+		pendingFileDeletes: [],
 	}),
 	checkpointWhen: () => true,
 });
+
+/** A switch of `workspace`, or its default. */
+export const preference = (workspace: WorkspaceState | undefined, key: Preference): boolean => workspace?.[key] ?? PREFERENCE_DEFAULTS[key];
 
 /** Custom provider profiles contain no credentials and are restored before Durable resumes model work. */
 export const ProvidersDoc = defineDoc<{ custom: ProviderProfile[] }>({

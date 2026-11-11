@@ -189,7 +189,7 @@ test("a panel signs in through the Engine, sees only the account's models, and s
 	// Signing out cancels a sign-in still running and leaves no credential behind.
 	const retry = await workspace.startLogin({ provider: "acct" }, context);
 	await until(() => workspace.logins.value.find((login) => login.id === retry)?.prompt);
-	await workspace.logout({ provider: "acct" }, context);
+	await workspace.removeCredential({ provider: "acct" }, context);
 	await until(() => workspace.logins.value.find((login) => login.id === retry)?.status === "cancelled");
 	assert.equal(await credentials.read("acct"), undefined);
 	assert.deepEqual([summary(workspace).configured, summary(workspace).models.length], [false, 2]);

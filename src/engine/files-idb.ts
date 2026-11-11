@@ -1,13 +1,7 @@
+import { openDatabase, settle } from "../lib/idb.ts";
 import type { Entry, FileBackend, FileTx } from "./files.ts";
 
 const STORES = ["meta", "data"] as const;
-
-function request<T>(req: IDBRequest<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => reject(req.error);
-	});
-}
 
 /** Keys `[chat, path]` of every path that starts with `prefix` (which ends in `/`): up to the next character, `0`. */
 const startingWith = (chat: number, prefix: string) => IDBKeyRange.bound([chat, prefix], [chat, `${prefix.slice(0, -1)}0`], false, true);
@@ -19,15 +13,12 @@ export class IndexedDbFileBackend implements FileBackend {
 
 	private constructor(db: IDBDatabase) {
 		this.#db = db;
-		db.onversionchange = () => db.close();
 	}
 
 	static async open(name = "oshawott-files"): Promise<IndexedDbFileBackend> {
-		const opening = indexedDB.open(name, 1);
-		opening.onupgradeneeded = () => {
-			for (const store of STORES) opening.result.createObjectStore(store);
-		};
-		return new IndexedDbFileBackend(await request(opening));
+		return new IndexedDbFileBackend(await openDatabase(name, (db) => {
+			for (const store of STORES) db.createObjectStore(store);
+		}));
 	}
 
 	transact<T>(chat: number, mode: "readonly" | "readwrite", fn: (tx: FileTx) => Promise<T>): Promise<T> {
@@ -49,14 +40,14 @@ export class IndexedDbFileBackend implements FileBackend {
 				}
 			};
 			const files: FileTx = {
-				get: (path) => request(meta.get([chat, path]) as IDBRequest<Entry | undefined>),
+				get: (path) => settle(meta.get([chat, path]) as IDBRequest<Entry | undefined>),
 				data: async (path) => {
-					const bytes = (await request(data.get([chat, path]))) as Uint8Array | ArrayBuffer | undefined;
+					const bytes = (await settle(data.get([chat, path]))) as Uint8Array | ArrayBuffer | undefined;
 					return bytes === undefined || bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 				},
 				below: async (dir) => {
 					const range = startingWith(chat, dir === "/" ? "/" : `${dir}/`);
-					const [keys, entries] = await Promise.all([request(meta.getAllKeys(range)), request(meta.getAll(range) as IDBRequest<Entry[]>)]);
+					const [keys, entries] = await Promise.all([settle(meta.getAllKeys(range)), settle(meta.getAll(range) as IDBRequest<Entry[]>)]);
 					return keys.map((key, index) => [(key as [number, string])[1], entries[index]!] as const);
 				},
 				put: (path, entry, bytes) => {

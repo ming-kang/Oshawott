@@ -8,7 +8,7 @@ import { type Context, createHost, type Host, type HostError, type Link } from "
 import { completeAttachmentDeletes } from "./attachments.ts";
 import { ConversationActivity } from "./activity.ts";
 import { Approvals } from "./approvals.ts";
-import { ProvidersDoc, WorkspaceDoc, type WorkspaceState } from "./docs.ts";
+import { preference, ProvidersDoc, WorkspaceDoc, type WorkspaceState } from "./docs.ts";
 import { panelFacet } from "./facet.ts";
 import { writeInstructions } from "./instructions.ts";
 import { LoginSessions, type OAuthSetups } from "./oauth.ts";
@@ -53,8 +53,8 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, fetch: options.fetch, oauth: options.oauth });
 	const logins = new LoginSessions({ models: options.models, setups: options.oauth, now, timeoutMs: options.loginTimeoutMs });
 	const approvals = new Approvals();
-	/** Set from the stored Workspace before scheduling starts; the defaults only cover the open itself. */
-	let execution = { autoCompaction: true, autoRetry: true, confirmActions: false };
+	/** Observed before scheduling starts; until then the preferences' defaults only cover the open itself. */
+	let workspace: WorkspaceState | undefined;
 
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError });
 	host.route(
@@ -78,7 +78,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	);
 
 	const registry = createRegistry();
-	registry.install(browserExtension({ host, approvals, confirmActions: () => execution.confirmActions }));
+	registry.install(browserExtension({ host, approvals, confirmActions: () => preference(workspace, "confirmActions") }));
 	registry.install(filesExtension({ host, fetch: options.fetch ?? ((input, init) => fetch(input, init)) }));
 	for (const extension of options.extensions ?? []) registry.install(extension);
 
@@ -98,16 +98,16 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 			models: options.models,
 			registry,
 			settings: () => ({
-				retry: { enabled: execution.autoRetry },
-				compaction: { enabled: execution.autoCompaction },
+				retry: { enabled: preference(workspace, "autoRetry") },
+				compaction: { enabled: preference(workspace, "autoCompaction") },
 				afterFailedRun: "keep",
 			}),
 			// Authorize against the current workspace, not a task's possibly older phase snapshot. Old tool handles
 			// check again at each filesystem operation; a removed chat cannot write after its files are cleared.
 			env: async ({ conversationId, cwd }, ctx) => {
 				const requireActive = async (ctx: Context) => {
-					const workspace = await harness.snapshot(WorkspaceDoc, ctx);
-					if (!workspace?.chats.some((chat) => chat.id === conversationId)) {
+					const current = await harness.snapshot(WorkspaceDoc, ctx);
+					if (!current?.chats.some((chat) => chat.id === conversationId)) {
 						throw new FileError("permission_denied", `No chat ${conversationId}`);
 					}
 				};
@@ -137,9 +137,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const activity = new ConversationActivity({ harness, now, onError });
 	await activity.start(context);
 	const acceptWorkspace = (value: WorkspaceState | undefined, ctx: Context) => {
-		execution = {
-			autoCompaction: value?.autoCompaction ?? true, autoRetry: value?.autoRetry ?? true, confirmActions: value?.confirmActions ?? false,
-		};
+		workspace = value;
 		activity.setChats(value?.chats ?? [], ctx);
 	};
 	let workspaceRevision = 0;

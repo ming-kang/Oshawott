@@ -5,7 +5,7 @@ import { requestOrigins } from "./model-permissions.ts";
 import { copyText, h, icon, toast, toastError } from "./ui.ts";
 
 export type LoginSource = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
-	"logins" | "startLogin" | "answerLogin" | "cancelLogin" | "dismissLogin" | "logout"
+	"logins" | "startLogin" | "answerLogin" | "cancelLogin" | "dismissLogin" | "removeCredential"
 >;
 const context = BACKGROUND_CONTEXT;
 
@@ -125,7 +125,7 @@ export class LoginCard {
 
 	async #signOut(provider: ProviderSummary) {
 		await this.#run(async (source) => {
-			await source.logout({ provider: provider.id }, context);
+			await source.removeCredential({ provider: provider.id }, context);
 			toast(t("login.signedOut"));
 		});
 	}

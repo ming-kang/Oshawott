@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fromBase64, portLink, toBase64 } from "../src/link/port-link.ts";
+import { fromBase64, toBase64 } from "../src/lib/base64.ts";
+import { portLink } from "../src/link/port-link.ts";
 import { fakePortPair } from "./support/fake-port.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));

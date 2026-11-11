@@ -2,7 +2,7 @@ import type { MutableModels, UserMessage } from "@earendil-works/pi-ai";
 import { AgentDoc, type ConversationId, type Harness, type SubmissionId } from "@earendil-works/pi-durable";
 import { userInput } from "../lib/attachments.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
-import { WorkspaceDoc, type WorkspaceState } from "./docs.ts";
+import { preference, WorkspaceDoc, type WorkspaceState } from "./docs.ts";
 import type { ProviderManager } from "./providers.ts";
 
 export const TITLE_TIMEOUT_MS = 15_000;
@@ -117,5 +117,5 @@ export class ChatTitles {
 /** Only a still-enabled preference and an untouched fallback title may be replaced. */
 function replaceable(workspace: WorkspaceState | undefined, chatId: number, fallback: string) {
 	const summary = workspace?.chats.find((chat) => chat.id === chatId);
-	return Boolean(workspace?.autoTitle && summary?.titleSource === "fallback" && summary.title === fallback);
+	return preference(workspace, "autoTitle") && summary?.titleSource === "fallback" && summary.title === fallback;
 }

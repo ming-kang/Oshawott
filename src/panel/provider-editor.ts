@@ -11,7 +11,7 @@ import { segmented } from "./segmented.ts";
 import { h, icon, toast, toastError } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
-	"providers" | "setApiKey" | "clearApiKey" | "saveProvider" | "deleteProvider" | "refreshProvider"
+	"providers" | "setApiKey" | "saveProvider" | "deleteProvider" | "refreshProvider"
 > & LoginSource;
 type ProviderKind = "builtin" | "custom";
 const context = BACKGROUND_CONTEXT;
@@ -430,7 +430,7 @@ export class ProviderEditorSheet implements OverlayView {
 		try {
 			const source = this.#source();
 			if (!source) throw new Error("The workspace is not ready.");
-			if (this.#kind === "builtin") await source.clearApiKey({ provider: provider.id }, context);
+			if (this.#kind === "builtin") await source.removeCredential({ provider: provider.id }, context);
 			else await source.deleteProvider({ provider: provider.id }, context);
 			toast(t("settings.providerDeleted"));
 			this.#onClose();

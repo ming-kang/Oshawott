@@ -1,4 +1,5 @@
 import type { AttachmentInput } from "../lib/attachments.ts";
+import { openDatabase, transaction } from "../lib/idb.ts";
 
 export type ComposerDraft = {
 	text: string;
@@ -7,14 +8,11 @@ export type ComposerDraft = {
 };
 
 type StoredDraft = ComposerDraft & { key: string };
+const STORE = "drafts";
 const keyOf = (chatId: number | undefined) => chatId === undefined ? "new" : String(chatId);
-
-function request<T>(operation: IDBRequest<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		operation.onsuccess = () => resolve(operation.result);
-		operation.onerror = () => reject(operation.error);
-	});
-}
+const copied = <T extends ComposerDraft>(draft: T): T => ({
+	...draft, attachments: draft.attachments.map((item) => ({ ...item, data: new Uint8Array(item.data) })),
+});
 
 /** Panel-local drafts. Bytes use structured clone, not a second copy in extension local storage. */
 export class DraftStore {
@@ -23,15 +21,12 @@ export class DraftStore {
 
 	private constructor(db?: IDBDatabase) {
 		this.#db = db;
-		if (db) db.onversionchange = () => db.close();
 	}
 
 	static async open(name = "oshawott-drafts"): Promise<DraftStore> {
 		if (typeof indexedDB === "undefined") return new DraftStore();
 		try {
-			const opening = indexedDB.open(name, 1);
-			opening.onupgradeneeded = () => { opening.result.createObjectStore("drafts", { keyPath: "key" }); };
-			return new DraftStore(await request(opening));
+			return new DraftStore(await openDatabase(name, (db) => db.createObjectStore(STORE, { keyPath: "key" })));
 		} catch {
 			// Private browsing or a disabled database must not disable the composer.
 			return new DraftStore();
@@ -41,45 +36,25 @@ export class DraftStore {
 	async load(chatId: number | undefined): Promise<ComposerDraft | undefined> {
 		const key = keyOf(chatId);
 		const stored = this.#db
-			? await request(this.#db.transaction("drafts", "readonly").objectStore("drafts").get(key)) as StoredDraft | undefined
+			? await transaction(this.#db, STORE, "readonly", (store) => store.get(key) as IDBRequest<StoredDraft | undefined>)
 			: this.#memory.get(key);
 		if (!stored) return undefined;
-		return {
-			text: stored.text,
-			updatedAt: stored.updatedAt,
-			attachments: stored.attachments.map((item) => ({ ...item, data: new Uint8Array(item.data) })),
-		};
+		const { text, updatedAt, attachments } = copied(stored);
+		return { text, updatedAt, attachments };
 	}
 
 	async save(chatId: number | undefined, draft: ComposerDraft): Promise<void> {
 		const key = keyOf(chatId);
 		if (!draft.text && !draft.attachments.length) return this.remove(chatId);
-		const stored: StoredDraft = { ...draft, key, attachments: draft.attachments.map((item) => ({ ...item, data: new Uint8Array(item.data) })) };
-		if (!this.#db) {
-			this.#memory.set(key, stored);
-			return;
-		}
-		const tx = this.#db.transaction("drafts", "readwrite");
-		tx.objectStore("drafts").put(stored);
-		await new Promise<void>((resolve, reject) => {
-			tx.oncomplete = () => resolve();
-			tx.onabort = () => reject(tx.error ?? new Error("Saving the draft was aborted"));
-			tx.onerror = () => reject(tx.error);
-		});
+		const stored: StoredDraft = { ...copied(draft), key };
+		if (this.#db) await transaction(this.#db, STORE, "readwrite", (store) => store.put(stored));
+		else this.#memory.set(key, stored);
 	}
 
 	async remove(chatId: number | undefined): Promise<void> {
 		const key = keyOf(chatId);
-		if (!this.#db) {
-			this.#memory.delete(key);
-			return;
-		}
-		const tx = this.#db.transaction("drafts", "readwrite");
-		tx.objectStore("drafts").delete(key);
-		await new Promise<void>((resolve, reject) => {
-			tx.oncomplete = () => resolve();
-			tx.onabort = () => reject(tx.error ?? new Error("Removing the draft was aborted"));
-		});
+		if (this.#db) await transaction(this.#db, STORE, "readwrite", (store) => store.delete(key));
+		else this.#memory.delete(key);
 	}
 
 	close() {

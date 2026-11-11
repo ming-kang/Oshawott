@@ -58,6 +58,10 @@ export function customProvider(profile: ProviderProfile, fetcher?: typeof fetch)
 	};
 }
 
+/** Whether a cached model was discovered at `profile`'s current endpoint, not before its URL or API changed. */
+const discoveredFor = (profile: ProviderProfile, model: Pick<Model<Api>, "provider" | "baseUrl" | "api">) =>
+	model.provider === profile.id && model.baseUrl === profile.baseUrl && model.api === profile.api;
+
 function safeDiscoveryError(error: unknown): string {
 	const message = error instanceof Error ? error.message : "";
 	if (/^Model discovery (could not reach|failed with HTTP \d{3})/.test(message)) return message;
@@ -116,12 +120,7 @@ export class ProviderManager {
 		for (const id of this.#profiles.keys()) if (!ids.has(id)) this.#models.deleteProvider(id);
 		this.#profiles.clear();
 		for (const profile of profiles) {
-			if (this.#modelsStore) {
-				const stored = await this.#modelsStore.read(profile.id);
-				if (stored?.models.some((model) => model.provider !== profile.id || model.baseUrl !== profile.baseUrl || model.api !== profile.api)) {
-					await this.#modelsStore.delete(profile.id);
-				}
-			}
+			await this.#dropStaleCatalog(profile);
 			this.#profiles.set(profile.id, profile);
 			this.#models.setProvider(customProvider(profile, this.#fetch));
 		}
@@ -135,14 +134,12 @@ export class ProviderManager {
 		const ids = new Set(profile.models.map((model) => model.id));
 		const stored = await this.#modelsStore?.read(profile.id);
 		if (stored) {
-			for (const model of stored.models) {
-				if (model.provider === profile.id && model.baseUrl === profile.baseUrl && model.api === profile.api) ids.add(model.id);
-			}
+			for (const model of stored.models) if (discoveredFor(profile, model)) ids.add(model.id);
 			return ids;
 		}
 		const previousManual = new Set(this.#profiles.get(profile.id)?.models.map((model) => model.id) ?? []);
 		for (const model of this.#models.getModels(profile.id)) {
-			if (model.baseUrl === profile.baseUrl && model.api === profile.api && !previousManual.has(model.id)) ids.add(model.id);
+			if (discoveredFor(profile, model) && !previousManual.has(model.id)) ids.add(model.id);
 		}
 		return ids;
 	}
@@ -153,12 +150,14 @@ export class ProviderManager {
 
 	async restoreCatalog(id: string): Promise<void> {
 		const profile = this.#profiles.get(id);
-		const stored = await this.#modelsStore?.read(id);
-		if (profile && stored?.models.some((model) => model.provider !== id || model.baseUrl !== profile.baseUrl || model.api !== profile.api)) {
-			await this.#modelsStore?.delete(id);
-		}
+		if (profile) await this.#dropStaleCatalog(profile);
 		await this.#models.refresh({ providers: [id], allowNetwork: false });
 		await this.changed();
+	}
+
+	async #dropStaleCatalog(profile: ProviderProfile) {
+		const stored = await this.#modelsStore?.read(profile.id);
+		if (stored?.models.some((model) => !discoveredFor(profile, model))) await this.#modelsStore?.delete(profile.id);
 	}
 
 	async prepareDelete(id: string): Promise<() => void> {

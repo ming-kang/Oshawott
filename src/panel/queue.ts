@@ -1,11 +1,10 @@
 import type { ConversationView, InboxItem, InboxState, LiveState } from "@earendil-works/pi-durable";
 import type { BusyMode, QueueCancelResult, QueueUpdateResult } from "../contracts/chat.ts";
-import { type AttachmentRef, userInput } from "../lib/attachments.ts";
-import type { AttachmentInput } from "../lib/attachments.ts";
+import { type AttachmentInput, type AttachmentRef, userInput } from "../lib/attachments.ts";
 import { AttachmentPicker, pendingInput } from "./attachments.ts";
 import { t } from "./i18n.ts";
 import type { OverlayView } from "./overlays.ts";
-import { h, icon, toast } from "./ui.ts";
+import { h, icon, toast, toastError } from "./ui.ts";
 
 type UserItem = Extract<InboxItem, { mode: BusyMode }>;
 type QueueChange = { text?: string; whenBusy?: BusyMode; requestId?: string; attachments?: AttachmentInput[]; removeAttachments?: string[] };
@@ -187,7 +186,7 @@ export class MessageQueue {
 		try {
 			await action();
 		} catch (error) {
-			toast(String((error as Error)?.message ?? error), "error");
+			toastError(error);
 		} finally {
 			this.#pending = false;
 			this.#render();

@@ -1,16 +1,14 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
-import type { FauxResponseFactory, Message, OAuthCredential, Provider } from "@earendil-works/pi-ai";
+import type { FauxResponseFactory, OAuthCredential, Provider, ToolResultMessage } from "@earendil-works/pi-ai";
 import { NO_ACCESS } from "../contracts/browser.ts";
 
 const DEMO_PROVIDER = "demo";
 
 type Snapshot = { url?: string; title?: string; text?: string; elements?: { ref: string; role: string; name: string }[] };
 
-function lastOf(messages: readonly Message[]) {
-	return messages.at(-1);
-}
-
 const CJK = /\p{Script=Han}/u;
+
+const textOf = (result: ToolResultMessage) => result.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
 function answer(snapshot: Snapshot | undefined, error: string | undefined, zh: boolean) {
 	if (!snapshot) return zh ? `没能读取页面：${error ?? "没有结果"}。` : `I could not read the page: ${error ?? "no result"}.`;
@@ -128,14 +126,14 @@ export function demoProvider() {
 	});
 	const respond: FauxResponseFactory = (context) => {
 		handle.appendResponses([respond]);
-		const last = lastOf(context.messages);
+		const last = context.messages.at(-1);
 		const asked = [...context.messages].reverse().find((message) => message.role === "user");
 		const requested = asked ? typeof asked.content === "string" ? asked.content : asked.content.map((block) => block.type === "text" ? block.text : "").join(" ") : "";
 		const zh = CJK.test(requested);
 		const url = URL_IN_TEXT.exec(requested)?.[0]?.replace(/[.,，。;；!?！？]+$/, "");
 		const method = /^\s*POST\s+https?:\/\//i.test(requested) ? "POST" : "GET";
 		if (last?.role === "toolResult" && last.toolName === "fetch") {
-			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			const text = textOf(last);
 			if (last.isError) return fauxAssistantMessage(fetchFailed(text, zh));
 			const saved = /Saved the body to (\S+)\.$/m.exec(text)?.[1] ?? "page.html";
 			return fauxAssistantMessage(
@@ -147,7 +145,7 @@ export function demoProvider() {
 			);
 		}
 		if (last?.role === "toolResult" && last.toolName === "codemode") {
-			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			const text = textOf(last);
 			return fauxAssistantMessage(last.isError ? fetchFailed(text, zh) : measured(text, zh));
 		}
 		if (last?.role === "user" && url) {
@@ -163,16 +161,15 @@ export function demoProvider() {
 		// "Click …": read the page, click its first button and say what happened. Exercises an action that changes a page.
 		const clicking = /\bclick\b|点击/i.test(requested);
 		if (last?.role === "toolResult" && last.toolName === "page_click") {
-			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			const text = textOf(last);
 			return fauxAssistantMessage(last.isError ? (zh ? `没有点击：${text}` : `I did not click: ${text}`) : (zh ? "点好了。" : "Clicked."));
 		}
 		if (last?.role === "toolResult" && last.toolName === "page_snapshot" && clicking && !last.isError) {
-			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
-			const button = (JSON.parse(text) as Snapshot).elements?.find((element) => element.role === "button");
+			const button = (JSON.parse(textOf(last)) as Snapshot).elements?.find((element) => element.role === "button");
 			if (button) return fauxAssistantMessage([fauxToolCall("page_click", { ref: button.ref })], { stopReason: "toolUse" });
 		}
 		if (last?.role === "toolResult") {
-			const text = last.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+			const text = textOf(last);
 			let snapshot: Snapshot | undefined;
 			try {
 				snapshot = last.isError ? undefined : (JSON.parse(text) as Snapshot);
