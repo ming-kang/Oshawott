@@ -1,4 +1,3 @@
-import type { Context } from "@earendil-works/chord/context";
 import {
 	type BinaryReader,
 	type DirReader,
@@ -22,6 +21,7 @@ import {
 } from "@earendil-works/pi-durable/env";
 
 import { MAX_FILE_BYTES } from "../contracts/chat.ts";
+import type { Context } from "../lib/chord.ts";
 
 export { MAX_FILE_BYTES };
 export const WORKSPACE = "/workspace";
