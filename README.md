@@ -9,7 +9,7 @@
 水水獭（Oshawott）是基于 [Pi Durable](https://github.com/earendil-works/pi) 的浏览器智能体扩展，支持 Chromium 和 Firefox。
 
 - **可恢复**：对话、工具调用和运行状态存进 Durable，后台被回收或浏览器重启后能接着运行
-- **页面工具**：读取当前标签页的快照（可限定区域、提取表格和列表），检查元素的 HTML、属性、样式与位置，执行点击、输入、滚动；列出标签页和打开新标签页
+- **页面工具**：读取当前标签页的快照（可限定区域、提取表格和列表），检查元素的 HTML、属性、样式与位置，执行点击、输入、选择、按键、悬停、滚动和等待；列出、打开、跳转、切换和关闭标签页；可开启“操作前确认”
 - **文件与 Code Mode**：每个对话有自己的持久文件区；模型在 Worker 里的 QuickJS 中运行 JS 来处理文件
 - **`fetch`**：请求用户授权过的站点，可以把响应存成文件
 - **多模型**：内置 Pi-AI 的浏览器 API Key 服务；Anthropic、OpenAI Codex、GitHub Copilot、Kimi Coding、Meta、xAI 可用账号登录（设备码 / 粘贴授权码）；自定义 OpenAI Responses / Completions、Anthropic Messages 端点，支持模型发现、自定义模型回退、视觉元数据和每会话思考档位

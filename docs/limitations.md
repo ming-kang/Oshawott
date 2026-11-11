@@ -11,9 +11,11 @@
 
 - 账号登录只支持不需要本地回调的方式；新版 OpenAI「Sign in with ChatGPT」、OpenRouter 与 Radius 的 OAuth 不可用（API Key 仍可用），GitHub Copilot 只支持 github.com，不支持 Enterprise 域名。
 - 进行中的登录保存在 Engine 内存里：Engine 被回收或浏览器重启后需要重新开始，已完成的登录不受影响。
-- Panel 只显示 Durable view 窗口内的记录，不能加载更早的历史。
-- fetch 不带登录态，也不跟随重定向。
-- 页面工具只处理标签页的顶层文档，不进入 iframe 和 shadow DOM；也不读取页面脚本的变量、Console 或网络请求。
+- Panel 只显示 Durable view 窗口内的记录，不能加载更早的历史；不能重新生成回答或编辑已发送的消息，也不显示上下文用量。
+- fetch 不带登录态。GET / HEAD 遇到重定向时只尝试同一地址的 https、`www` 和末尾斜杠形式，其他重定向（以及所有非 GET / HEAD 请求的重定向）都拒绝，需要直接请求最终地址。
+- 页面工具只处理标签页的顶层文档，不进入 iframe 和 shadow DOM；不能截图；也不读取页面脚本的变量、Console 或网络请求。
+- 页面操作派发的是合成事件（`isTrusted` 为 false），少数只认真实输入的页面不会响应。
+- “操作前确认”默认关闭；待确认的请求和“本对话内始终允许”保存在 Engine 内存里，Engine 被回收后需要重新确认。
 - 移除对话后，Durable 中的原始对话记录仍会保留（pi-durable 1.5 没有删除接口）。
 - 不会定期清理临时文件。
 - Chromium 的 offscreen 文档空闲时不会自动关闭。

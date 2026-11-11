@@ -38,6 +38,28 @@ Oshawott 由四个角色组成，彼此通过 chord 远程对象通信。
 
 Panel 用 `self.follow` 直接观察 Durable 状态，自己不另存一份对话。Provider 摘要由 Engine 从运行时注册表派生，只包含配置状态和模型能力，不包含 Key。自定义 Profile 与发现目录分别在 Engine 启动、恢复模型工作前加载。
 
+不在 Durable 里的状态——Provider 列表（含“正在刷新”）、进行中的登录、待确认的操作——由 Engine 各持有一份 `Published<T>`（`src/engine/published.ts`），Panel 对象同样用 `self.follow` 观察。它们不属于某个 Panel 对象，所以多个窗口看到的是同一份。
+
+## Engine 的分层
+
+| 文件 | 职责 |
+|:-:|---|
+| `engine.ts` | 组装存储、Harness、工具和下面各项服务 |
+| `facet.ts` | 只接受 Panel 的调用；把 `Workspace`、`Chat` 交给下面两个文件 |
+| `workspace-facet.ts`、`chat-facet.ts` | 契约方法到服务的薄映射，不含业务流程 |
+| `provider-admin.ts` | 保存、移除、发现服务与模型的完整流程（权限、凭据、回退、默认模型） |
+| `providers.ts`、`oauth.ts`、`approvals.ts` | 运行时注册表、登录会话、待确认的操作 |
+| `tools.ts`、`files-tools.ts` | 浏览器工具与文件、fetch 工具 |
+
+需要排队的操作用 `src/lib/serial.ts` 的 `Serial` / `KeyedSerial`，不再各自手写 Promise 链。
+
+## 站点访问与操作确认
+
+- **读写页面**：页面工具只作用于用户已授权站点的 `http(s)` 标签页。`Browser` 返回的每个标签页带 `access`；没有授权时工具返回带 `NO_ACCESS_CODE` 的结构化结果，Panel 在工具卡片上显示授权按钮，授权后自动告诉模型继续。fetch 用同一个结果。
+- **离开当前站点**：`tab_open`、`tab_navigate` 只接受 `http(s)` 地址；目标站点未授权时一定先问用户，避免把页面内容拼进 URL 带出去。
+- **确认模式**：设置里打开“操作前确认”后，所有 `unsafe` 页面工具（点击、输入、选择、按键等）执行前都要用户同意。`Approvals` 把请求放进 `Chat.approvals`，Panel 在输入框上方显示允许 / 本对话内始终允许 / 拒绝；拒绝会作为工具错误交给模型。只读工具不询问。
+- **目标标签页**：每个对话记住任务开始时的标签页（`TargetDoc`）。该标签页关闭后退回当前活动标签页；模型显式指定的 `tabId` 不存在则报错。
+
 ## 账号登录
 
 协议、令牌交换与刷新都由 Pi-AI 完成，扩展只做三件事：
@@ -64,7 +86,7 @@ Durable 通过 `onWake` 安排唤醒，Broker 用 alarm `oshawott:wake` 在后�
 - Page 运行在 isolated world：能读写 DOM，看不到页面脚本的变量和函数；不向页面主世界注入代码。元素 `ref` 用 `WeakRef` 保存在页面内存里，格式为 `<页面加载>.<快照代数>.e<n>`。新快照、整页加载或离开快照时的 URL（不含 hash，返回原 URL 也不恢复）后旧 `ref` 一律报错，不会命中其他元素。
 - 页面进入往返缓存（bfcache）时主动关闭 Port：Firefox 不会关闭冻结页面的 Port，否则 Engine 会继续调用旧文档直到超时。页面恢复后，下一次 attach 会重新连接，同一文档的 ref 不变。
 - 页面工具的输出有固定上限（`src/page/limits.ts`）：快照元素数、`page_inspect` 的元素数与 HTML 长度、属性值、表格行列和列表项。密码框的 `value`（含 `<template>` 内）会被替换为 `[redacted]`。
-- 页面工具规格只在 `src/tools/page-tools.ts` 定义：只读的标 `safe`，会改动页面的标 `unsafe`。
+- 页面工具规格只在 `src/tools/page-tools.ts` 定义：只读的标 `safe`，会改动页面的标 `unsafe`。`page_click` 按真实指针的顺序派发悬停、按下、聚焦、抬起和点击事件，拒绝已禁用的元素；`page_type` 只接受可输入的控件，下拉框用 `page_select`。快照里每个元素带当前状态（值、勾选、禁用、展开、链接地址）。
 - Code Mode 在 Worker 的 QuickJS WASM 中运行，只能通过工具访问当前对话的文件，没有 shell。
 - 普通构建只为内置模型 API 域名声明静态权限；自定义服务按 Base URL 的 origin 请求按需权限，不默认扩大为 `<all_urls>`。其他站点需要用户授权；开发构建额外声明 `<all_urls>`，供自动测试使用。
 - API key 和 OAuth token 只会进入 Engine 的 `CredentialStore`。Panel 状态只包含是否已配置及凭据类型；发现错误不携带响应体、请求头或 Key。Pi-AI 的登录错误会引用提供商的响应，Engine 只把它归类为错误码（及 HTTP 状态），原文既不发布也不写日志；粘贴的授权码只经 `answerLogin` 送进 Engine。授权页面只在用户点击链接时打开，登录所需域名在点击「登录」时按需申请权限。Panel 从不插入原始 HTML：Markdown 先解析再构建 DOM，链接只允许 `http(s):` 和 `mailto:`。

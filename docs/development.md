@@ -28,6 +28,8 @@ node scripts/screenshots.mjs [目录]   # 默认 dist/screenshots；OSHAWOTT_LAN
 
 开发构建除演示模型外还注册 `Demo account`：一个只能账号登录的内置服务，显示设备码 `DEMO-1234` 后要求输入授权码 `demo`。冒烟测试用它走完 Engine 的登录会话和 Panel 界面，不需要真实账号。
 
+演示模型按提示词走固定脚本：含 “click” / “点击” 时先读页面再点第一个按钮，冒烟测试用它验证操作确认。测试站点的 `/actions` 页面（`scripts/lib/smoke.mjs` 的 `ACTIONS_PAGE`）把每个控件收到的事件写进 `#log`，页面工具的自测据此断言。
+
 ## 调试
 
 Engine 全局对象 `oshawott` 在普通构建中也可用：
