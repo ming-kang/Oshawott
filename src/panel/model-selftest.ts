@@ -79,7 +79,11 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		input("#model-menu input", "local-reasoning");
 		click('#model-menu .menu-item[data-model="local-reasoning"]');
 		await until(() => !document.querySelector("#model-menu"));
-		click("#thinking");
+		// The button follows the chosen model a moment after the model menu closes: click until its menu is there.
+		await until(() => {
+			if (!document.querySelector("#thinking-menu")) click("#thinking");
+			return document.querySelector("#thinking-menu [data-level]") ?? undefined;
+		});
 		const effortOptions = [...document.querySelectorAll<HTMLElement>("#thinking-menu [data-level]")];
 		step("Effort options use translated level labels under a heading", effortOptions.length > 0
 			&& effortOptions.every((option) => option.textContent?.trim() === t(`thinking.level.${option.dataset.level as ThinkingLevel}`))
