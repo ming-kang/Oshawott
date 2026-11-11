@@ -12,7 +12,7 @@ import { loginFailure, LoginSessions, type OAuthSetups } from "../src/engine/oau
 import { until } from "./support/wait.ts";
 import { connectPanel, context, openEngine, serveBrowser } from "./support/world.ts";
 // @ts-expect-error The build helper is plain JavaScript without declarations.
-import * as piOAuth from "../scripts/lib/pi-oauth.mjs";
+import * as piOAuth from "../scripts/lib/pi-ai.mjs";
 
 const { BROWSER_FLOWS, loaderSource, staticNodeImports } = piOAuth as {
 	BROWSER_FLOWS: Record<string, [loader: string, module: string, name: string]>;

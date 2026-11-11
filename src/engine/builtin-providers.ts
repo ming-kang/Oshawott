@@ -5,7 +5,7 @@ import type { OAuthSetups } from "./oauth.ts";
 
 /**
  * The Pi-AI sign-ins that need no loopback callback server. Every other OAuth flow (Sign in with ChatGPT, OpenRouter,
- * Radius, Anthropic's browser callback) is left out; `scripts/lib/pi-oauth.mjs` bundles exactly these flows.
+ * Radius, Anthropic's browser callback) is left out; `scripts/lib/pi-ai.mjs` bundles exactly these flows.
  */
 export const BROWSER_OAUTH: OAuthSetups = {
 	anthropic: { origins: ["https://platform.claude.com/*", "https://api.anthropic.com/*"], select: "copy_code" },

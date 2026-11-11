@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
@@ -46,6 +47,29 @@ export function piOAuth() {
 				contents: `export function createServer() { throw new Error("A loopback callback server is not available in a browser."); }`,
 				loader: "js",
 			}));
+		},
+	};
+}
+
+/** Pi-AI modules that reach Node (files, environment, the AWS SDK) through `import()` of a variable. */
+const NODE_ONLY = /[\\/]pi-ai[\\/]dist[\\/](?:auth[\\/]context|env-api-keys|api[\\/]bedrock-converse-stream\.lazy)\.js$/;
+const VARIABLE_IMPORT = /\bimport\(__rewriteRelativeImportExtension\((\w+)\)\)/g;
+
+/**
+ * In a browser those imports can only fail (or never run: Bedrock is not offered), so they fail without loading
+ * anything, and AMO's validator finds no `import()` of a value it cannot check.
+ */
+export function piNodeOnly() {
+	return {
+		name: "pi-node-only",
+		setup(build) {
+			build.onLoad({ filter: NODE_ONLY }, async (args) => {
+				const source = await readFile(args.path, "utf8");
+				const contents = source.replace(VARIABLE_IMPORT, (_, specifier) =>
+					`Promise.reject(new Error(\`\${${specifier}} is not available in a browser.\`))`);
+				if (contents === source) throw new Error(`${args.path} no longer has the import() this build replaces`);
+				return { contents, resolveDir: dirname(args.path), loader: "js" };
+			});
 		},
 	};
 }

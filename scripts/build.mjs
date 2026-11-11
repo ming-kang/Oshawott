@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { build } from "esbuild";
 import { manifestFor } from "../src/manifest.ts";
 import { freshDir, root } from "./lib/paths.mjs";
-import { piOAuth, staticNodeImports } from "./lib/pi-oauth.mjs";
+import { piNodeOnly, piOAuth, staticNodeImports } from "./lib/pi-ai.mjs";
 
 const args = process.argv.slice(2);
 const dev = args.includes("--dev");
@@ -51,7 +51,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			define: { __OSHAWOTT_DEV__: JSON.stringify(dev) },
 			// SDK code paths for Node (proxies, files) that a browser never takes.
 			external: ["node:*"],
-			plugins: [piOAuth()],
+			plugins: [piOAuth(), piNodeOnly()],
 			logLevel: "warning",
 		});
 		const leaked = staticNodeImports(await readFile(join(out, file), "utf8"));

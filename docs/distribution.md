@@ -56,7 +56,7 @@ Firefox 正式版只安装 Mozilla 签过名的扩展（自签名证书无效）
 - **常见错误**：凭据正确却返回 `Forbidden`，先到开发者中心接受新的条款；提示版本已存在，提高版本号
 - **数据收集声明**：AMO 要求新扩展声明 `data_collection_permissions`。Oshawott 会把页面内容和标签页的地址、标题发给用户选择的模型服务，所以声明了 `websiteContent` 和 `browsingActivity`，安装时 Firefox 会列出。Firefox 140 起才支持这项声明，因此最低版本是 140
 - **更新检查**：manifest 没有 `update_url`，Firefox 不会自动检查更新，新版本手动安装
-- **检查**：`npx web-ext@10 lint --self-hosted --source-dir dist/firefox` 按 AMO 的规则检查构建。目前没有错误；4 个警告不影响签名：数据收集声明在 Firefox for Android 142 才支持，以及打包进来的依赖中参数为变量的 `import()`
+- **检查**：`npx web-ext@10 lint --self-hosted --source-dir dist/firefox` 按 AMO 的规则检查构建。目前没有错误，只有 1 个警告：数据收集声明在 Firefox for Android 142 才支持。Oshawott 依赖 Android 上没有的侧边栏，Mozilla 建议确认 Android 可用后才设置 `gecko_android`，所以保留这个警告。Pi-AI 中只在 Node 里使用的 `import()`（读文件、环境变量和 AWS SDK）在构建时换成直接失败（`scripts/lib/pi-ai.mjs`），在浏览器中行为不变
 
 ### 不经过 AMO
 
