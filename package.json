@@ -15,6 +15,7 @@
     "build:firefox": "node scripts/build.mjs firefox",
     "build:dev": "node scripts/build.mjs --dev",
     "package": "node scripts/build.mjs && node scripts/package.mjs",
+    "sign:firefox": "npm run package && node --env-file-if-exists=.env scripts/sign-firefox.mjs",
     "check": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
     "smoke:chromium": "node scripts/build.mjs chromium --dev && node scripts/smoke-chromium.mjs",
