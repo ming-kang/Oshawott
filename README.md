@@ -28,7 +28,7 @@ npm run build
 - **Chromium**：打开 `chrome://extensions`，开启开发者模式，加载 `dist/chromium`
 - **Firefox**：打开 `about:debugging#/runtime/this-firefox`，加载 `dist/firefox/manifest.json`
 
-长期自用时，用 `npm run package` 打包后安装，见 [分发](docs/distribution.md)。
+长期自用时，Chromium 加载 `npm run package` 生成的 zip，Firefox 安装 `npm run sign:firefox` 签名的 xpi，见 [分发](docs/distribution.md)。
 
 ## 许可
 
