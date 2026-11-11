@@ -1,14 +1,14 @@
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type RunFailure, type SubmissionId, type TaskId } from "@earendil-works/pi-durable";
-import type { Workspace } from "../contracts/chat.ts";
-import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { OverlayController, type OverlayView } from "./overlays.ts";
-import { t } from "./i18n.ts";
-import { testAccountLogin } from "./login-selftest.ts";
-import { pickBuiltin, testModelManagement } from "./model-selftest.ts";
-import { MessageQueue, SendModeMenu, StopConfirmMenu } from "./queue.ts";
-import { Transcript } from "./render.ts";
-import { h } from "./ui.ts";
+import type { Workspace } from "../../contracts/chat.ts";
+import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
+import { OverlayController, type OverlayView } from "../overlays.ts";
+import { t } from "../i18n.ts";
+import { testAccountLogin } from "./login.ts";
+import { pickBuiltin, testModelManagement } from "./models.ts";
+import { MessageQueue, SendModeMenu, StopConfirmMenu } from "../queue.ts";
+import { Transcript } from "../render.ts";
+import { h } from "../ui.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,

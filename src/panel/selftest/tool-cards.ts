@@ -1,10 +1,10 @@
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type TaskId, type ToolDiagnostic } from "@earendil-works/pi-durable";
-import { NO_ACCESS_CODE } from "../contracts/browser.ts";
-import { ext } from "../platform/webext.ts";
-import { t } from "./i18n.ts";
-import { Transcript } from "./render.ts";
-import { ToolCard } from "./tool-card.ts";
+import { NO_ACCESS_CODE } from "../../contracts/browser.ts";
+import { ext } from "../../platform/webext.ts";
+import { t } from "../i18n.ts";
+import { Transcript } from "../render.ts";
+import { ToolCard } from "../tool-card.ts";
 
 export async function testToolCards() {
 	const names = ["read", "read_text", "write", "edit", "ls", "fetch"];

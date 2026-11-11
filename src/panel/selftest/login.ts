@@ -1,6 +1,6 @@
-import type { Workspace } from "../contracts/chat.ts";
-import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { click, control, input, pickBuiltin, until } from "./model-selftest.ts";
+import type { Workspace } from "../../contracts/chat.ts";
+import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
+import { click, control, input, pickBuiltin, until } from "./models.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "logins" | "logout">;

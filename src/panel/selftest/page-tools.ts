@@ -1,4 +1,4 @@
-import { ext } from "../platform/webext.ts";
+import { ext } from "../../platform/webext.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 export type PageCall = (tabId: number, tool: string, args: object) => Promise<any>;

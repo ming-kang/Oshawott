@@ -1,7 +1,7 @@
-import { ext } from "../platform/webext.ts";
-import { testAttachmentComposer } from "./attachment-selftest.ts";
-import { testPageTools } from "./page-selftest.ts";
-import { testToolCards } from "./tool-selftest.ts";
+import { ext } from "../../platform/webext.ts";
+import { testAttachmentComposer } from "./attachments.ts";
+import { testPageTools } from "./page-tools.ts";
+import { testToolCards } from "./tool-cards.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 
