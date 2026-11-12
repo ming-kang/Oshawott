@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clip, cut, LIMITS, shapeGrid, take, takeWhere } from "../src/page/limits.ts";
+import { clip, cut, shapeGrid, take, takeWhere } from "../src/page/limits.ts";
+import { LIMITS } from "../src/tools/page-limits.ts";
 import { pageUrl, RefTable } from "../src/page/refs.ts";
 
 const URL_A = "https://example.com/a";

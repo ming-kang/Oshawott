@@ -1,6 +1,6 @@
 import {
-	type Harness, InboxDoc, type InboxState, LiveDoc, type LiveState, type Observation, type TaskGraph, type TaskGraphNode,
-	type WatchEnd,
+	type ConversationDocToken, type ConversationId, type Harness, InboxDoc, type InboxState, type JsonObject, LiveDoc,
+	type LiveState, type Observation, type TaskGraph, type TaskGraphNode, type WatchEnd,
 } from "@earendil-works/pi-durable";
 import type { ChatStatus } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Context } from "../lib/chord.ts";
@@ -10,9 +10,14 @@ import { Published } from "./published.ts";
 export type ChatActivity = { id: number; status: ChatStatus };
 export type ActivitySnapshot = { items: ChatActivity[] };
 type Docs = { live?: LiveState; inbox?: InboxState };
+/** The observations one chat is attached with. */
+type Attached = { live?: Observation<Readonly<LiveState>>; inbox?: Observation<Readonly<InboxState>> };
 
 /** A conversation whose observation keeps failing is shown idle instead of reattaching forever. */
 const MAX_REATTACH = 3;
+
+/** A Workspace chat id is its conversation id: the Workspace creates both from one counter. */
+const asConversation = (id: number): ConversationId => id as ConversationId;
 
 /** Derive presentation state on every read; no persisted busy flag can go stale after an Engine restart. */
 export function chatStatus(docs: Docs | undefined, tasks: readonly TaskGraphNode[]): ChatStatus {
@@ -31,8 +36,6 @@ interface ActivityOptions {
 	readonly now: () => number;
 	readonly onError: (error: unknown) => void;
 }
-
-type Attached = { live?: Observation<LiveState | undefined>; inbox?: Observation<InboxState | undefined> };
 
 /**
  * One Engine-wide status projection, shared by every Panel. It observes only each chat's small `pi.live` and `pi.inbox`
@@ -105,6 +108,15 @@ export class ConversationActivity {
 		this.#docs.delete(id);
 	}
 
+	/** Release an attempt's own observations, and forget the chat only while that attempt still owns its records. */
+	#release(id: number, attached: Attached) {
+		attached.live?.detach();
+		attached.inbox?.detach();
+		if (this.#attached.get(id) !== attached) return;
+		this.#attached.delete(id);
+		this.#docs.delete(id);
+	}
+
 	async #syncConversations() {
 		if (this.#closed) return;
 		const wanted = new Set(this.#chats.map((chat) => chat.id));
@@ -116,31 +128,64 @@ export class ConversationActivity {
 		}
 		for (const id of wanted) {
 			if (this.#attached.has(id) || (this.#failures.get(id) ?? 0) >= MAX_REATTACH) continue;
-			// Sync runs serially, so a Workspace update cannot attach a duplicate while this attachment is pending.
-			const attached: Attached = {};
-			this.#attached.set(id, attached);
-			this.#docs.set(id, {});
-			attached.live = await this.#observe(id, LiveDoc, "live");
-			attached.inbox = await this.#observe(id, InboxDoc, "inbox");
-			if (this.#closed || !this.#chats.some((chat) => chat.id === id) || this.#attached.get(id) !== attached) {
-				attached.live?.detach();
-				attached.inbox?.detach();
-				continue;
+			try {
+				await this.#attach(id);
+			} catch (error) {
+				// The attempt released everything it created, so this chat is retried within the bound, as an ended
+				// observation is; one chat's failure leaves the others to attach.
+				if (!this.#closed) this.#options.onError(error);
+				this.#retry(id);
 			}
-			this.#publish(BACKGROUND_CONTEXT);
 		}
 		this.#publish(BACKGROUND_CONTEXT);
 	}
 
-	async #observe<K extends keyof Docs>(id: number, token: typeof LiveDoc | typeof InboxDoc, key: K) {
+	/**
+	 * Attach both of a chat's documents, or neither. The typed record is in `#attached` and `#docs` for the whole
+	 * attempt, so a serial Sync cannot attach the same chat twice; every exit releases it, so a failed or superseded
+	 * attempt leaves no half-attached chat behind for a later bounded retry.
+	 */
+	async #attach(id: number) {
+		const attached: Attached = {};
+		const docs: Docs = {};
+		this.#attached.set(id, attached);
+		this.#docs.set(id, docs);
+		// The two initial observations are independent, so their waits run together. `allSettled` keeps the one that
+		// succeeded when the other failed, so the attempt can release it instead of leaking it.
+		const pending = [
+			this.#observe(id, LiveDoc, (value, ctx) => { docs.live = value; this.#publish(ctx); }),
+			this.#observe(id, InboxDoc, (value, ctx) => { docs.inbox = value; this.#publish(ctx); }),
+		] as const;
+		const [live, inbox] = await Promise.allSettled(pending);
+		attached.live = live.status === "fulfilled" ? live.value : undefined;
+		attached.inbox = inbox.status === "fulfilled" ? inbox.value : undefined;
+		const failed = [live, inbox].filter((result): result is PromiseRejectedResult => result.status === "rejected");
+		if (failed.length > 0) {
+			this.#release(id, attached);
+			// A value delivered before the other attach failed may have published a status nothing backs any more.
+			this.#publish(BACKGROUND_CONTEXT);
+			if (failed.length === 1) throw failed[0]!.reason;
+			throw new AggregateError(failed.map((result) => result.reason), `Could not observe chat ${id}`);
+		}
+		// The chat left the Workspace, the activity closed, or an ended observation released this attempt meanwhile.
+		if (this.#closed || !this.#chats.some((chat) => chat.id === id) || this.#attached.get(id) !== attached) {
+			this.#release(id, attached);
+			return;
+		}
+		// The retry budget limits consecutive failures, not independent failures over the Engine's whole lifetime.
+		this.#failures.delete(id);
+		this.#publish(BACKGROUND_CONTEXT);
+	}
+
+	/**
+	 * Attach one of a chat's documents, handing each value to `accept` as it arrives: the first `advance`, or the
+	 * observation's value when none did. `undefined` when the conversation has no such document yet.
+	 */
+	async #observe<T extends JsonObject>(
+		id: number, token: ConversationDocToken<T>, accept: (value: Readonly<T>, context: Context) => void,
+	): Promise<Observation<Readonly<T>> | undefined> {
 		let revision = 0;
-		const accept = (value: unknown, context: Context) => {
-			const docs = this.#docs.get(id);
-			if (!docs) return;
-			docs[key] = value as Docs[K];
-			this.#publish(context);
-		};
-		const observation = await this.#options.harness.observeDoc(token as typeof LiveDoc, id as never, {
+		const observation = await this.#options.harness.observeDoc(token, asConversation(id), {
 			advance: (call, ctx) => {
 				if (call.kind !== "value") return;
 				revision++;
@@ -149,7 +194,13 @@ export class ConversationActivity {
 			end: (end) => this.#ended(id, end),
 		}, BACKGROUND_CONTEXT);
 		if (observation && revision === 0) accept(observation.value, BACKGROUND_CONTEXT);
-		return observation as Observation<Docs[K]> | undefined;
+		return observation;
+	}
+
+	/** Count a chat's failed attachment against the retry bound, and reattach within it. */
+	#retry(id: number) {
+		this.#failures.set(id, (this.#failures.get(id) ?? 0) + 1);
+		this.#queueSync();
 	}
 
 	/** An ended observation never freezes a status: drop it, show what is still known, and reattach a bounded number of times. */
@@ -158,9 +209,8 @@ export class ConversationActivity {
 		this.#report(end);
 		if (!this.#attached.has(id)) return;
 		this.#detach(id);
-		this.#failures.set(id, (this.#failures.get(id) ?? 0) + 1);
 		this.#publish(BACKGROUND_CONTEXT);
-		this.#queueSync();
+		this.#retry(id);
 	}
 
 	#publish(context: Context) {

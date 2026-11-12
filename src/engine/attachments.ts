@@ -1,5 +1,5 @@
 import { type Harness, type InputEntry, type Tx, type UserInput } from "@earendil-works/pi-durable";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent, MutableModels } from "@earendil-works/pi-ai";
 import type { AttachmentInput, ModelRef } from "../contracts/chat.ts";
 import {
 	ATTACHMENTS_DIR, cleanFileName, composeUserContent, isImageAttachment, MAX_ATTACHMENTS, MAX_CHAT_FILE_BYTES,
@@ -10,7 +10,6 @@ import { ChordError, type Context } from "../lib/chord.ts";
 import { AttachmentDeletesDoc } from "./docs.ts";
 import type { FileBackend } from "./files.ts";
 import { resolvePath, WORKSPACE } from "./files.ts";
-import type { EngineServices } from "./facet.ts";
 
 export type PreparedAttachment = StoredAttachment & { created: boolean };
 
@@ -161,10 +160,10 @@ export function inputForUpdate(
 	return { content: composeUserContent(nextText, refs, images), entry: userEntry(nextText, refs) };
 }
 
-export function requireContentVision(services: EngineServices, ref: ModelRef | null | undefined, content: UserInput) {
+export function requireContentVision(models: MutableModels, ref: ModelRef | null | undefined, content: UserInput) {
 	if (typeof content === "string" || !content.some((block) => block.type === "image")) return;
 	if (!ref) invalid("This message contains an image. Choose a vision-capable model first.");
-	const model = services.models.getModel(ref.provider, ref.modelId);
+	const model = models.getModel(ref.provider, ref.modelId);
 	if (!model) invalid(`The selected model ${ref.modelId} is unavailable. Choose a vision-capable model before sending.`);
 	if (!model.input.includes("image")) invalid(`${model.name ?? model.id} cannot process images. Choose a vision-capable model before sending.`);
 }

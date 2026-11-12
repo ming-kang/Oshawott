@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialStore, InMemoryModelsStore } from "@earendil-works/pi-ai";
 import { AgentDoc, MemoryStorage } from "@earendil-works/pi-durable";
-import { ProvidersDoc } from "../src/engine/docs.ts";
+import { ProvidersDoc, WorkspaceDoc } from "../src/engine/docs.ts";
 import type { ProviderProfile } from "../src/contracts/chat.ts";
 import { DEFAULT_INSTRUCTIONS } from "../src/engine/instructions.ts";
 import { ProviderManager } from "../src/engine/providers.ts";
+import { ChatSession } from "../src/panel/session.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, openEngine, persistentStorage, serveBrowser } from "./support/world.ts";
 
@@ -21,7 +22,7 @@ async function fixture(fetcher?: typeof fetch, modelsStore = new InMemoryModelsS
 	const { workspace } = panel;
 	await until(() => workspace.providers.value.length > 0, "the provider list");
 	return {
-		credentials, modelsStore, models, faux, engine, storage, workspace,
+		credentials, modelsStore, models, faux, engine, storage, workspace, host: panel.host,
 		chat: (id: number) => panel.chat(id),
 		close: async () => {
 			await panel.close();
@@ -35,6 +36,7 @@ const profile: ProviderProfile = {
 	id: "custom-local", name: "Local", baseUrl: "https://models.test/v1", api: "openai-responses",
 	models: [{ id: "manual", name: "Manual", contextWindow: 32_000, maxTokens: 4_096, vision: true, thinkingLevels: ["off", "high"] }],
 };
+const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
 
 test("custom providers discover, retain the last good catalog, edit and delete without exposing keys", async () => {
 	let fail = false;
@@ -165,6 +167,78 @@ test("thinking levels and models are durable per conversation and reach the next
 		await assert.rejects(second.configure({ model: { provider: "faux", modelId: "faux-b" }, thinkingLevel: "high" }, context), /does not support/);
 		first.release();
 		second.release();
+	} finally {
+		await f.close();
+	}
+});
+
+test("chat configuration updates defaults and rejects image-incompatible changes atomically", async () => {
+	const f = await fixture();
+	try {
+		const vision = f.faux.getModel("faux-a")!;
+		const text = f.faux.getModel("faux-b")!;
+		(vision as unknown as { input: ("text" | "image")[] }).input = ["text", "image"];
+		(text as unknown as { input: ("text" | "image")[] }).input = ["text"];
+		const visionRef = { provider: vision.provider, modelId: vision.id };
+		const textRef = { provider: text.provider, modelId: text.id };
+		await f.workspace.setDefaultConfiguration({ model: visionRef, thinkingLevel: "high" }, context);
+		const id = await f.workspace.createChat({}, context);
+		const chat = await f.chat(id);
+		f.faux.setResponses([async (_request, options) => {
+			await new Promise((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(options?.signal?.reason ?? new Error("aborted"))));
+			return fauxAssistantMessage("unused");
+		}]);
+		await chat.send({ text: "Start", requestId: "configure-start" }, context);
+		await until(() => f.faux.state.callCount === 1 || undefined, "the hanging run");
+		await chat.send({ text: "Image", requestId: "configure-image", whenBusy: "followUp", attachments: [
+			{ id: "pixel", name: "pixel.png", mimeType: "image/png", data: PNG },
+		] }, context);
+
+		await chat.configure({ model: visionRef, thinkingLevel: "low" }, context);
+		let workspace = await f.engine.harness.snapshot(WorkspaceDoc, context);
+		let agent = await f.engine.harness.snapshot(AgentDoc, id as never, context);
+		assert.deepEqual(workspace?.defaultModel, visionRef);
+		assert.equal(workspace?.defaultThinkingLevel, "low");
+		assert.deepEqual(agent?.model, visionRef);
+		assert.equal(agent?.thinkingLevel, "low");
+
+		await assert.rejects(chat.configure({ model: textRef, thinkingLevel: "off" }, context), /cannot process images/);
+		workspace = await f.engine.harness.snapshot(WorkspaceDoc, context);
+		agent = await f.engine.harness.snapshot(AgentDoc, id as never, context);
+		assert.deepEqual(workspace?.defaultModel, visionRef, "a rejected chat change leaves the default model untouched");
+		assert.equal(workspace?.defaultThinkingLevel, "low", "a rejected chat change leaves the default thinking level untouched");
+		assert.deepEqual(agent?.model, visionRef);
+		assert.equal(agent?.thinkingLevel, "low");
+		await chat.abort(context);
+	} finally {
+		await f.close();
+	}
+});
+
+test("configuring a chat while its visible reference is loading still configures the chat", async () => {
+	const f = await fixture();
+	try {
+		const initial = f.faux.getModel("faux-a")!;
+		const next = f.faux.getModel("faux-b")!;
+		await f.workspace.setDefaultConfiguration({ model: { provider: initial.provider, modelId: initial.id }, thinkingLevel: "high" }, context);
+		const id = await f.workspace.createChat({}, context);
+		const session = new ChatSession(f.host, () => {});
+		session.attachWorkspace(f.workspace);
+		const opening = session.open(id, (commit) => {
+			commit();
+			return Promise.resolve();
+		});
+		assert.equal(session.id, id);
+		assert.equal(session.chat, undefined, "the session is still loading its visible reference");
+		await session.configure({ model: { provider: next.provider, modelId: next.id }, thinkingLevel: "off" });
+		await opening;
+		const agent = await f.engine.harness.snapshot(AgentDoc, id as never, context);
+		assert.deepEqual(agent?.model, { provider: next.provider, modelId: next.id });
+		assert.equal(agent?.thinkingLevel, "off");
+		await session.open(undefined, (commit) => {
+			commit();
+			return Promise.resolve();
+		});
 	} finally {
 		await f.close();
 	}

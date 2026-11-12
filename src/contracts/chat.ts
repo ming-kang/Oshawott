@@ -228,6 +228,7 @@ export const Chat = remote("oshawott.chat", {
 				abort: method(),
 				/** Cancel the old run and its queued inputs, then start a new context without deleting this chat's files. */
 				reset: method(),
+				/** Updates both in one transaction; an omitted thinking level is clamped from this chat's current level. */
 				configure: method(ChatConfiguration),
 				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */
 				files: method(undefined, arr(ChatFile)),

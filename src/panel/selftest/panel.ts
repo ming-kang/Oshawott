@@ -49,6 +49,11 @@ export async function testPanel(source: Source, origin?: string) {
 		&& document.querySelector<HTMLElement>("#provider-key")?.closest<HTMLElement>(".provider-field")?.hidden === true
 		&& document.querySelector<HTMLElement>("#provider-save")?.hidden === true);
 	step("well-known built-in providers are listed first", options()[0] === "anthropic", options().slice(0, 4).join(","));
+	providerSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+	const endProvider = document.querySelector<HTMLElement>("#builtin-provider-list .provider-option.active")?.dataset.provider;
+	providerSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+	const homeProvider = document.querySelector<HTMLElement>("#builtin-provider-list .provider-option.active")?.dataset.provider;
+	step("the provider combobox supports Home and End through the shared navigation", endProvider === options().at(-1) && homeProvider === options()[0]);
 	providerSearch.value = "groq";
 	providerSearch.dispatchEvent(new Event("input", { bubbles: true }));
 	step("the built-in provider search filters by name", options().includes("groq") && !options().includes("anthropic"), options().join(","));
@@ -139,6 +144,17 @@ export async function testPanel(source: Source, origin?: string) {
 	step("settings offers system language, Chinese and English with the current preference selected", languages.map((item) => item.dataset.value).join(",") === "system,zh-CN,en"
 		&& languages.slice(1).map((item) => item.textContent).join(",") === "中文,English"
 		&& languages.filter((item) => item.getAttribute("aria-checked") === "true").length === 1);
+	click("#settings-back");
+	await until(() => !document.querySelector("#settings"));
+
+	// Exercise the menu action independently of its busy-only visibility: both controls own the same durable preference.
+	click("#send-mode");
+	click('.send-mode-menu [data-mode="followUp"]');
+	await until(() => source.busyMode.value === "followUp" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "followUp");
+	click("#settings-toggle");
+	step("the composer delivery menu updates the same preference shown in Settings", document.querySelector('#settings-delivery [data-value="followUp"]')?.getAttribute("aria-checked") === "true");
+	click('#settings-delivery [data-value="steer"]');
+	await until(() => source.busyMode.value === "steer" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "steer");
 	click("#settings-back");
 	await until(() => !document.querySelector("#settings"));
 

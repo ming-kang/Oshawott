@@ -1,6 +1,7 @@
 import type { Static } from "../lib/chord.ts";
 import { type InspectResult, type PageToolArgs as Args, type SnapshotResult, type Structure, WAIT } from "../tools/page-tools.ts";
-import { clip, cut, LIMITS, RAW_CELLS, RAW_ROWS, type RawRow, shapeGrid, squash, take, takeWhere } from "./limits.ts";
+import { LIMITS } from "../tools/page-limits.ts";
+import { clip, cut, RAW_CELLS, RAW_ROWS, type RawRow, shapeGrid, squash, take, takeWhere } from "./limits.ts";
 import { RefTable } from "./refs.ts";
 
 const INTERACTIVE = [

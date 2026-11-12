@@ -8,7 +8,7 @@ import {
 	requireContentVision, rollbackAttachments, safeAttachmentPath, storeAttachments,
 } from "./attachments.ts";
 import { preference, TargetDoc, WorkspaceDoc } from "./docs.ts";
-import { type FacetServices, forbidden, gone } from "./facet.ts";
+import { type FacetServices, forbidden, gone } from "./facet-services.ts";
 import { ChatFiles, resolvePath, WORKSPACE } from "./files.ts";
 import { titleOf } from "./titles.ts";
 
@@ -91,7 +91,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 							const summary = workspace.chats.find((chat) => chat.id === id);
 							if (!summary) throw gone(id);
 							const agent = await tx.doc(AgentDoc, target.id);
-							requireContentVision(services, agent.model ?? workspace.defaultModel, input.content);
+							requireContentVision(services.models, agent.model ?? workspace.defaultModel, input.content);
 							const submitted = await target.submit(tx, { type: "input", ...input, requestId, ...(whenBusy ? { whenBusy } : {}) });
 							admitted = true;
 							if (tabId !== undefined) (await tx.doc(TargetDoc, target.id)).tabId = tabId;
@@ -140,7 +140,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 							if (text !== undefined || prepared.length || removed.size) {
 								const next = inputForUpdate(item as QueuedInput, text, prepared, removed);
 								const agent = await tx.doc(AgentDoc, target.id);
-								requireContentVision(services, agent.model ?? (await tx.doc(WorkspaceDoc)).defaultModel, next.content);
+								requireContentVision(services.models, agent.model ?? (await tx.doc(WorkspaceDoc)).defaultModel, next.content);
 								item.content = next.content as typeof item.content;
 								if (next.entry) item.entry = next.entry as typeof item.entry;
 								else delete item.entry;
@@ -171,7 +171,7 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 						harness.snapshot(InboxDoc, conversationId, ctx), harness.snapshot(AgentDoc, conversationId, ctx), harness.snapshot(WorkspaceDoc, ctx),
 					]);
 					for (const item of inbox?.items ?? []) {
-						if (item.mode !== "write") requireContentVision(services, agent?.model ?? workspace?.defaultModel, item.content);
+						if (item.mode !== "write") requireContentVision(services.models, agent?.model ?? workspace?.defaultModel, item.content);
 					}
 					const submission = await target.submit({ type: "continue" }, ctx);
 					return submission.id;
@@ -209,9 +209,13 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 						const configuration = admin.configuration(input, agent.thinkingLevel ?? "off");
 						const inbox = await tx.doc(InboxDoc, target.id);
 						for (const item of inbox.items) {
-							if (item.mode !== "write") requireContentVision(services, configuration.model, item.content);
+							if (item.mode !== "write") requireContentVision(services.models, configuration.model, item.content);
 						}
 						await configureAgent(tx, target.id, configuration);
+						// One visible choice updates the conversation and the next chat's default atomically.
+						const workspace = await tx.doc(WorkspaceDoc);
+						workspace.defaultModel = configuration.model;
+						workspace.defaultThinkingLevel = configuration.thinkingLevel;
 					}, ctx);
 					return null;
 				})),

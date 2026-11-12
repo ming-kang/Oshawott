@@ -1,25 +1,4 @@
-/** Output bounds of the page tools: whatever a page holds, a result stays this small. */
-export const LIMITS = {
-	snapshotElements: 500,
-	name: 120,
-	url: 2_000,
-	href: 300,
-	title: 500,
-	inspectElements: 5,
-	inspectElementsMax: 20,
-	html: 2_000,
-	htmlMax: 20_000,
-	attributes: 50,
-	attributeName: 100,
-	attributeValue: 500,
-	tables: 10,
-	rows: 50,
-	columns: 20,
-	cell: 200,
-	lists: 10,
-	items: 100,
-	item: 200,
-} as const;
+import { LIMITS } from "../tools/page-limits.ts";
 
 export const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 

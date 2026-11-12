@@ -4,7 +4,7 @@ import type { Principal } from "../contracts/hosts.ts";
 import { userInput } from "../lib/attachments.ts";
 import { ChordError, type Context, type FacetHost } from "../lib/chord.ts";
 import { preference, WorkspaceDoc } from "./docs.ts";
-import { type FacetServices, forbidden, gone } from "./facet.ts";
+import { type FacetServices, forbidden, gone } from "./facet-services.ts";
 import { deleteChatFiles } from "./files-lifecycle.ts";
 import { currentInstructions, writeInstructions } from "./instructions.ts";
 import { titleOf } from "./titles.ts";

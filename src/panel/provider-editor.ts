@@ -2,6 +2,7 @@ import {
 	THINKING_LEVELS, type ModelApi, type ModelConfig, type ModelSummary, type ProviderProfile, type ProviderSummary, type Workspace,
 } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
+import { comboboxNav } from "./combobox.ts";
 import { t } from "./i18n/index.ts";
 import { LoginCard, type LoginSource } from "./login-card.ts";
 import { compactTokens } from "./models.ts";
@@ -48,6 +49,7 @@ export class ProviderEditorSheet implements OverlayView {
 		role: "combobox", "aria-autocomplete": "list", "aria-expanded": "true", "aria-controls": "builtin-provider-list",
 	});
 	readonly #list = h("div", { class: "menu-list provider-list", id: "builtin-provider-list", role: "listbox", "aria-label": t("settings.builtinProvider") });
+	readonly #nav = comboboxNav(this.#search, this.#list, ".provider-option");
 	readonly #picker = h("div", { class: "provider-picker" }, this.#search, this.#list);
 	readonly #chosenName = h("span", { class: "provider-chosen-name" });
 	readonly #chosenBadge = h("span", { class: "pill", "data-on": true, hidden: true }, t("settings.signInBadge"));
@@ -111,7 +113,7 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#api.value = this.#draft.api;
 		this.#api.addEventListener("change", () => { this.#draft.api = this.#api.value as ModelApi; });
 		this.#search.addEventListener("input", () => this.#renderList());
-		this.#search.addEventListener("keydown", (event) => this.#searchKey(event));
+		this.#search.addEventListener("keydown", (event) => this.#nav.onKeydown(event));
 		this.#change.addEventListener("click", () => this.#changeProvider());
 		this.#save.addEventListener("click", () => void this.#saveProvider());
 		this.#refresh.addEventListener("click", () => void this.#discoverModels());
@@ -223,30 +225,7 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#list.replaceChildren(...(items.length
 			? items
 			: [h("div", { class: "list-empty", role: "status" }, t(query ? "settings.noProviderMatch" : "settings.noBuiltinProviders"))]));
-		this.#activate(items[0]);
-	}
-
-	#items() {
-		return [...this.#list.querySelectorAll<HTMLButtonElement>(".provider-option")];
-	}
-
-	#activate(item: HTMLButtonElement | undefined) {
-		for (const other of this.#items()) other.classList.toggle("active", other === item);
-		if (item) this.#search.setAttribute("aria-activedescendant", item.id);
-		else this.#search.removeAttribute("aria-activedescendant");
-		item?.scrollIntoView({ block: "nearest" });
-	}
-
-	#searchKey(event: KeyboardEvent) {
-		const items = this.#items();
-		const at = items.findIndex((item) => item.classList.contains("active"));
-		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-			event.preventDefault();
-			this.#activate(items[Math.max(0, Math.min(items.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))]);
-		} else if (event.key === "Enter") {
-			event.preventDefault();
-			items[at]?.click();
-		}
+		this.#nav.activate(items[0]);
 	}
 
 	#pick(id: string) {
@@ -450,7 +429,7 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#refresh.disabled = busy || this.#currentSummary()?.refreshing === true;
 		this.#delete.disabled = busy;
 		this.#search.disabled = this.#change.disabled = busy;
-this.#type.setDisabled(busy || this.#kindLocked);
+		this.#type.setDisabled(busy || this.#kindLocked);
 		if (button) {
 			button.toggleAttribute("aria-busy", busy);
 			if (busy) button.prepend(h("span", { class: "spinner" }));

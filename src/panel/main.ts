@@ -1,4 +1,4 @@
-import { Chat, DEFAULT_BUSY_MODE, type BusyMode, Workspace } from "../contracts/chat.ts";
+import { Workspace } from "../contracts/chat.ts";
 import type { AttachmentInput } from "../lib/attachments.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
 import { ApprovalBar } from "./approvals.ts";
@@ -28,12 +28,11 @@ import { h, icon, toastError } from "./ui.ts";
 
 const context = BACKGROUND_CONTEXT;
 const host = createPanelHost();
-const session = new ChatSession(host, () => composer.render());
+const session = new ChatSession(host, () => renderView());
 const overlays = new OverlayController();
 initializeTheme();
 document.documentElement.lang = LANG;
 
-let whenBusy: BusyMode = DEFAULT_BUSY_MODE;
 let sending = false;
 const queue = new MessageQueue({
 	update: async (id, change) => session.opened.updateQueued({ id, ...change }, context),
@@ -63,7 +62,7 @@ const composer = new Composer({
 	providers: () => session.providers,
 	model: () => session.model,
 	thinking: () => session.thinking,
-	whenBusy: () => whenBusy,
+	whenBusy: () => session.busyMode,
 	configuring: () => session.configuring !== undefined,
 	sending: () => sending,
 	onSend: () => void send(),
@@ -94,7 +93,7 @@ document.body.append(
 function renderHeader() {
 	const summary = session.chats.find((c) => c.id === session.id);
 	$.title.textContent = $.title.title = summary?.title || t("chat.untitled");
-	$.files.hidden = session.id === undefined;
+	$.files.hidden = session.status === "new";
 }
 
 const nearBottom = () => $.scroller.scrollHeight - $.scroller.scrollTop - $.scroller.clientHeight < 72;
@@ -117,7 +116,7 @@ function renderView() {
 	queue.update(value);
 	approvals.update(session.chat?.approvals.value ?? []);
 	if (value) transcript.update({ kind: "conversation", view: value, ready });
-	else transcript.update(session.loaded && session.id === undefined ? { kind: "empty", ready } : { kind: "loading" });
+	else transcript.update(session.loaded && session.status === "new" ? { kind: "empty", ready } : { kind: "loading" });
 	$.files.disabled = !session.chat;
 	if (wasBusy && !transcript.busy && overlays.current instanceof FilesSheet) void overlays.refresh();
 	if (stick) toBottom();
@@ -134,27 +133,14 @@ function closeStaleOverlays() {
 
 async function open(id: number | undefined, options: { preserveComposer?: boolean; discardPrevious?: boolean; keepOverlays?: boolean } = {}) {
 	if (id === session.id && session.loaded && (id === undefined ? drafts.ready : session.chat)) return;
-	await drafts.switchTo(id, options, () => {
+	await session.open(id, (commit) => drafts.switchTo(id, options, () => {
 		if (!options.keepOverlays) overlays.close();
-		session.chat?.release();
-		session.chat = undefined;
-		session.id = id;
+		commit();
 		transcript.clear();
 		renderHeader();
 		renderView();
-	});
-	if (id === undefined) return;
-	const next = await host.get(Chat, { id }, context);
-	if (session.id !== id || next.variant !== "owner") return next.release();
-	session.chat = next;
-	for (const member of [next.view, next.approvals, next.target]) {
-		const watch = await member.watch(context);
-		watch.start(async () => {
-			if (session.chat === next) renderView();
-		});
-	}
-	renderView();
-	toBottom();
+	}));
+	if (id !== undefined) toBottom();
 }
 
 type Origin = { id: number | undefined; revision: number; load: number };
@@ -185,7 +171,7 @@ async function send(given?: string) {
 	const text = raw.trim();
 	const files = composer.pending();
 	if ((!text && !files.length) || sending || !session.workspace) return;
-	const delivery = whenBusy;
+	const delivery = session.busyMode;
 	if (!session.connected.length) {
 		if (given) composer.text = given;
 		openSettings();
@@ -245,11 +231,10 @@ function openProviderEditor(provider?: string) {
 }
 function openSendModeMenu() {
 	if (overlays.current instanceof SendModeMenu) return overlays.close();
-	const menu = new SendModeMenu(whenBusy, (mode) => {
-		whenBusy = mode;
+	const menu = new SendModeMenu(session.busyMode, (mode) => {
 		overlays.close();
-		composer.render();
 		composer.focus();
+		void session.setBusyMode(mode).catch(toastError);
 	});
 	overlays.open(menu, { kind: "popover", anchor: composer.sendMode });
 	menu.focus();
@@ -296,8 +281,7 @@ async function main() {
 	await host.load([], context);
 	const held = await host.get(Workspace, {}, context);
 	if (held.variant !== "owner") throw new Error("The Engine refused the panel.");
-	session.workspace = held;
-	whenBusy = held.busyMode.value;
+	session.attachWorkspace(held);
 	let knownChats = new Set(session.chats.map((chat) => chat.id));
 	for (const member of [
 		held.chats, held.providers, held.logins, held.defaultModel, held.defaultThinkingLevel, held.busyMode,
@@ -305,7 +289,6 @@ async function main() {
 	]) {
 		const watch = await member.watch(context);
 		watch.start(async () => {
-			if (member === held.busyMode) whenBusy = held.busyMode.value;
 			if (member === held.chats) {
 				const current = new Set(session.chats.map((chat) => chat.id));
 				for (const id of knownChats) if (!current.has(id)) await drafts.forget(id);
@@ -320,7 +303,7 @@ async function main() {
 	// An overlay opened before the Workspace arrived has drawn nothing yet, and no change may follow to redraw it.
 	void overlays.refresh();
 	await drafts.opened();
-	session.loaded = true;
+	session.markLoaded();
 	const newest = [...session.chats].sort((a, b) => b.updatedAt - a.updatedAt)[0];
 	await open(newest?.id, { keepOverlays: true });
 	renderHeader();

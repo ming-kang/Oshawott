@@ -25,9 +25,9 @@ export function saveLanguage(preference: LanguagePreference) {
 	else localStorage.setItem(LANGUAGE_KEY, preference);
 }
 
-const table: Record<Key, string> = savedLanguage() === "zh-CN" ? zh : en;
+export const LANG: Language = savedLanguage();
 
-export const LANG: Language = table === zh ? "zh-CN" : "en";
+const table: Record<Key, string> = LANG === "zh-CN" ? zh : en;
 
 export function t(key: Key, ...args: (string | number)[]): string {
 	return table[key].replace(/\{(\d)\}/g, (_, i: string) => String(args[Number(i)] ?? ""));

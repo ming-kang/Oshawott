@@ -1,5 +1,6 @@
 import type { ModelRef, Workspace } from "../contracts/chat.ts";
 import type { Reference } from "../lib/chord.ts";
+import { comboboxNav } from "./combobox.ts";
 import { t } from "./i18n/index.ts";
 import { compactTokens, configuredProviders, sameModel } from "./models.ts";
 import type { OverlayView } from "./overlays.ts";
@@ -20,6 +21,7 @@ export class ModelMenu implements OverlayView {
 		role: "combobox", "aria-autocomplete": "list", "aria-expanded": "true", "aria-controls": "model-options",
 	});
 	readonly #list = h("div", { class: "menu-list", id: "model-options", role: "listbox", "aria-label": t("model.choose") });
+	readonly #nav = comboboxNav(this.#search, this.#list, ".menu-item");
 	#closed = false;
 
 	constructor(source: Source, actions: Actions) {
@@ -27,20 +29,7 @@ export class ModelMenu implements OverlayView {
 		this.#actions = actions;
 		this.element = h("div", { class: "popover", id: "model-menu" }, this.#search, this.#list);
 		this.#search.addEventListener("input", () => this.refresh());
-		this.#search.addEventListener("keydown", (event) => {
-			const items = this.#items();
-			const at = items.findIndex((item) => item.classList.contains("active"));
-			if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-				event.preventDefault();
-				this.#activate(items[Math.max(0, Math.min(items.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))]);
-			} else if (event.key === "Home" || event.key === "End") {
-				event.preventDefault();
-				this.#activate(items[event.key === "Home" ? 0 : items.length - 1]);
-			} else if (event.key === "Enter") {
-				event.preventDefault();
-				items[at]?.click();
-			}
-		});
+		this.#search.addEventListener("keydown", (event) => this.#nav.onKeydown(event));
 	}
 
 	refresh() {
@@ -69,8 +58,8 @@ export class ModelMenu implements OverlayView {
 						].filter(Boolean).join(" · "))), chosen ? icon("check", 14) : null);
 				}),
 			]) : [h("div", { class: "list-empty", role: "status" }, t("model.none"))]));
-		const items = this.#items();
-		this.#activate(items.find((item) => item.getAttribute("aria-selected") === "true") ?? items[0]);
+		const items = this.#nav.items();
+		this.#nav.activate(items.find((item) => item.getAttribute("aria-selected") === "true") ?? items[0]);
 	}
 
 	focus() {
@@ -79,16 +68,5 @@ export class ModelMenu implements OverlayView {
 
 	close() {
 		this.#closed = true;
-	}
-
-	#items() {
-		return [...this.#list.querySelectorAll<HTMLButtonElement>(".menu-item")];
-	}
-
-	#activate(item: HTMLButtonElement | undefined) {
-		for (const other of this.#items()) other.classList.toggle("active", other === item);
-		if (item) this.#search.setAttribute("aria-activedescendant", item.id);
-		else this.#search.removeAttribute("aria-activedescendant");
-		item?.scrollIntoView({ block: "nearest" });
 	}
 }

@@ -1,5 +1,7 @@
 import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
-import { Chat, type ChatConfiguration, type ModelRef, type ProviderSummary, type ThinkingLevel, type Workspace } from "../contracts/chat.ts";
+import {
+	Chat, type BusyMode, type ChatConfiguration, DEFAULT_BUSY_MODE, type ModelRef, type ProviderSummary, type ThinkingLevel, type Workspace,
+} from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import type { PanelHost } from "./connection.ts";
 import { clampThinking, configuredProviders, sameModel, shownModel, supportedThinkingLevels } from "./models.ts";
@@ -8,20 +10,96 @@ import { toastError } from "./ui.ts";
 export type WorkspaceRef = Extract<Reference<typeof Workspace>, { variant: "owner" }>;
 export type ChatRef = Extract<Reference<typeof Chat>, { variant: "owner" }>;
 
+type ChatSessionStatus = "new" | "loading" | "open";
+
 /** The Engine objects the panel is showing (`id` undefined is the new-chat screen) and the model they would run with. */
 export class ChatSession {
-	workspace: WorkspaceRef | undefined;
-	chat: ChatRef | undefined;
-	id: number | undefined;
-	loaded = false;
 	readonly #host: PanelHost;
 	readonly #changed: () => void;
+	#workspace: WorkspaceRef | undefined;
+	#chat: ChatRef | undefined;
+	#id: number | undefined;
+	#loaded = false;
+	#generation = 0;
 	#task: Promise<void> | undefined;
 
-	/** `changed` runs when `configuring` flips. */
+	/** `changed` runs for observed chat updates and when `configuring` flips. */
 	constructor(host: PanelHost, changed: () => void) {
 		this.#host = host;
 		this.#changed = changed;
+	}
+
+	get workspace() {
+		return this.#workspace;
+	}
+
+	get chat() {
+		return this.#chat;
+	}
+
+	get id() {
+		return this.#id;
+	}
+
+	get loaded() {
+		return this.#loaded;
+	}
+
+	get status(): ChatSessionStatus {
+		return this.#id === undefined ? "new" : this.#chat ? "open" : "loading";
+	}
+
+	get busyMode(): BusyMode {
+		return this.#workspace?.busyMode.value ?? DEFAULT_BUSY_MODE;
+	}
+
+	attachWorkspace(workspace: WorkspaceRef) {
+		this.#workspace = workspace;
+	}
+
+	markLoaded() {
+		this.#loaded = true;
+	}
+
+	/**
+	 * Opens one chat and owns its reference and watchers. `prepare` coordinates the draft/UI transition and calls
+	 * `commit` synchronously, so the old view is released before the new draft or remote reference is awaited.
+	 */
+	async open(id: number | undefined, prepare: (commit: () => void) => Promise<void>) {
+		const generation = ++this.#generation;
+		await prepare(() => {
+			this.#chat?.release();
+			this.#chat = undefined;
+			this.#id = id;
+		});
+		if (id === undefined) return;
+		const next = await this.#host.get(Chat, { id }, BACKGROUND_CONTEXT);
+		if (generation !== this.#generation || this.#id !== id || next.variant !== "owner") {
+			next.release();
+			return;
+		}
+		let watches;
+		try {
+			watches = await Promise.all([next.view, next.approvals, next.target].map((member) => member.watch(BACKGROUND_CONTEXT)));
+		} catch (error) {
+			next.release();
+			throw error;
+		}
+		if (generation !== this.#generation || this.#id !== id) {
+			next.release();
+			return;
+		}
+		this.#chat = next;
+		for (const watch of watches) watch.start(async () => {
+			if (this.#chat === next) this.#changed();
+		});
+		this.#changed();
+	}
+
+	async setBusyMode(mode: BusyMode) {
+		const workspace = this.#workspace;
+		if (!workspace) throw new Error("The workspace is not ready.");
+		await workspace.setBusyMode(mode, BACKGROUND_CONTEXT);
 	}
 
 	/** The visible chat; throws while none is open. */
@@ -90,10 +168,11 @@ export class ChatSession {
 		return sameModel(this.#chatModel, configuration.model) && (this.#agent?.thinkingLevel ?? "off") === configuration.thinkingLevel;
 	}
 
-	/** Remembers the shown configuration as the workspace default before a message is sent with it. */
+	/** Before the first send creates a chat, its shown configuration becomes the Workspace default. */
 	async ensureConfiguration(): Promise<ChatConfiguration | undefined> {
 		const configuration = this.configuration;
-		if (configuration && this.workspace && (!sameModel(configuration.model, this.#current) || configuration.thinkingLevel !== this.#thinking)) {
+		if (configuration && this.id === undefined && this.workspace
+			&& (!sameModel(configuration.model, this.#current) || configuration.thinkingLevel !== this.#thinking)) {
 			await this.workspace.setDefaultConfiguration(configuration, BACKGROUND_CONTEXT);
 		}
 		return configuration;
@@ -103,11 +182,13 @@ export class ChatSession {
 	configure(configuration: ChatConfiguration): Promise<void> {
 		if (this.#task) return this.#task;
 		const source = this.workspace;
-		const target = this.chat;
+		const id = this.id;
 		const task = (async () => {
 			try {
-				await source?.setDefaultConfiguration(configuration, BACKGROUND_CONTEXT);
-				await target?.configure(configuration, BACKGROUND_CONTEXT);
+				// Chat.configure updates both the chat and the default in one Engine transaction. A loading chat still
+				// has an id, so hold it for this call rather than silently changing only the default.
+				if (id !== undefined) await this.with(id, (target) => target.configure(configuration, BACKGROUND_CONTEXT));
+				else await source?.setDefaultConfiguration(configuration, BACKGROUND_CONTEXT);
 			} catch (error) {
 				toastError(error);
 			}

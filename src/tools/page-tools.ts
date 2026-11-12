@@ -1,7 +1,7 @@
 // Durable records intent before execute(): after an interruption, only `safe` calls replay.
 import type { Properties, StaticObject } from "@earendil-works/pi-schema";
 import { arr, bool, int, map, num, obj, oneOf, opt, type Schema, str } from "../lib/chord.ts";
-import { LIMITS } from "../page/limits.ts";
+import { LIMITS } from "./page-limits.ts";
 
 export interface PageToolSpec<A extends Properties = Properties, R extends Schema = Schema> {
 	readonly description: string;

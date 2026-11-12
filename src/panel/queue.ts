@@ -45,16 +45,17 @@ export class MessageQueue {
 		const failed = Boolean(!live?.run && live?.runFailure);
 		const signature = JSON.stringify({ items, failed });
 		if (signature === this.#signature) return;
-		const lostEdit = this.#editing !== undefined && view !== null && !items.some((item) => item.id === this.#editing!.id);
-		if (this.#editing && !items.some((item) => item.id === this.#editing!.id)) {
-			this.#editing.picker.dispose();
+		const editing = this.#editing;
+		const lost = editing !== undefined && !items.some((item) => item.id === editing.id) ? editing : undefined;
+		if (lost) {
+			lost.picker.dispose();
 			this.#editing = undefined;
 		}
 		this.#items = items;
 		this.#failed = failed;
 		this.#signature = signature;
 		this.#render();
-		if (lostEdit) toast(t("queue.unavailable"), "error");
+		if (lost && view !== null) toast(t("queue.unavailable"), "error");
 	}
 
 	#render() {
