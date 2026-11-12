@@ -1,0 +1,38 @@
+name: Release
+
+# `npm version <patch|minor|major>` commits and tags a version; pushing the tag publishes it (docs/distribution.md).
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check the tag names the package version
+        run: test "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')"
+      - name: Sign the Firefox package on AMO
+        run: npm run sign:firefox
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+      - name: Publish the release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+            "dist/oshawott-$version-chromium.zip" "dist/signed/oshawott-$version-firefox.xpi" dist/signed/updates.json
+        env:
+          GH_TOKEN: ${{ github.token }}

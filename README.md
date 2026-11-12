@@ -28,7 +28,7 @@ npm run build
 - **Chromium**：打开 `chrome://extensions`，开启开发者模式，加载 `dist/chromium`
 - **Firefox**：打开 `about:debugging#/runtime/this-firefox`，加载 `dist/firefox/manifest.json`
 
-这样加载的 Firefox 扩展在重启后失效。长期使用见[分发](docs/distribution.md)：Chromium 加载解压的 zip，Firefox 安装经 AMO 签名的 xpi。
+这样加载的 Firefox 扩展在重启后失效。长期使用可从 [GitHub Releases](https://github.com/ming-kang/Oshawott/releases/latest) 下载：Chromium 加载解压的 zip；Firefox 安装经 AMO 签名的 xpi，之后自动更新。详见[分发](docs/distribution.md)。
 
 ## 许可
 

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Lint the Firefox build against AMO's rules
+        run: npx --yes web-ext@10 lint --self-hosted --source-dir dist/firefox
+
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Firefox comes with the runner; Chromium is Playwright's, as on a developer machine.
+      - if: matrix.browser == 'chromium'
+        run: npx --yes playwright@1 install --with-deps chromium
+      - run: npm run smoke:${{ matrix.browser }}
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-${{ matrix.browser }}
+          path: dist/test/${{ matrix.browser }}

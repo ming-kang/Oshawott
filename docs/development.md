@@ -9,7 +9,7 @@
 | `npm run build` | 构建两端；`build:chromium`、`build:firefox` 只构建一端 |
 | `npm run build:dev` | 开发构建两端 |
 | `npm run package` | 构建正式版，打包为 Chromium zip、Firefox xpi 和源码包，见[分发](distribution.md) |
-| `npm run sign:firefox` | 打包后经 AMO 签名 Firefox xpi，需要 `.env` 中的凭据 |
+| `npm run sign:firefox` | 打包后经 AMO 签名 Firefox xpi，并生成自动更新清单，需要 `.env` 中的凭据 |
 | `npm run check` | TypeScript 类型检查 |
 | `npm test` | 单元测试；单个文件用 `node --test test/<name>.test.ts` |
 | `npm run smoke:chromium` | 开发构建后，在真实 Chromium 中运行冒烟测试 |
@@ -25,6 +25,8 @@
 - **冒烟测试**：使用本地测试站点和本地 OpenAI 兼容模型 API（`scripts/lib/site.mjs`），不需要真实账号。一部分检查以面板内自测的形式写在 `src/panel/selftest/`，只进入开发构建。Chromium 由 Puppeteer 驱动面板并调用这些自测；Firefox 中 WebDriver BiDi 无法访问扩展页面，由开发构建自动打开面板运行自测，再把结果回报给测试站点。
 - **浏览器**：默认使用 Playwright 安装的 Chromium 和系统安装的 Firefox，可以用 `OSHAWOTT_CHROME`、`OSHAWOTT_FIREFOX` 指定可执行文件。
 - **测试产物**：下载的文件和截图分别保存在 `dist/test/chromium/`、`dist/test/firefox/`，每次运行前清空。
+
+推送到 `main` 和 Pull Request 会运行同样的检查与浏览器冒烟测试。推送版本 tag 还会构建并发布 Release，详见[分发](distribution.md#发布新版本)。
 
 ## 界面截图
 

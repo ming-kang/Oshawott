@@ -13,6 +13,12 @@ export const MODEL_ORIGINS = [
 export const CHROMIUM_KEY =
 	"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoRB95+jYjZFX7/SFXV+nU+mQdRHP/Iam3cOn9RJKJQirf1kYWWeMC7mbMbNXvam5He0sNut4zuBepGO3F2z8Jg3w+KbQ43SrTrnBkoLXG3ABnYVPEQZuznQhFX548buYqL8QIQyBFCnNKBv7Mt098ln9I6XqbVsAAo1Pp0uc3RFPHm0JNidkJP75x/Yadb1O93/SEAVzdK+DB/viBBSlqpVISi8/FftYaH2oi1QjYcA/krL4nMcvQw+acLTrBmlU9KBl4tlxq6DVhzioDQ1GbiI/bDd+2iAtCiNubMF8tXFLxBEu7G9rI+0b3O8iEtvndJ3kjz3jp3v0Og4eP5UDMQIDAQAB";
 
+/**
+ * Releases carry the signed xpi and an update manifest naming it. Installed Firefox copies keep checking the update URL
+ * they were installed with, so this must not move.
+ */
+export const RELEASES = "https://github.com/ming-kang/Oshawott/releases";
+
 const ICONS = { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 96: "icons/icon-96.png", 128: "icons/icon-128.png" };
 
 /** `dev`: page tools on every site without asking (automated tests cannot answer a permission prompt). */
@@ -57,6 +63,7 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 				id: "oshawott@astralyn",
 				strict_min_version: "140.0",
 				data_collection_permissions: { required: ["websiteContent", "browsingActivity"] },
+				update_url: `${RELEASES}/latest/download/updates.json`,
 			},
 		},
 	};

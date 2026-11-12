@@ -8,7 +8,9 @@ export function chromiumPath() {
 	if (process.env.OSHAWOTT_CHROME) return process.env.OSHAWOTT_CHROME;
 	const cache = join(process.env.LOCALAPPDATA ?? join(process.env.HOME ?? "", ".cache"), "ms-playwright");
 	const build = existsSync(cache) ? readdirSync(cache).filter((d) => /^chromium-\d+$/.test(d)).sort().at(-1) : undefined;
-	const path = build && ["chrome-win64/chrome.exe", "chrome-linux/chrome", "chrome-mac/Chromium.app/Contents/MacOS/Chromium"]
+	// Playwright's Chromium builds are Chrome for Testing.
+	const path = build && ["chrome-win64/chrome.exe", "chrome-linux64/chrome",
+		`chrome-mac-${process.arch}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`]
 		.map((p) => join(cache, build, p))
 		.find((p) => existsSync(p));
 	if (!path) throw new Error("No Chromium: set OSHAWOTT_CHROME");
