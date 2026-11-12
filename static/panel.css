@@ -19,7 +19,9 @@
 @import "./styles/attachments.css";
 @import "./styles/composer.css";
 @import "./styles/overlays-menus.css";
-@import "./styles/drawers-settings.css";
+@import "./styles/drawers.css";
+@import "./styles/settings.css";
+@import "./styles/provider-editor.css";
 @import "./styles/files.css";
 @import "./styles/toasts.css";
 @import "./styles/accessibility-responsive.css";

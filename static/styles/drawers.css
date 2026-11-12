@@ -1,0 +1,237 @@
+.drawer {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	display: flex;
+	flex-direction: column;
+	width: min(86%, 320px);
+	border-right: 1px solid var(--line);
+	background: var(--bg);
+	box-shadow: var(--shadow-pop);
+	animation: from-left 0.22s var(--ease);
+}
+
+.overlay.leaving .drawer {
+	transform: translateX(-100%);
+	transition: transform 0.18s ease-in;
+}
+
+@keyframes from-left {
+	from {
+		transform: translateX(-100%);
+	}
+}
+
+.sheet {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg);
+	animation: from-right 0.24s var(--ease);
+}
+
+.overlay.leaving .sheet {
+	opacity: 0;
+	transform: translateX(24px);
+	transition: transform 0.18s ease-in, opacity 0.18s;
+}
+
+@keyframes from-right {
+	from {
+		opacity: 0;
+		transform: translateX(24px);
+	}
+}
+
+.panel-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+	height: 48px;
+	padding: 0 8px 0 12px;
+	border-bottom: 1px solid var(--line);
+}
+
+.sheet .panel-head {
+	padding-left: 8px;
+}
+
+.panel-title {
+	flex: 1;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.chat-list {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	padding: 6px;
+	overflow-y: auto;
+}
+
+.chat-item {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-height: 48px;
+	padding: 2px 4px;
+	border-radius: 8px;
+	transition: background 0.12s;
+}
+
+.chat-item:hover,
+.chat-item[data-current="true"] {
+	background: var(--surface-2);
+}
+
+.chat-item[data-current="true"] .chat-title {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.chat-select {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	justify-content: center;
+	gap: 4px;
+	flex: 1;
+	min-width: 0;
+	min-height: 42px;
+	padding: 4px 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-2);
+	text-align: left;
+}
+
+.chat-select:hover {
+	color: var(--text);
+}
+
+.chat-title {
+	min-width: 0;
+	overflow: hidden;
+	font-size: 13px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.chat-meta {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	min-height: 14px;
+}
+
+.chat-item time {
+	flex: none;
+	color: var(--text-3);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.chat-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--text-3);
+	font-size: 10.5px;
+}
+
+.chat-status-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.chat-status[data-status="running"] {
+	color: var(--accent);
+}
+
+.chat-status[data-status="running"] .chat-status-dot {
+	animation: chat-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes chat-pulse {
+	50% { opacity: 0.35; }
+}
+
+.chat-status[data-status="failed"] {
+	color: var(--danger);
+}
+
+.chat-actions {
+	display: flex;
+	flex: none;
+	align-items: center;
+}
+
+/* Hover actions overlay the row's right edge instead of reserving empty space; they stay focusable while hidden. */
+.chat-item > .chat-actions {
+	position: absolute;
+	top: 50%;
+	right: 4px;
+	padding-left: 14px;
+	border-radius: 0 8px 8px 0;
+	background: linear-gradient(to right, transparent, var(--surface-2) 14px);
+	opacity: 0;
+	pointer-events: none;
+	transform: translateY(-50%);
+	transition: opacity 0.12s;
+}
+
+.chat-item:hover > .chat-actions,
+.chat-item:focus-within > .chat-actions,
+.chat-item > .chat-actions:has([data-confirm]) {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.chat-item .chat-action {
+	width: 23px;
+	color: var(--text-3);
+}
+
+.chat-item .remove:hover,
+.chat-item .remove[data-confirm] {
+	color: var(--danger);
+}
+
+.chat-item .chat-action[data-confirm] {
+	width: auto;
+	padding: 0 6px;
+	background: var(--surface-3);
+	font-size: 11px;
+	font-weight: 550;
+	white-space: nowrap;
+}
+
+.chat-item .remove[data-confirm] {
+	background: var(--danger-soft);
+}
+
+.rename-form {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	width: 100%;
+	min-width: 0;
+}
+
+.rename-input {
+	width: 100%;
+	min-width: 0;
+}
+
+.chat-actions.editing .icon-btn {
+	flex: none;
+}
