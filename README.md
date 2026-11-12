@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-需要 Node.js 24 或更高版本，构建结果位于 `dist/chromium` 和 `dist/firefox`
+需要 Node.js 26 或更高版本，构建结果位于 `dist/chromium` 和 `dist/firefox`
 
 ```sh
 npm install

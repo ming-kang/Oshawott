@@ -6,7 +6,7 @@ import { createEnvConformance, type EnvConformanceProvider } from "@earendil-wor
 export function conformance(prefix: string, withEnv: EnvConformanceProvider): void {
 	for (const conformance of createEnvConformance({
 		assertions: {
-			ok: (value, message) => assert.ok(value, message),
+			ok: (value, message) => message === undefined ? assert.ok(value) : assert.ok(value, message),
 			strictEqual: (actual, expected) => assert.strictEqual(actual, expected),
 			deepEqual: (actual, expected) => assert.deepStrictEqual(actual, expected),
 			partialDeepEqual: (actual, expected) => assert.partialDeepStrictEqual(actual, expected),
