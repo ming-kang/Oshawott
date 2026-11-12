@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-需要 Node.js 26 或更高版本，构建结果位于 `dist/chromium` 和 `dist/firefox`
+需要 Node.js 26 或更高版本；构建结果位于 `dist/chromium` 和 `dist/firefox`
 
 ```sh
 npm install
@@ -29,6 +29,11 @@ npm run build
 - **Firefox**：打开 `about:debugging#/runtime/this-firefox`，加载 `dist/firefox/manifest.json`
 
 这样加载的 Firefox 扩展在重启后失效。长期使用可从 [GitHub Releases](https://github.com/ming-kang/Oshawott/releases/latest) 下载：Chromium 加载解压的 zip；Firefox 安装经 AMO 签名的 xpi，之后自动更新。详见[分发](docs/distribution.md)。
+
+## 开发
+
+组件边界见[架构](docs/architecture.md)，环境、命令和测试见[开发](docs/development.md)。
+签名、自动更新和发布流程见[分发](docs/distribution.md)。
 
 ## 许可
 

@@ -9,6 +9,13 @@ Oshawott 把 Agent 核心、浏览器操作、用户界面和页面 DOM 拆成�
 | **Panel** | 侧边栏中的对话、设置和文件界面 | Chromium side panel；Firefox sidebar |
 | **Page** | 页面工具的 DOM 实现 | 按需注入标签页 |
 
+## 边界
+
+`src/` 按运行位置、组件职责划分：
+- `entries/` 启动并组合组件
+- `contracts/` 定义跨组件的序列化契约
+- 跨组件调用通过 `contracts/` 中定义的主机和引用进行
+
 ## 连接
 
 箭头表示调用方向，连线上是 Port 名称。Firefox 中 Engine 与 Broker 同在事件页，直接在内存中连接。
