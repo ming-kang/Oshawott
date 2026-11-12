@@ -11,7 +11,8 @@ const downloads = join(artifacts, "downloads");
 await mkdir(downloads);
 const models = modelApi();
 const site = await testSite({ routes: models.routes });
-const { browser, worker, id, evaluateIn } = await launchExtension();
+// Hosted Linux runners disable the unprivileged namespaces Chromium's sandbox needs.
+const { browser, worker, id, evaluateIn } = await launchExtension({ args: process.env.CI ? ["--no-sandbox"] : [] });
 let downloadSession;
 try {
 	// Chromium resets a CDP client's download policy when it detaches; keep this session until the test ends.
