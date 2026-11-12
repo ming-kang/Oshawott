@@ -1,7 +1,7 @@
 import { DEFAULT_BUSY_MODE, type BusyMode, PREFERENCE_DEFAULTS, type Preference, type ProviderSummary, type Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { ext } from "../platform/webext.ts";
-import { saveLanguage, savedLanguagePreference, t, type LanguagePreference } from "./i18n.ts";
+import { saveLanguage, savedLanguagePreference, t, type LanguagePreference } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
 import { segmented } from "./segmented.ts";
 import { h, icon, logo, toast, toastError } from "./ui.ts";

@@ -6,7 +6,7 @@ import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureRe
 import { isImageAttachment, type AttachmentRef, USER_ENTRY, userInput } from "../lib/attachments.ts";
 import { fromBase64 } from "../lib/base64.ts";
 import { formatBytes } from "../lib/bytes.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
 import { copyText, download, errorMessage, h, type IconName, icon, mascot, toastError } from "./ui.ts";

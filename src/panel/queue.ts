@@ -2,7 +2,7 @@ import type { ConversationView, InboxItem, InboxState, LiveState } from "@earend
 import type { BusyMode, QueueCancelResult, QueueUpdateResult } from "../contracts/chat.ts";
 import { type AttachmentInput, type AttachmentRef, userInput } from "../lib/attachments.ts";
 import { AttachmentPicker, pendingInput } from "./attachments.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon, toast, toastError } from "./ui.ts";
 

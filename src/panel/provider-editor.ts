@@ -2,7 +2,7 @@ import {
 	THINKING_LEVELS, type ModelApi, type ModelConfig, type ModelSummary, type ProviderProfile, type ProviderSummary, type Workspace,
 } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { LoginCard, type LoginSource } from "./login-card.ts";
 import { compactTokens } from "./models.ts";
 import { requestModelAccess } from "./model-permissions.ts";

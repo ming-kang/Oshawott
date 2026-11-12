@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "../contracts/chat.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon } from "./ui.ts";
 

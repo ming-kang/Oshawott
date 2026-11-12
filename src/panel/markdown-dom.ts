@@ -1,4 +1,4 @@
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { type Block, closeDangling, type Inline, parseMarkdown } from "./markdown.ts";
 import { copyText, h, icon } from "./ui.ts";
 

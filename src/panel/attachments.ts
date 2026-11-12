@@ -3,7 +3,7 @@ import {
 	type AttachmentInput,
 } from "../lib/attachments.ts";
 import { formatBytes } from "../lib/bytes.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { h, icon } from "./ui.ts";
 
 export type PendingAttachment = AttachmentInput & { previewUrl?: string };

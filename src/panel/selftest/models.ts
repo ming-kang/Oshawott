@@ -1,7 +1,7 @@
 import type { ThinkingLevel, Workspace } from "../../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
 import { ext } from "../../platform/webext.ts";
-import { t } from "../i18n.ts";
+import { t } from "../i18n/index.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "defaultModel" | "setDefaultConfiguration">;

@@ -8,7 +8,7 @@ import { Composer } from "./composer.ts";
 import { createPanelHost, engineConnector } from "./connection.ts";
 import { DraftSession } from "./draft-session.ts";
 import { FilesSheet } from "./files.ts";
-import { LANG, t } from "./i18n.ts";
+import { LANG, t } from "./i18n/index.ts";
 import { ModelMenu } from "./model-menu.ts";
 import { supportedThinkingLevels, supportsVision } from "./models.ts";
 import { OverlayController } from "./overlays.ts";

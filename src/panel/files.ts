@@ -1,7 +1,7 @@
 import type { Chat } from "../contracts/chat.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { LANG, t } from "./i18n.ts";
+import { LANG, t } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
 import { download, errorMessage, h, icon, toast, toastError } from "./ui.ts";
 

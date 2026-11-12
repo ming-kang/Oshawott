@@ -1,6 +1,6 @@
 import type { ChatStatus, ChatSummary, Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { LANG, t } from "./i18n.ts";
+import { LANG, t } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon, logo, toast, toastError, type IconName } from "./ui.ts";
 

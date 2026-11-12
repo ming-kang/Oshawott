@@ -1,5 +1,5 @@
 import type { ApprovalDecision, ApprovalView } from "../contracts/chat.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { toolLook } from "./tool-card.ts";
 import { h, icon, toastError } from "./ui.ts";
 

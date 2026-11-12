@@ -4,7 +4,7 @@ import { AttachmentPicker, pendingInput } from "./attachments.ts";
 import type { ComposerDraft } from "./drafts.ts";
 import type { DraftSource } from "./draft-session.ts";
 import { ext } from "../platform/webext.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { modelName, supportedThinkingLevels, supportsVision } from "./models.ts";
 import type { TabTracker, TargetTab } from "./tab.ts";
 import { h, icon, toast } from "./ui.ts";

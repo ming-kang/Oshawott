@@ -3,7 +3,7 @@ import { type ConversationView, type EntryId, type EntryRecord, type LiveState, 
 import type { Workspace } from "../../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
 import { OverlayController, type OverlayView } from "../overlays.ts";
-import { t } from "../i18n.ts";
+import { t } from "../i18n/index.ts";
 import { testAccountLogin } from "./login.ts";
 import { pickBuiltin, testModelManagement } from "./models.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "../queue.ts";

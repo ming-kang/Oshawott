@@ -1,6 +1,6 @@
 import type { ModelRef, Workspace } from "../contracts/chat.ts";
 import type { Reference } from "../lib/chord.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { compactTokens, configuredProviders, sameModel } from "./models.ts";
 import type { OverlayView } from "./overlays.ts";
 import { h, icon } from "./ui.ts";

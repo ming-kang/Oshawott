@@ -1,6 +1,6 @@
 import type { LoginView, ProviderSummary, Workspace } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { requestOrigins } from "./model-permissions.ts";
 import { copyText, h, icon, toast, toastError } from "./ui.ts";
 

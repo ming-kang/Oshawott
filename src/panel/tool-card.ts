@@ -3,7 +3,7 @@ import { NO_ACCESS_CODE } from "../contracts/browser.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { sitePattern } from "../platform/patterns.ts";
 import { ext } from "../platform/webext.ts";
-import { t } from "./i18n.ts";
+import { t } from "./i18n/index.ts";
 import { h, type IconName, icon, toast, toastError } from "./ui.ts";
 
 export type ToolStatus = "pending" | "running" | "done" | "error" | "stopped" | "streaming";
