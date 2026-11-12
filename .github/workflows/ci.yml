@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .node-version
+          node-version: 26
           cache: npm
       - run: npm ci
       - run: npm run check
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .node-version
+          node-version: 26
           cache: npm
       - run: npm ci
       # Firefox comes with the runner; Chromium is Playwright's, as on a developer machine.
