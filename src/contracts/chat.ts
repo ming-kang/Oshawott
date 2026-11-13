@@ -36,9 +36,15 @@ export const ProviderProfile = obj({
 export type ProviderProfile = Static<typeof ProviderProfile>;
 
 export const ModelSummary = obj({
-	id: str(), name: str(), vision: bool(), contextWindow: int(), maxTokens: int(), thinkingLevels: arr(ThinkingLevel), manual: bool(),
+	id: str(), name: str(), vision: bool(), contextWindow: int(), maxTokens: int(), thinkingLevels: arr(ThinkingLevel),
 });
 export type ModelSummary = Static<typeof ModelSummary>;
+
+export const ProbeModelsResult = obj({
+	models: arr(ModelConfig),
+	truncated: bool(),
+});
+export type ProbeModelsResult = Static<typeof ProbeModelsResult>;
 
 export const ProviderSummary = obj({
 	id: str(),
@@ -175,6 +181,10 @@ export const Workspace = remote("oshawott.workspace", {
 				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
 				deleteProvider: method(obj({ provider: str() })),
 				refreshProvider: method(obj({ provider: str() })),
+				probeModels: method(
+					obj({ provider: opt(str()), baseUrl: str({ min: 1, max: 2048 }), api: ModelApi, key: opt(str({ min: 1 })) }),
+					ProbeModelsResult,
+				),
 				setDefaultConfiguration: method(ChatConfiguration),
 				setBusyMode: method(BusyMode),
 			},

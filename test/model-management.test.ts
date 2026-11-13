@@ -5,7 +5,6 @@ import { AgentDoc, MemoryStorage } from "@earendil-works/pi-durable";
 import { ProvidersDoc, WorkspaceDoc } from "../src/engine/docs.ts";
 import type { ProviderProfile } from "../src/contracts/chat.ts";
 import { DEFAULT_INSTRUCTIONS } from "../src/engine/instructions.ts";
-import { ProviderManager } from "../src/engine/providers.ts";
 import { ChatSession } from "../src/panel/session.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, openEngine, persistentStorage, serveBrowser } from "./support/world.ts";
@@ -38,11 +37,11 @@ const profile: ProviderProfile = {
 };
 const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
 
-test("custom providers discover, retain the last good catalog, edit and delete without exposing keys", async () => {
+test("custom providers probe candidates selectively, keep only chosen models and protect keys", async () => {
 	let fail = false;
-	let discoveries = 0;
+	let probes = 0;
 	const f = await fixture(async (input, init) => {
-		discoveries++;
+		probes++;
 		assert.equal(input, "https://models.test/v1/models");
 		assert.equal(init?.credentials, "omit");
 		assert.equal(init?.redirect, "error");
@@ -54,47 +53,60 @@ test("custom providers discover, retain the last good catalog, edit and delete w
 		] });
 	});
 	try {
-		await f.workspace.saveProvider({ profile, key: " secret-key " }, context);
+		// Probing before saving returns candidates without registering the provider or populating any catalog.
+		const probed = await f.workspace.probeModels({ baseUrl: profile.baseUrl, api: profile.api, key: " secret-key " }, context);
+		assert.equal(probes, 1);
+		assert.deepEqual(probed.models.map((model) => model.id), ["remote", "vision"]);
+		assert.equal(probed.models[1]?.vision, true);
+		assert.deepEqual(probed.models[1]?.thinkingLevels, ["off", "minimal", "low", "medium", "high"]);
+		assert.equal(f.workspace.providers.value.some((provider) => provider.id === profile.id), false);
+		assert.equal(await f.modelsStore.read(profile.id), undefined);
+
+		// Saving the provider with only the selected model ("manual" + "vision") never auto-adds "remote".
+		const chosenVision = probed.models.find((model) => model.id === "vision")!;
+		await f.workspace.saveProvider({ profile: { ...profile, models: [...profile.models, chosenVision] }, key: " secret-key " }, context);
 		const custom = await until(() => f.workspace.providers.value.find((provider) => provider.id === profile.id));
 		assert.equal(custom.kind, "custom");
 		assert.equal(custom.configured, true);
-		assert.deepEqual(custom.models.map((model) => model.id), ["manual", "remote", "vision"]);
-		assert.deepEqual(custom.models.map((model) => model.manual), [true, false, false]);
-		assert.equal(custom.models[2]?.vision, true);
-		assert.deepEqual(custom.models[2]?.thinkingLevels, ["off", "minimal", "low", "medium", "high"]);
-		assert.equal(discoveries, 1);
+		assert.deepEqual(custom.models.map((model) => model.id), ["manual", "vision"]);
+		assert.equal(probes, 1, "saving does not trigger an automatic /models fetch");
 		assert.deepEqual(await f.credentials.read(profile.id), { type: "api_key", key: "secret-key" });
 		assert.equal(JSON.stringify(f.workspace.providers.value).includes("secret-key"), false);
+		assert.equal(await f.modelsStore.read(profile.id), undefined);
+
+		// Probing an existing provider without re-entering the key reuses the stored credential and omits secrets from errors.
+		const reprobed = await f.workspace.probeModels({ provider: profile.id, baseUrl: profile.baseUrl, api: profile.api }, context);
+		assert.equal(probes, 2);
+		assert.deepEqual(reprobed.models.map((model) => model.id), ["remote", "vision"]);
 
 		fail = true;
-		await f.workspace.refreshProvider({ provider: profile.id }, context);
-		const failed = f.workspace.providers.value.find((provider) => provider.id === profile.id)!;
-		assert.deepEqual(failed.models.map((model) => model.id), ["manual", "remote", "vision"], "a failed refresh retains the last good catalog");
-		assert.match(failed.discoveryError ?? "", /HTTP 500/);
-		assert.equal(failed.discoveryError?.includes("secret-key"), false);
+		await assert.rejects(f.workspace.probeModels({ provider: profile.id, baseUrl: profile.baseUrl, api: profile.api }, context), (error) => {
+			assert.match(String(error), /HTTP 500/);
+			assert.equal(String(error).includes("secret-key"), false);
+			return true;
+		});
 
 		fail = false;
-		await f.workspace.saveProvider({ profile: { ...profile, name: "Edited" } }, context);
+		await f.workspace.saveProvider({ profile: { ...profile, name: "Edited", models: [...profile.models, chosenVision] } }, context);
 		const edited = f.workspace.providers.value.find((provider) => provider.id === profile.id);
 		assert.equal(edited?.name, "Edited");
-		assert.deepEqual(edited?.models.map((model) => model.id), ["manual", "remote", "vision"], "editing restores the cached catalog without a network request");
-		assert.equal(discoveries, 2, "editing without a key preserves auth and does not force a refresh");
+		assert.deepEqual(edited?.models.map((model) => model.id), ["manual", "vision"]);
+		assert.equal(probes, 3, "editing without a key preserves auth and makes no network request");
+
 		await f.workspace.setDefaultConfiguration({ model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high" }, context);
 		const id = await f.workspace.createChat({}, context);
 		assert.deepEqual(await f.engine.harness.snapshot(AgentDoc, id as never, context), {
 			model: { provider: profile.id, modelId: "manual" }, thinkingLevel: "high", instructions: DEFAULT_INSTRUCTIONS,
 		});
-		const cachedBeforeRejectedEdits = await f.modelsStore.read(profile.id);
-		await assert.rejects(f.workspace.saveProvider({ profile: { ...profile, models: [] } }, context), /still used/, "removing a referenced manual-only model is rejected");
-		await assert.rejects(f.workspace.saveProvider({ profile: { ...profile, baseUrl: "https://other.test/v1", models: [] } }, context), /still used/);
-		assert.deepEqual(await f.modelsStore.read(profile.id), cachedBeforeRejectedEdits, "a rejected endpoint edit preserves the last good cache");
-		assert.deepEqual(f.workspace.providers.value.find((provider) => provider.id === profile.id)?.models.map((model) => model.id), ["manual", "remote", "vision"]);
+		await assert.rejects(f.workspace.saveProvider({ profile: { ...profile, models: [chosenVision] } }, context), /still used/, "removing a model still in use is rejected");
+		assert.deepEqual(f.workspace.providers.value.find((provider) => provider.id === profile.id)?.models.map((model) => model.id), ["manual", "vision"]);
 		await assert.rejects(f.workspace.deleteProvider({ provider: profile.id }, context), /still used/);
+
 		const chat = await f.chat(id);
 		const imageSubmission = await chat.send({
 			text: "visual metadata check", requestId: "custom-vision", attachments: [{
 				id: "pixel", name: "pixel.png", mimeType: "image/png",
-				data: Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64")),
+				data: PNG,
 			}],
 		}, context);
 		assert.ok(imageSubmission > 0, "a custom visual model accepts the existing native image attachment pipeline");
@@ -108,31 +120,6 @@ test("custom providers discover, retain the last good catalog, edit and delete w
 	} finally {
 		await f.close();
 	}
-});
-
-test("manual overrides are applied on reads rather than persisted over the discovered catalog", async () => {
-	const credentials = new InMemoryCredentialStore();
-	const modelsStore = new InMemoryModelsStore();
-	const models = createModels({ credentials, modelsStore });
-	const overridden: ProviderProfile = { ...profile, models: [
-		{ id: "remote", name: "Override", contextWindow: 10_000, maxTokens: 1_000, vision: true, thinkingLevels: ["off", "high"] },
-	] };
-	const manager = new ProviderManager({ models, modelsStore, fetch: async () => Response.json({ data: [
-		{ id: "remote", name: "Remote", context_length: 99_000, reasoning: true },
-	] }) });
-	await credentials.modify(profile.id, async () => ({ type: "api_key", key: "secret-key" }));
-	(await manager.prepare(overridden))();
-	await manager.refresh(profile.id);
-	let summary = (await manager.summaries())[0]!;
-	assert.equal(summary.models[0]?.name, "Override");
-	assert.equal(summary.models[0]?.contextWindow, 10_000);
-	assert.deepEqual(summary.models[0]?.thinkingLevels, ["off", "high"]);
-	assert.equal((await modelsStore.read(profile.id))?.models[0]?.name, "Remote");
-	(await manager.prepare({ ...profile, models: [] }))();
-	await manager.restoreCatalog(profile.id);
-	summary = (await manager.summaries())[0]!;
-	assert.equal(summary.models[0]?.name, "Remote", "removing an override reveals the raw cached model");
-	assert.equal(summary.models[0]?.contextWindow, 99_000);
 });
 
 test("thinking levels and models are durable per conversation and reach the next real model request", async () => {
@@ -286,12 +273,12 @@ test("provider deletion serializes with default and chat configuration without l
 	}
 });
 
-test("provider profiles and discovered catalogs restore before a new Engine resumes", async () => {
+test("custom provider profiles and credentials restore before a new Engine resumes and drop legacy cached catalogs", async () => {
 	const credentials = new InMemoryCredentialStore();
 	await credentials.modify(profile.id, async () => ({ type: "api_key", key: "secret-key" }));
 	const modelsStore = new InMemoryModelsStore();
 	await modelsStore.write(profile.id, { models: [{
-		id: "remote", name: "Remote", api: profile.api, provider: profile.id, baseUrl: profile.baseUrl,
+		id: "legacy-remote", name: "Legacy", api: profile.api, provider: profile.id, baseUrl: profile.baseUrl,
 		input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, reasoning: false,
 		contextWindow: 64_000, maxTokens: 8_192,
 	}] });
@@ -308,7 +295,8 @@ test("provider profiles and discovered catalogs restore before a new Engine resu
 	const second = await boot(secondModels);
 	try {
 		assert.equal(secondModels.getProvider(profile.id)?.name, profile.name);
-		assert.deepEqual(secondModels.getModels(profile.id).map((model) => model.id), ["manual", "remote"]);
+		assert.deepEqual(secondModels.getModels(profile.id).map((model) => model.id), ["manual"]);
+		assert.equal(await modelsStore.read(profile.id), undefined);
 		assert.equal((await secondModels.checkAuth(profile.id))?.type, "api_key");
 	} finally {
 		await second.close();

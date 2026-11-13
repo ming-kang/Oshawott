@@ -147,6 +147,7 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 					await admin.refresh(provider);
 					return null;
 				},
+				probeModels: async (input) => admin.probeModels(input),
 				setDefaultConfiguration: async (input, ctx) => {
 					await admin.setDefault(input, ctx);
 					return null;

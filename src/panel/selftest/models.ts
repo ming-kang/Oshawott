@@ -34,22 +34,52 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		api.dispatchEvent(new Event("change", { bubbles: true }));
 		input("#provider-key", "local-key");
 		click("#provider-refresh");
-		phase = "adding and discovering the custom provider";
-		const local = await until(() => {
-			const provider = source.providers.value.find((item) => item.name === "Local test service" && item.configured);
-			return provider && (provider.models.length || provider.discoveryError) ? provider : undefined;
-		});
+		phase = "probing and selecting custom provider models";
+		const reasoningBox = await until(() => control<HTMLInputElement>('#provider-fetch-list [data-model="local-reasoning"] input[type="checkbox"]'));
+		const unusedRow = control('#provider-fetch-list [data-model="local-unused"]');
+		step("probing shows a selectable checklist without auto-saving the provider", Boolean(unusedRow)
+			&& !source.providers.value.some((provider) => provider.name === "Local test service"));
+		reasoningBox.click();
+		click("#provider-import-models");
+		await until(() => control('#provider-manual-models [data-model="local-reasoning"]') ? true : undefined);
+		step("importing adds only the checked model to the draft list", !control('#provider-manual-models [data-model="local-unused"]'));
+
+		click("#provider-save");
+		phase = "saving the custom provider";
+		const local = await until(() => source.providers.value.find((item) => item.name === "Local test service" && item.configured));
 		customId = local.id;
-		step("custom provider discovers visual and reasoning models", local.models.some((model) => model.id === "local-reasoning" && model.vision && model.thinkingLevels.includes("high"))
-			&& Boolean(control(`#provider-discovered-models [data-model="local-reasoning"]`)), `${local.models.map((model) => model.id).join(", ")} ${local.discoveryError ?? ""}`);
+		step("custom provider saves only the selected visual and reasoning model", local.models.some((model) => model.id === "local-reasoning" && model.vision && model.thinkingLevels.includes("high"))
+			&& !local.models.some((model) => model.id === "local-unused"), `${local.models.map((model) => model.id).join(", ")}`);
+
+		click(`.provider[data-provider="${customId}"] .provider-head`);
+		click("#provider-refresh");
+		phase = "re-probing an existing provider without re-entering the key";
+		const alreadyAdded = await until(() => control<HTMLElement>('#provider-fetch-list [data-model="local-reasoning"][data-added="true"]'));
+		step("re-probing reuses the stored key and marks already-added models", alreadyAdded.querySelector<HTMLInputElement>("input")?.disabled === true);
+		click("#provider-fetch-cancel");
+
+		phase = "testing Use built-in data on a custom model";
+		click("#provider-add-model");
+		const newModelEditor = control<HTMLDetailsElement>("#provider-manual-models details:last-child")!;
+		const newIdInput = newModelEditor.querySelector<HTMLInputElement>('input[placeholder="model-id"]')!;
+		newIdInput.value = "custom-sonnet";
+		newIdInput.dispatchEvent(new Event("input", { bubbles: true }));
+		newModelEditor.querySelector<HTMLButtonElement>(".model-use-builtin")!.click();
+		const builtinSearch = newModelEditor.querySelector<HTMLInputElement>(".builtin-search")!;
+		builtinSearch.value = "claude-sonnet";
+		builtinSearch.dispatchEvent(new Event("input", { bubbles: true }));
+		const candidate = await until(() => newModelEditor.querySelector<HTMLButtonElement>('.builtin-candidate-row[data-provider="anthropic"]') ?? newModelEditor.querySelector<HTMLButtonElement>(".builtin-candidate-row"));
+		candidate.click();
+		const ctxDiff = await until(() => newModelEditor.querySelector('.builtin-diff-row[data-field="contextWindow"]'));
+		newModelEditor.querySelector<HTMLButtonElement>(".builtin-apply")!.click();
+		const appliedVision = newModelEditor.querySelector<HTMLInputElement>(".vision-check input")?.checked === true;
+		const appliedCtx = Number(newModelEditor.querySelectorAll<HTMLInputElement>('input[type="number"]')[0]?.value);
+		step("Use built-in data previews diffs and applies capabilities without changing model ID",
+			Boolean(ctxDiff) && newIdInput.value === "custom-sonnet" && appliedVision && appliedCtx >= 200_000,
+			`id=${newIdInput.value} ctx=${appliedCtx} vision=${appliedVision}`);
+		newModelEditor.querySelector<HTMLButtonElement>(".btn.danger")?.click();
 
 		input("#provider-name", "Local edited draft");
-		click("#provider-refresh");
-		await until(() => !control<HTMLButtonElement>("#provider-refresh")?.getAttribute("aria-busy")
-			&& source.providers.value.find((provider) => provider.id === customId)?.name === "Local edited draft");
-		const draft = control<HTMLInputElement>("#provider-name")?.value;
-		step("model discovery uses and saves the current provider draft", draft === "Local edited draft", draft);
-		await until(() => control<HTMLElement>("#provider-editor")?.dataset.busy === "false" && control<HTMLButtonElement>("#provider-save")?.disabled === false);
 		click("#provider-save");
 		phase = "saving the edited provider";
 		await until(() => source.providers.value.find((provider) => provider.id === customId)?.name === "Local edited draft");

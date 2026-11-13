@@ -56,6 +56,7 @@ export function modelApi() {
 			if (!authorized(req)) return res.writeHead(401, { ...cors, "content-type": "application/json" }).end(JSON.stringify({ error: { message: "unauthorized" } }));
 			res.writeHead(200, { ...cors, "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [
 				{ id: "local-reasoning", object: "model", reasoning: true, input: ["text", "image"], context_length: 65536, max_output_tokens: 8192 },
+				{ id: "local-unused", object: "model", context_length: 32768, max_output_tokens: 4096 },
 			] }));
 		},
 		"POST /v1/chat/completions": (req, res) => {

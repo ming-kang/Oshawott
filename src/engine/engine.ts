@@ -50,7 +50,7 @@ export interface Engine {
 export async function startEngine(options: EngineOptions, context: Context): Promise<Engine> {
 	const onError = options.onError ?? ((error: unknown) => console.error("[oshawott engine]", error));
 	const now = options.now ?? Date.now;
-	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, fetch: options.fetch, oauth: options.oauth });
+	const providers = new ProviderManager({ models: options.models, modelsStore: options.modelsStore, oauth: options.oauth });
 	const logins = new LoginSessions({ models: options.models, setups: options.oauth, now, timeoutMs: options.loginTimeoutMs });
 	const approvals = new Approvals();
 	/** Observed before scheduling starts; until then the preferences' defaults only cover the open itself. */
@@ -156,7 +156,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	const titles = new ChatTitles({ harness, models: options.models, providers, timeoutMs: options.titleTimeoutMs ?? TITLE_TIMEOUT_MS });
 	await resumeFileDeletes(harness, options.files, context, onError);
 	await completeAttachmentDeletes(harness, options.files, context, onError);
-	const admin = new ProviderAdmin({ harness, models: options.models, credentials: options.credentials, providers, logins, onError });
+	const admin = new ProviderAdmin({ harness, models: options.models, credentials: options.credentials, providers, logins, fetch: options.fetch, onError });
 	// A finished sign-in changes the provider's auth, and the account decides which models it may use.
 	const signedIn = new Set<string>();
 	const loginObservation = await logins.observe({

@@ -1,11 +1,11 @@
 import { clampThinkingLevel, getSupportedThinkingLevels, type CredentialStore, type MutableModels } from "@earendil-works/pi-ai";
 import { AgentDoc, type ConversationId, type Harness } from "@earendil-works/pi-durable";
-import type { ChatConfiguration, ModelRef, ProviderProfile, ThinkingLevel } from "../contracts/chat.ts";
+import type { ChatConfiguration, ModelApi, ModelRef, ProbeModelsResult, ProviderProfile, ThinkingLevel } from "../contracts/chat.ts";
 import { ChordError, type Context } from "../lib/chord.ts";
 import { Serial } from "../lib/serial.ts";
 import { ProvidersDoc, WorkspaceDoc } from "./docs.ts";
 import type { LoginSessions } from "./oauth.ts";
-import { normalizeProfile } from "./provider-discovery.ts";
+import { normalizeProfile, probeProviderModels } from "./provider-discovery.ts";
 import type { ProviderManager } from "./providers.ts";
 
 export interface ProviderAdminServices {
@@ -14,6 +14,7 @@ export interface ProviderAdminServices {
 	readonly credentials: CredentialStore;
 	readonly providers: ProviderManager;
 	readonly logins: LoginSessions;
+	readonly fetch?: typeof fetch;
 	readonly onError: (error: unknown) => void;
 }
 
@@ -85,11 +86,21 @@ export class ProviderAdmin {
 		return this.serialize(() => this.#services.providers.refresh(provider));
 	}
 
-	/** Configured providers that have no catalog yet (a first start, or a discovery that failed while offline). */
+	/** Built-in configured providers that have no catalog yet (a first start, or a discovery that failed while offline). */
 	async discoverMissing() {
 		const { providers } = this.#services;
-		const missing = (await providers.summaries()).filter((provider) => provider.configured && provider.models.length === 0);
+		const missing = (await providers.summaries()).filter((provider) => provider.kind === "builtin" && provider.configured && provider.models.length === 0);
 		await Promise.all(missing.map((provider) => providers.refresh(provider.id, false)));
+	}
+
+	/** Probes a custom provider endpoint for selectable model candidates without mutating stored configuration. */
+	async probeModels(input: { provider?: string; baseUrl: string; api: ModelApi; key?: string }): Promise<ProbeModelsResult> {
+		let key = input.key?.trim() || undefined;
+		if (!key && input.provider) {
+			const stored = await this.#services.credentials.read(input.provider);
+			if (stored?.type === "api_key") key = stored.key;
+		}
+		return probeProviderModels({ baseUrl: input.baseUrl, api: input.api, key }, this.#services.fetch);
 	}
 
 	save(input: ProviderProfile, key: string | undefined, ctx: Context) {
@@ -97,9 +108,8 @@ export class ProviderAdmin {
 		return this.serialize(async () => {
 			const profile = normalizeProfile(input);
 			const previous = providers.profile(profile.id);
-			const catalogChanged = previous !== undefined && (previous.baseUrl !== profile.baseUrl || previous.api !== profile.api);
 			const activate = await providers.prepare(profile);
-			const available = await providers.candidateModelIds(profile);
+			const available = providers.candidateModelIds(profile);
 			for (const model of await this.#modelsInUse(ctx)) {
 				if (model.provider === profile.id && !available.has(model.modelId)) {
 					invalid(`Model ${model.modelId} is still used by the default model or a chat. Choose another model before removing it.`);
@@ -118,7 +128,6 @@ export class ProviderAdmin {
 			try {
 				await writeProfile(profile);
 				committed = true;
-				if (catalogChanged) await providers.deleteCatalog(profile.id);
 			} catch (error) {
 				if (committed) await writeProfile(previous).catch(onError);
 				if (key !== undefined) {
@@ -128,8 +137,8 @@ export class ProviderAdmin {
 				throw error;
 			}
 			activate();
-			await providers.restoreCatalog(profile.id);
-			if (key !== undefined) await providers.refresh(profile.id);
+			await providers.deleteCatalog(profile.id).catch(onError);
+			await providers.changed();
 		});
 	}
 

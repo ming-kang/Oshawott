@@ -9,12 +9,11 @@ import type { ModelApi, ModelRef, ProviderProfile, ProviderSummary } from "../co
 import { KeyedSerial } from "../lib/serial.ts";
 import type { OAuthSetups } from "./oauth.ts";
 import { Published } from "./published.ts";
-import { discoverModels, modelFromConfig, normalizeProfile } from "./provider-discovery.ts";
+import { modelFromConfig, normalizeProfile } from "./provider-discovery.ts";
 
 export interface ProviderManagerOptions {
 	readonly models: MutableModels;
 	readonly modelsStore?: ModelsStore;
-	readonly fetch?: typeof fetch;
 	readonly oauth?: OAuthSetups;
 }
 
@@ -24,8 +23,8 @@ const APIS: Record<ModelApi, () => ProviderStreams> = {
 	"openai-completions": openAICompletionsApi,
 };
 
-export function customProvider(profile: ProviderProfile, fetcher?: typeof fetch): Provider {
-	const base = createProvider({
+export function customProvider(profile: ProviderProfile): Provider {
+	return createProvider({
 		id: profile.id,
 		name: profile.name,
 		baseUrl: profile.baseUrl,
@@ -38,29 +37,9 @@ export function customProvider(profile: ProviderProfile, fetcher?: typeof fetch)
 			},
 		},
 		models: profile.models.map((model) => modelFromConfig(model, profile)),
-		fetchModels: (context) => discoverModels(profile, context, fetcher),
 		api: APIS[profile.api](),
 	});
-	const withManualOverrides = (models: readonly Model<Api>[]): Model<Api>[] => {
-		const merged = [...models];
-		for (const config of profile.models) {
-			const override = modelFromConfig(config, profile);
-			const index = merged.findIndex((model) => model.id === config.id);
-			if (index < 0) merged.push(override);
-			else merged[index] = { ...merged[index]!, ...override };
-		}
-		return merged;
-	};
-	return {
-		...base,
-		getModels: () => withManualOverrides(base.getModels()),
-		getAllModels: () => withManualOverrides((base.getAllModels?.() ?? base.getModels()) as Model<Api>[]),
-	};
 }
-
-/** Whether a cached model was discovered at `profile`'s current endpoint, not before its URL or API changed. */
-const discoveredFor = (profile: ProviderProfile, model: Pick<Model<Api>, "provider" | "baseUrl" | "api">) =>
-	model.provider === profile.id && model.baseUrl === profile.baseUrl && model.api === profile.api;
 
 function safeDiscoveryError(error: unknown): string {
 	const message = error instanceof Error ? error.message : "";
@@ -72,13 +51,12 @@ function safeDiscoveryError(error: unknown): string {
 export type ProviderSnapshot = { list: ProviderSummary[] };
 
 /**
- * Owns custom runtime registrations and non-secret discovery status; Durable owns their persistent profiles. It
+ * Owns custom runtime registrations and built-in discovery status; Durable owns persistent custom profiles. It
  * publishes the one provider list every Panel follows.
  */
 export class ProviderManager {
 	readonly #models: MutableModels;
 	readonly #modelsStore?: ModelsStore;
-	readonly #fetch?: typeof fetch;
 	readonly #oauth: OAuthSetups;
 	readonly #profiles = new Map<string, ProviderProfile>();
 	readonly #refreshing = new Set<string>();
@@ -92,7 +70,6 @@ export class ProviderManager {
 	constructor(options: ProviderManagerOptions) {
 		this.#models = options.models;
 		this.#modelsStore = options.modelsStore;
-		this.#fetch = options.fetch;
 		this.#oauth = options.oauth ?? {};
 	}
 
@@ -105,7 +82,7 @@ export class ProviderManager {
 		const profile = normalizeProfile(profileInput);
 		const previous = this.#profiles.get(profile.id);
 		if (!previous && this.#models.getProvider(profile.id)) throw new Error(`Provider ID ${profile.id} is already in use.`);
-		const provider = customProvider(profile, this.#fetch);
+		const provider = customProvider(profile);
 		return () => {
 			this.#profiles.set(profile.id, profile);
 			this.#errors.delete(profile.id);
@@ -120,44 +97,22 @@ export class ProviderManager {
 		for (const id of this.#profiles.keys()) if (!ids.has(id)) this.#models.deleteProvider(id);
 		this.#profiles.clear();
 		for (const profile of profiles) {
-			await this.#dropStaleCatalog(profile);
+			await this.#modelsStore?.delete(profile.id);
 			this.#profiles.set(profile.id, profile);
-			this.#models.setProvider(customProvider(profile, this.#fetch));
+			this.#models.setProvider(customProvider(profile));
 		}
 		await this.#models.refresh({ allowNetwork: false });
 		// Not awaited: the Engine must not wait for every provider's auth check before it starts.
 		void this.changed();
 	}
 
-	/** IDs in the prospective catalog: new manual entries plus raw discovery, never old manual-only entries. */
-	async candidateModelIds(profile: ProviderProfile): Promise<Set<string>> {
-		const ids = new Set(profile.models.map((model) => model.id));
-		const stored = await this.#modelsStore?.read(profile.id);
-		if (stored) {
-			for (const model of stored.models) if (discoveredFor(profile, model)) ids.add(model.id);
-			return ids;
-		}
-		const previousManual = new Set(this.#profiles.get(profile.id)?.models.map((model) => model.id) ?? []);
-		for (const model of this.#models.getModels(profile.id)) {
-			if (discoveredFor(profile, model) && !previousManual.has(model.id)) ids.add(model.id);
-		}
-		return ids;
+	/** Active model IDs for a custom provider profile. */
+	candidateModelIds(profile: ProviderProfile): Set<string> {
+		return new Set(profile.models.map((model) => model.id));
 	}
 
 	async deleteCatalog(id: string): Promise<void> {
 		await this.#modelsStore?.delete(id);
-	}
-
-	async restoreCatalog(id: string): Promise<void> {
-		const profile = this.#profiles.get(id);
-		if (profile) await this.#dropStaleCatalog(profile);
-		await this.#models.refresh({ providers: [id], allowNetwork: false });
-		await this.changed();
-	}
-
-	async #dropStaleCatalog(profile: ProviderProfile) {
-		const stored = await this.#modelsStore?.read(profile.id);
-		if (stored?.models.some((model) => !discoveredFor(profile, model))) await this.#modelsStore?.delete(profile.id);
 	}
 
 	async prepareDelete(id: string): Promise<() => void> {
@@ -208,7 +163,6 @@ export class ProviderManager {
 					contextWindow: model.contextWindow,
 					maxTokens: model.maxTokens,
 					thinkingLevels: getSupportedThinkingLevels(model),
-					manual: profile?.models.some((item) => item.id === model.id) ?? false,
 				})),
 				refreshing: this.#refreshing.has(provider.id),
 				discoveryError: this.#errors.get(provider.id) ?? null,
@@ -216,10 +170,14 @@ export class ProviderManager {
 		}));
 	}
 
-	/** Discovers the provider's models; the published list shows the discovery while it runs and its outcome after. */
+	/** Discovers a built-in provider's models; custom providers manage their model list explicitly. */
 	refresh(id: string, force = true): Promise<void> {
 		return this.#lines.run(id, async () => {
 			if (!this.#models.getProvider(id)) throw new Error(`Unknown provider ${id}.`);
+			if (this.#profiles.has(id)) {
+				await this.changed();
+				return;
+			}
 			this.#refreshing.add(id);
 			void this.changed();
 			try {
