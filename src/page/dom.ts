@@ -317,7 +317,7 @@ const HOVER = ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointe
 
 export function hover({ ref }: Args<"page_hover">) {
 	const target = element(ref);
-	target.scrollIntoView({ block: "center" });
+	target.scrollIntoView({ block: "center", inline: "nearest" });
 	point(target, HOVER);
 	return { ok: true, detail: `Hovering ${label(target)}.` };
 }
@@ -325,7 +325,7 @@ export function hover({ ref }: Args<"page_hover">) {
 export function click({ ref }: Args<"page_click">) {
 	const target = element(ref) as HTMLElement;
 	if (isDisabled(target)) throw new Error(`${label(target)} is disabled.`);
-	target.scrollIntoView({ block: "center" });
+	target.scrollIntoView({ block: "center", inline: "nearest" });
 	// Widgets that open on press (menus, comboboxes) listen for these, not for `click`.
 	point(target, HOVER);
 	if (point(target, ["pointerdown", "mousedown"], 1)) target.focus({ preventScroll: true });
@@ -378,7 +378,7 @@ export function type({ ref, text, submit }: Args<"page_type">) {
 	if (target instanceof HTMLSelectElement) throw new Error(`${label(target)} is a dropdown: choose an option with page_select.`);
 	if (target instanceof HTMLInputElement && UNTYPABLE.has(target.type)) throw new Error(`${label(target)} takes no text: use page_click.`);
 	if (isDisabled(target) || (target as HTMLInputElement).readOnly) throw new Error(`${label(target)} is read-only.`);
-	target.scrollIntoView({ block: "center" });
+	target.scrollIntoView({ block: "center", inline: "nearest" });
 	target.focus({ preventScroll: true });
 	if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
 		// The native setter, so frameworks that track the value see the change.
@@ -418,7 +418,7 @@ export function select({ ref, option }: Args<"page_select">) {
 }
 
 export function scroll({ ref, pixels }: Args<"page_scroll">) {
-	if (ref !== undefined) element(ref).scrollIntoView({ block: "center" });
+	if (ref !== undefined) element(ref).scrollIntoView({ block: "center", inline: "nearest" });
 	else window.scrollBy({ top: pixels ?? window.innerHeight * 0.8 });
 	return { ok: true, detail: `scrollY=${Math.round(window.scrollY)}` };
 }

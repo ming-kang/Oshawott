@@ -9,7 +9,7 @@ import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n/index.ts";
 import { markdown } from "./markdown-dom.ts";
 import { ToolCard } from "./tool-card.ts";
-import { copyText, download, errorMessage, h, type IconName, icon, mascot, toastError } from "./ui.ts";
+import { copyButton, download, errorMessage, h, type IconName, icon, mascot, toastError } from "./ui.ts";
 
 const FAILURE_LABELS = {
 	no_model: "failure.no_model", model_error: "failure.model_error", interrupted: "failure.interrupted", turn_limit: "failure.turn_limit",
@@ -46,16 +46,6 @@ function notice(tone: "error" | "warn" | "info", text: string, detail?: string, 
 		h("span", { class: "notice-icon" }, icon(iconName, 16)),
 		h("div", { class: "notice-body" }, h("div", null, text), detail ? h("div", { class: "notice-detail" }, detail) : null),
 	);
-}
-
-function copyButton(text: () => string) {
-	const button = h("button", { class: "icon-btn small", type: "button", title: t("copy"), "aria-label": t("copy") }, icon("copy", 14));
-	button.addEventListener("click", async () => {
-		if (!(await copyText(text()))) return;
-		button.replaceChildren(icon("check", 14));
-		setTimeout(() => button.replaceChildren(icon("copy", 14)), 1200);
-	});
-	return button;
 }
 
 export class Transcript {
@@ -263,7 +253,7 @@ export class Transcript {
 				.join("\n\n")
 				.trim();
 			if (text && !blocks.some((block) => block.type === "toolCall")) {
-				root.append(h("div", { class: "msg-actions" }, copyButton(() => text)));
+				root.append(h("div", { class: "msg-actions" }, copyButton(() => text, t("copy"))));
 			}
 		}
 		return root;
@@ -333,7 +323,6 @@ export class Transcript {
 			{ class: "empty" },
 			h("div", { class: "empty-logo" }, mascot()),
 			h("h1", null, t("empty.title")),
-			h("p", null, t("empty.subtitle")),
 			state.ready
 				? h(
 						"div",
@@ -351,7 +340,7 @@ export class Transcript {
 						"div",
 						{ class: "setup" },
 						h("div", { class: "setup-icon" }, icon("key", 18)),
-						h("div", { class: "setup-text" }, h("strong", null, t("empty.setupTitle")), h("span", null, t("empty.setupBody"))),
+						h("strong", null, t("empty.setupTitle")),
 						h("button", { class: "btn primary", type: "button", onclick: () => this.#actions.openSettings() }, t("empty.setupAction")),
 					),
 		);

@@ -1,11 +1,11 @@
 .sheet-body {
 	display: flex;
 	flex-direction: column;
-	gap: 22px;
+	gap: 18px;
 	width: 100%;
 	max-width: 620px;
 	margin: 0 auto;
-	padding: 18px 14px 28px;
+	padding: 16px 14px 28px;
 	overflow-y: auto;
 }
 
@@ -72,42 +72,31 @@
 	color: var(--warn);
 }
 
-.section-hint {
-	display: flex;
-	align-items: flex-start;
-	gap: 6px;
-	margin: 8px 4px 0;
-	color: var(--text-3);
-	font-size: 12px;
-	line-height: 1.5;
-}
-
-.section-hint .icon {
-	margin-top: 2px;
-}
-
 .setting-row {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
-	min-height: 38px;
-	padding: 7px 10px;
-	border: 1px solid var(--line);
-	border-radius: 9px;
+	min-height: 42px;
+	padding: 8px 12px;
 	background: var(--surface);
-	color: var(--text-2);
-	font-size: 13px;
+	color: var(--text);
+	font-size: 13.5px;
 	cursor: pointer;
+	transition: background 0.12s;
 }
 
-.section-hint + .setting-row {
-	margin-top: 14px;
+.setting-row:hover {
+	background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+
+.card > .setting-row + .setting-row {
+	border-top: 1px solid var(--line);
 }
 
 .setting-row input[type="checkbox"] {
-	width: 17px;
-	height: 17px;
+	width: 16px;
+	height: 16px;
 	margin: 0;
 	accent-color: var(--accent);
 }
@@ -210,6 +199,18 @@
 .pill[data-on] {
 	background: var(--success-soft);
 	color: var(--success);
+}
+
+.status-dot {
+	flex: none;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--text-3);
+}
+
+.status-dot[data-on] {
+	background: var(--success);
 }
 
 .input {

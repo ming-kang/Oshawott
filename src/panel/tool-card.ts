@@ -1,7 +1,7 @@
 import type { ToolDiagnostic } from "@earendil-works/pi-durable";
 import { NO_ACCESS_CODE } from "../contracts/browser.ts";
 import { formatBytes } from "../lib/bytes.ts";
-import { sitePattern } from "../platform/patterns.ts";
+import { hostOf, sitePattern } from "../platform/patterns.ts";
 import { ext } from "../platform/webext.ts";
 import { t } from "./i18n/index.ts";
 import { h, type IconName, icon, toast, toastError } from "./ui.ts";
@@ -11,14 +11,6 @@ export type ToolStatus = "pending" | "running" | "done" | "error" | "stopped" | 
 type Look = { icon: IconName; label: string; meta?: string };
 
 const clip = (text: string, max: number) => ([...text].length > max ? `${[...text].slice(0, max - 1).join("")}…` : text);
-
-function hostOf(url: unknown) {
-	try {
-		return new URL(String(url)).host;
-	} catch {
-		return String(url ?? "");
-	}
-}
 
 export function toolLook(name: string, args: Record<string, unknown>): Look {
 	switch (name) {

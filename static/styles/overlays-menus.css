@@ -147,15 +147,6 @@
 	padding: 10px 14px 0;
 }
 
-.menu-item-id {
-	max-width: 40%;
-	overflow: hidden;
-	color: var(--text-3);
-	font: 11px var(--mono);
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .menu-item[aria-selected="true"] {
 	font-weight: 500;
 }

@@ -4,6 +4,7 @@ import { Browser, NO_ACCESS, NO_ACCESS_CODE, type Tab } from "../contracts/brows
 import type { Principal } from "../contracts/hosts.ts";
 import { Page } from "../contracts/page.ts";
 import { bool, type Context, type Contract, type Host, int, obj, opt, type ParamsOf, type Reference, str } from "../lib/chord.ts";
+import { hostOf } from "../platform/patterns.ts";
 import { InspectResult, type PageToolName, pageTools, SnapshotResult } from "../tools/page-tools.ts";
 import type { Approvals } from "./approvals.ts";
 import { TargetDoc } from "./docs.ts";
@@ -33,8 +34,6 @@ export function callPage(host: EngineHost, tabId: number, tool: PageToolName | "
 function text(value: unknown) {
 	return [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value) }];
 }
-
-const hostOf = (url: string) => URL.canParse(url) ? new URL(url).host : url;
 
 /**
  * The one answer every tool gives for a site the user has not allowed. The panel offers the permission from the

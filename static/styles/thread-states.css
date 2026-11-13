@@ -30,19 +30,6 @@
 	animation: shimmer 2.4s linear infinite;
 }
 
-@keyframes bounce {
-	0%,
-	60%,
-	100% {
-		opacity: 0.35;
-		transform: translateY(0);
-	}
-	30% {
-		opacity: 1;
-		transform: translateY(-4px);
-	}
-}
-
 .notice {
 	display: flex;
 	align-items: flex-start;
@@ -170,7 +157,7 @@
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 6px;
+	gap: 8px;
 	min-height: 100%;
 	padding: 24px 4px 12px;
 	text-align: center;
@@ -179,7 +166,7 @@
 .empty-logo {
 	display: grid;
 	place-items: center;
-	margin-bottom: 10px;
+	margin-bottom: 6px;
 }
 
 .empty-logo .mascot {
@@ -190,35 +177,28 @@
 .empty h1 {
 	max-width: 280px;
 	margin: 0;
-	font-size: 20px;
+	font-size: 19px;
 	font-weight: 600;
-	line-height: 1.45;
-	text-wrap: balance;
-}
-
-.empty p {
-	max-width: 290px;
-	margin: 0;
-	color: var(--text-2);
-	font-size: 13px;
+	line-height: 1.4;
+	letter-spacing: -0.015em;
 	text-wrap: balance;
 }
 
 .suggestions {
 	display: grid;
-	gap: 8px;
+	gap: 6px;
 	width: 100%;
-	max-width: 360px;
-	margin-top: 22px;
+	max-width: 340px;
+	margin-top: 16px;
 }
 
 .suggestion {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	padding: 11px 14px;
+	padding: 10px 13px;
 	border: 1px solid var(--line);
-	border-radius: 12px;
+	border-radius: 11px;
 	background: var(--surface);
 	color: var(--text);
 	font-size: 13.5px;
@@ -244,11 +224,11 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 12px;
+	gap: 10px;
 	width: 100%;
-	max-width: 340px;
-	margin-top: 22px;
-	padding: 18px 16px 16px;
+	max-width: 280px;
+	margin-top: 16px;
+	padding: 16px;
 	border: 1px solid var(--line);
 	border-radius: var(--radius-l);
 	background: var(--surface);
@@ -262,16 +242,5 @@
 	border-radius: 10px;
 	background: var(--surface-2);
 	color: var(--text-2);
-}
-
-.setup-text {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-
-.setup-text span {
-	color: var(--text-2);
-	font-size: 13px;
 }
 

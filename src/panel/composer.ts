@@ -161,8 +161,8 @@ export class Composer implements DraftSource {
 		}
 		const thinking = host.thinking();
 		const thinkingLevels = supportedThinkingLevels(providers, ref);
-		this.thinking.hidden = !ready || !ref;
-		this.thinking.disabled = host.configuring() || thinkingLevels.length < 2;
+		this.thinking.hidden = !ready || !ref || thinkingLevels.length < 2;
+		this.thinking.disabled = host.configuring();
 		this.model.disabled = host.configuring();
 		const thinkingLabel = t(`thinking.level.${thinking}`);
 		this.thinking.dataset.level = thinking;

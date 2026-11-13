@@ -1,19 +1,10 @@
+import { click, until } from "./dom.ts";
+
 export type AttachmentTestStep = { name: string; ok: boolean; detail?: string };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until<T>(read: () => T | undefined | null | Promise<T | undefined | null>, ms = 15_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = await read();
-		if (value) return value;
-		if (Date.now() >= deadline) throw new Error("attachment control did not settle");
-		await sleep(100);
-	}
-}
-
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const bytes = (base64: string) => Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-const click = (selector: string) => document.querySelector<HTMLElement>(selector)!.click();
 const chips = () => [...document.querySelectorAll<HTMLElement>("#attachment-tray .attachment-chip:not(.attachment-error)")];
 
 /** Real composer events on both browsers; no privileged test-only attachment API. */

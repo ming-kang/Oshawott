@@ -4,7 +4,7 @@ import { ext } from "../platform/webext.ts";
 import { saveLanguage, savedLanguagePreference, t, type LanguagePreference } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
 import { segmented } from "./segmented.ts";
-import { h, icon, logo, toast, toastError } from "./ui.ts";
+import { confirmControl, type ConfirmControl, h, icon, logo, toast, toastError } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"providers" | "busyMode" | "setBusyMode"
@@ -40,13 +40,14 @@ export class SettingsSheet implements OverlayView {
 	readonly #instructionsDetails = h("details", { class: "fold", id: "settings-instructions-details" });
 	readonly #instructions = h("textarea", {
 		class: "instructions-input", id: "settings-instructions", rows: 9, spellcheck: "false",
-		"aria-labelledby": "settings-instructions-label", "aria-describedby": "settings-instructions-hint settings-instructions-status",
+		"aria-labelledby": "settings-instructions-label", "aria-describedby": "settings-instructions-status",
 	});
 	readonly #instructionsSave = h("button", { class: "btn primary small", id: "instructions-save", type: "button" }, t("settings.instructionsSave"));
 	readonly #instructionsRestore = h("button", { class: "btn small", id: "instructions-restore", type: "button" }, t("settings.instructionsRestore"));
 	readonly #instructionsLoadLatest = h("button", { class: "btn small", id: "instructions-load-latest", type: "button" }, t("settings.instructionsLoadLatest"));
 	readonly #instructionsStatusText = h("span");
 	readonly #instructionsStatus = h("div", { class: "instructions-status", id: "settings-instructions-status", role: "status", hidden: true }, this.#instructionsStatusText, this.#instructionsLoadLatest);
+	readonly #restoreConfirm: ConfirmControl;
 	#closed = false;
 	#deliveryPending = false;
 	#preferencePending = false;
@@ -55,12 +56,14 @@ export class SettingsSheet implements OverlayView {
 	#instructionsBaseline = "";
 	/** The stored text a finished Save/Restore returned, until this panel observes it. */
 	#instructionsAwaitingSync: string | undefined;
-	#instructionsRestoreConfirm = false;
-	#instructionsRestoreTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(source: () => Source | undefined, onClose: () => void, onEditProvider: (id?: string) => void) {
 		this.#source = source;
 		this.#onEditProvider = onEditProvider;
+		this.#restoreConfirm = confirmControl(this.#instructionsRestore, {
+			confirm: () => t("settings.instructionsRestoreConfirm"),
+			idle: () => [t("settings.instructionsRestore")],
+		});
 		this.#instructions.addEventListener("input", () => {
 			if (this.#instructionsAwaitingSync !== undefined) this.#instructionsBaseline = this.#instructionsAwaitingSync;
 			this.#instructionsAwaitingSync = undefined;
@@ -73,7 +76,7 @@ export class SettingsSheet implements OverlayView {
 			if (this.#instructionsPending || !this.#source()) return;
 			this.#instructionsAwaitingSync = undefined;
 			this.#instructionsDirty = false;
-			this.#clearRestoreConfirmation();
+			this.#restoreConfirm.reset();
 			this.#refreshInstructions();
 			this.#instructions.focus({ preventScroll: true });
 		});
@@ -84,8 +87,7 @@ export class SettingsSheet implements OverlayView {
 			h("div", { class: "fold-body" },
 				this.#instructions,
 				h("div", { class: "provider-section-action" }, this.#instructionsSave, this.#instructionsRestore),
-				this.#instructionsStatus,
-				h("p", { class: "section-hint", id: "settings-instructions-hint" }, h("span", null, t("settings.instructionsHint")))));
+				this.#instructionsStatus));
 		// A draft or a conflict notice must not be hidden by collapsing the section.
 		this.#instructionsDetails.addEventListener("toggle", () => this.#keepInstructionsOpen());
 		this.element = h(
@@ -97,23 +99,17 @@ export class SettingsSheet implements OverlayView {
 				h("section", { class: "section" },
 					h("div", { class: "section-heading" }, h("h3", null, t("settings.providers")),
 						h("button", { class: "btn small", id: "add-provider", type: "button", onclick: () => this.#onEditProvider() }, icon("plus", 14), t("settings.addProvider"))),
-					this.#card,
-					h("p", { class: "section-hint" }, icon("lock", 12), h("span", null, t("settings.providersHint")))),
+					this.#card),
 				h("section", { class: "section" }, h("h3", null, t("settings.safety")),
-					this.#preference("confirmActions", t("settings.confirmActions")),
-					h("p", { class: "section-hint" }, h("span", null, t("settings.confirmActionsHint")))),
+					h("div", { class: "card" }, this.#preference("confirmActions", t("settings.confirmActions")))),
 				h("section", { class: "section" }, h("h3", null, t("settings.conversation")),
-					this.#preference("autoTitle", t("settings.autoTitle")),
-					h("p", { class: "section-hint" }, h("span", null, t("settings.autoTitleHint"))),
-					this.#preference("autoCompaction", t("settings.autoCompaction")),
-					h("p", { class: "section-hint" }, h("span", null, t("settings.autoCompactionHint"))),
-					this.#preference("autoRetry", t("settings.autoRetry")),
-					h("p", { class: "section-hint" }, h("span", null, t("settings.autoRetryHint")))),
-				h("section", { class: "section" }, h("h3", null, t("settings.messaging")), this.#delivery.element,
-					h("p", { class: "section-hint" }, h("span", null, t("settings.messagingHint")))),
+					h("div", { class: "card" },
+						this.#preference("autoTitle", t("settings.autoTitle")),
+						this.#preference("autoCompaction", t("settings.autoCompaction")),
+						this.#preference("autoRetry", t("settings.autoRetry")))),
+				h("section", { class: "section" }, h("h3", null, t("settings.messaging")), this.#delivery.element),
 				h("section", { class: "section" }, h("h3", null, t("settings.appearance")), this.#themes()),
-				h("section", { class: "section" }, h("h3", null, t("settings.language")), this.#languages(),
-					h("p", { class: "section-hint" }, h("span", null, t("settings.languageHint")))),
+				h("section", { class: "section" }, h("h3", null, t("settings.language")), this.#languages()),
 				h("section", { class: "section" }, this.#instructionsDetails),
 				h("section", { class: "section" }, h("h3", null, t("settings.about")),
 					h("div", { class: "card about" }, logo(34), h("div", null, h("strong", null, "Oshawott"), h("span", null, t("settings.version", ext.runtime.getManifest().version))))),
@@ -137,7 +133,7 @@ export class SettingsSheet implements OverlayView {
 
 	close() {
 		this.#closed = true;
-		this.#clearRestoreConfirmation();
+		this.#restoreConfirm.reset();
 	}
 
 	#row(provider: ProviderSummary) {
@@ -148,7 +144,10 @@ export class SettingsSheet implements OverlayView {
 				onclick: () => this.#onEditProvider(provider.id),
 			},
 			h("span", { class: "provider-name" }, provider.name),
-			h("span", { class: "pill", "data-on": provider.configured || null }, status), icon("chevron", 14)),
+			provider.configured
+				? h("span", { class: "status-dot", "data-on": true, "aria-hidden": "true" })
+				: h("span", { class: "pill" }, status),
+			icon("chevron", 14)),
 		);
 	}
 
@@ -244,7 +243,7 @@ export class SettingsSheet implements OverlayView {
 	/** Save and Restore share one lifecycle; the Engine returns the text it stored, so normalization is never guessed. */
 	async #mutateInstructions(instructions?: string) {
 		if (this.#instructionsPending || this.#closed) return;
-		this.#clearRestoreConfirmation();
+		this.#restoreConfirm.reset();
 		const source = this.#source();
 		if (!source) return toast(t("reconnecting"), "error");
 		this.#instructionsPending = true;
@@ -260,29 +259,14 @@ export class SettingsSheet implements OverlayView {
 			toastError(error);
 		} finally {
 			this.#instructionsPending = false;
-			this.#clearRestoreConfirmation();
+			this.#restoreConfirm.reset();
 			this.#refreshInstructions();
 		}
 	}
 
-	#clearRestoreConfirmation() {
-		clearTimeout(this.#instructionsRestoreTimer);
-		this.#instructionsRestoreTimer = undefined;
-		if (!this.#instructionsRestoreConfirm) return;
-		this.#instructionsRestoreConfirm = false;
-		delete this.#instructionsRestore.dataset.confirm;
-		this.#instructionsRestore.replaceChildren(t("settings.instructionsRestore"));
-	}
-
 	#restoreInstructions() {
 		if (this.#instructionsPending || this.#closed) return;
-		if (!this.#instructionsRestoreConfirm) {
-			this.#instructionsRestoreConfirm = true;
-			this.#instructionsRestore.dataset.confirm = "";
-			this.#instructionsRestore.replaceChildren(t("settings.instructionsRestoreConfirm"));
-			this.#instructionsRestoreTimer = setTimeout(() => this.#clearRestoreConfirmation(), 3000);
-			return;
-		}
+		if (!this.#restoreConfirm.armed) return this.#restoreConfirm.arm();
 		void this.#mutateInstructions();
 	}
 

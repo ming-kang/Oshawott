@@ -2,36 +2,17 @@ import type { ThinkingLevel, Workspace } from "../../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
 import { ext } from "../../platform/webext.ts";
 import { t } from "../i18n/index.ts";
+import { click, control, input, until } from "./dom.ts";
+
+export { click, control, input, until };
 
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "defaultModel" | "setDefaultConfiguration">;
 const context = BACKGROUND_CONTEXT;
-export const control = <T extends HTMLElement>(selector: string): T | null =>
-	document.querySelector<T>(`.overlay:not(.leaving) ${selector}`) ?? document.querySelector<T>(selector);
-export const click = (selector: string) => {
-	const element = control<HTMLElement>(selector);
-	if (!element) throw new Error(`No model test control ${selector}`);
-	element.click();
-};
-export const input = (selector: string, value: string) => {
-	const element = control<HTMLInputElement>(selector);
-	if (!element) throw new Error(`No model test input ${selector}`);
-	element.value = value;
-	element.dispatchEvent(new Event("input", { bubbles: true }));
-};
 /** Chooses a built-in provider in the add-provider editor's searchable list. */
 export async function pickBuiltin(id: string) {
 	const option = await until(() => control<HTMLElement>(`#builtin-provider-list [data-provider="${id}"]`));
 	option.click();
-}
-export async function until<T>(read: () => T | undefined | null | false, ms = 10_000): Promise<T> {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = read();
-		if (value) return value;
-		if (Date.now() > deadline) throw new Error("model management control timed out");
-		await new Promise((resolve) => setTimeout(resolve, 50));
-	}
 }
 
 export async function testModelManagement(source: Source, origin: string): Promise<Step[]> {

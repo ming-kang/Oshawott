@@ -3,7 +3,7 @@ import { formatBytes } from "../lib/bytes.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import { LANG, t } from "./i18n/index.ts";
 import type { OverlayView } from "./overlays.ts";
-import { download, errorMessage, h, icon, toast, toastError } from "./ui.ts";
+import { confirmControl, type ConfirmControl, download, errorMessage, h, icon, toast, toastError } from "./ui.ts";
 
 type FileSource = Pick<Extract<Reference<typeof Chat>, { variant: "owner" }>, "files" | "readFile" | "removeFile">;
 type FileInfo = Awaited<ReturnType<FileSource["files"]>>[number];
@@ -16,6 +16,7 @@ export class FilesSheet implements OverlayView {
 	readonly #list = h("div", { class: "card file-list", id: "file-list", role: "list" });
 	readonly #summary = h("div", { class: "files-summary", role: "status" });
 	readonly #refresh = h("button", { class: "icon-btn", id: "files-refresh", type: "button", title: t("files.refresh"), "aria-label": t("files.refresh") }, icon("refresh", 18));
+	readonly #confirms = new Set<ConfirmControl>();
 	#revision = 0;
 	#closed = false;
 
@@ -37,7 +38,6 @@ export class FilesSheet implements OverlayView {
 				{ class: "sheet-body files-body" },
 				h("div", { class: "files-location" }, icon("folder", 18), h("code", null, "/workspace"), this.#summary),
 				this.#list,
-				h("p", { class: "section-hint" }, icon("lock", 12), h("span", null, t("files.hint"))),
 			),
 		);
 	}
@@ -45,6 +45,12 @@ export class FilesSheet implements OverlayView {
 	close() {
 		this.#closed = true;
 		this.#revision++;
+		this.#clearConfirms();
+	}
+
+	#clearConfirms() {
+		for (const confirm of this.#confirms) confirm.reset();
+		this.#confirms.clear();
 	}
 
 	async refresh() {
@@ -64,8 +70,9 @@ export class FilesSheet implements OverlayView {
 			const files = await this.#source.files(context);
 			if (this.#closed || revision !== this.#revision) return;
 			this.#summary.textContent = t("files.count", files.length, formatBytes(files.reduce((sum, file) => sum + file.size, 0)));
+			this.#clearConfirms();
 			this.#list.replaceChildren(
-				...(files.length ? files.map((file) => this.#row(file)) : [h("div", { class: "files-empty", role: "status" }, icon("folder", 30), h("strong", null, t("files.empty")), h("span", null, t("files.emptyHint")))]),
+				...(files.length ? files.map((file) => this.#row(file)) : [h("div", { class: "files-empty", role: "status" }, icon("folder", 30), h("strong", null, t("files.empty")))]),
 			);
 		} catch (error) {
 			if (this.#closed || revision !== this.#revision) return;
@@ -103,17 +110,10 @@ export class FilesSheet implements OverlayView {
 		});
 
 		const remove = h("button", { class: "icon-btn small file-remove", type: "button", title: t("files.remove"), "aria-label": `${t("files.remove")}: ${file.path}` }, icon("trash", 15));
+		const confirm = confirmControl(remove, { confirm: () => t("files.confirm"), idle: () => [icon("trash", 15)] });
+		this.#confirms.add(confirm);
 		remove.addEventListener("click", async () => {
-			if (remove.dataset.confirm === undefined) {
-				remove.dataset.confirm = "";
-				remove.replaceChildren(t("files.confirm"));
-				setTimeout(() => {
-					if (!remove.isConnected || remove.disabled) return;
-					delete remove.dataset.confirm;
-					remove.replaceChildren(icon("trash", 15));
-				}, 3000);
-				return;
-			}
+			if (!confirm.armed) return confirm.arm();
 			remove.disabled = true;
 			try {
 				await this.#source.removeFile({ path: file.path }, context);
@@ -124,8 +124,7 @@ export class FilesSheet implements OverlayView {
 				if (!this.#closed) toastError(error);
 			} finally {
 				remove.disabled = false;
-				delete remove.dataset.confirm;
-				remove.replaceChildren(icon("trash", 15));
+				confirm.reset();
 			}
 		});
 		return h(

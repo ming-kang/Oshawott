@@ -8,3 +8,8 @@ export function sitePattern(url: string): string | undefined {
 		return undefined;
 	}
 }
+
+export function hostOf(url: unknown): string {
+	const raw = String(url ?? "");
+	return URL.canParse(raw) ? new URL(raw).host : raw;
+}

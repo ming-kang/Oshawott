@@ -93,6 +93,7 @@ document.body.append(
 function renderHeader() {
 	const summary = session.chats.find((c) => c.id === session.id);
 	$.title.textContent = $.title.title = summary?.title || t("chat.untitled");
+	$.newChat.hidden = session.status === "new";
 	$.files.hidden = session.status === "new";
 }
 

@@ -147,3 +147,54 @@ export async function copyText(text: string): Promise<boolean> {
 		return false;
 	}
 }
+
+export function copyButton(text: () => string, label: string): HTMLButtonElement {
+	const button = h("button", { class: "icon-btn small", type: "button", title: label, "aria-label": label }, icon("copy", 14));
+	button.addEventListener("click", async () => {
+		if (!(await copyText(text()))) return;
+		button.replaceChildren(icon("check", 14));
+		setTimeout(() => button.replaceChildren(icon("copy", 14)), 1200);
+	});
+	return button;
+}
+
+export interface ConfirmControl {
+	readonly armed: boolean;
+	arm(): void;
+	reset(): void;
+}
+
+/** Two-step inline confirmation on a button: first click arms for 3s, second runs the action. */
+export function confirmControl(
+	button: HTMLButtonElement,
+	options: { confirm: () => string | Node[]; idle: () => (Node | string)[]; timeoutMs?: number },
+): ConfirmControl {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let armed = false;
+	const reset = () => {
+		clearTimeout(timer);
+		timer = undefined;
+		if (!armed) return;
+		armed = false;
+		delete button.dataset.confirm;
+		button.replaceChildren(...options.idle());
+	};
+	const arm = () => {
+		if (armed) return;
+		armed = true;
+		button.dataset.confirm = "";
+		const content = options.confirm();
+		button.replaceChildren(...(typeof content === "string" ? [content] : content));
+		timer = setTimeout(() => {
+			if (button.isConnected && !button.disabled) reset();
+			else armed = false;
+		}, options.timeoutMs ?? 3000);
+	};
+	return {
+		get armed() {
+			return armed;
+		},
+		arm,
+		reset,
+	};
+}

@@ -1,6 +1,6 @@
 import { t } from "./i18n/index.ts";
 import { type Block, closeDangling, type Inline, parseMarkdown } from "./markdown.ts";
-import { copyText, h, icon } from "./ui.ts";
+import { copyButton, h } from "./ui.ts";
 
 function inline(nodes: readonly Inline[], inLink = false): Node[] {
 	return nodes.map((node): Node => {
@@ -26,17 +26,10 @@ function inline(nodes: readonly Inline[], inLink = false): Node[] {
 }
 
 export function codeBlock(text: string, lang = "") {
-	const button = h("button", { class: "icon-btn small", type: "button", title: t("copy"), "aria-label": t("copy") }, icon("copy", 14));
-	button.addEventListener("click", async () => {
-		if (await copyText(text)) {
-			button.replaceChildren(icon("check", 14));
-			setTimeout(() => button.replaceChildren(icon("copy", 14)), 1200);
-		}
-	});
 	return h(
 		"div",
 		{ class: "codeblock" },
-		h("div", { class: "codeblock-head" }, h("span", null, lang || "text"), button),
+		h("div", { class: "codeblock-head" }, h("span", null, lang || "text"), copyButton(() => text, t("copy"))),
 		h("pre", null, h("code", null, text)),
 	);
 }

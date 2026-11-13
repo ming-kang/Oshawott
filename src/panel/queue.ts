@@ -77,7 +77,7 @@ export class MessageQueue {
 			}, icon("refresh", 13), t("queue.continue")) : null,
 		);
 		const list = h("div", { class: "queue-list" }, this.#items.map((item) => this.#item(item)));
-		this.element.replaceChildren(header, h("p", { class: "queue-hint" }, t("queue.hint")), list);
+		this.element.replaceChildren(header, list);
 		this.#disablePending();
 		if (selection && this.#editing) {
 			const editor = this.element.querySelector<HTMLTextAreaElement>(`[data-submission-id="${this.#editing.id}"] .queue-editor`);

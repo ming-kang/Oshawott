@@ -67,8 +67,15 @@
 	white-space: nowrap;
 }
 
-.provider-field > .section-hint {
-	margin: 0 2px;
+.provider-status {
+	margin: 8px 2px 0;
+	color: var(--text-3);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.provider-status[data-error="true"] {
+	color: var(--danger);
 }
 
 .login-card,

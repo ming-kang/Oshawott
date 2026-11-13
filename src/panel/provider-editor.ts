@@ -9,7 +9,7 @@ import { compactTokens } from "./models.ts";
 import { requestModelAccess } from "./model-permissions.ts";
 import type { OverlayView } from "./overlays.ts";
 import { segmented } from "./segmented.ts";
-import { h, icon, toast, toastError } from "./ui.ts";
+import { confirmControl, type ConfirmControl, h, icon, toast, toastError } from "./ui.ts";
 
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	"providers" | "setApiKey" | "saveProvider" | "deleteProvider" | "refreshProvider"
@@ -55,9 +55,8 @@ export class ProviderEditorSheet implements OverlayView {
 	readonly #chosenBadge = h("span", { class: "pill", "data-on": true, hidden: true }, t("settings.signInBadge"));
 	readonly #change = h("button", { class: "btn small", id: "builtin-provider-change", type: "button" }, t("settings.changeProvider"));
 	readonly #chosen = h("div", { class: "provider-chosen", id: "builtin-provider-chosen" }, this.#chosenName, this.#chosenBadge, this.#change);
-	readonly #pickHint = h("p", { class: "section-hint", id: "builtin-provider-hint" }, t("settings.chooseProvider"));
 	readonly #pickerField = h("div", { class: "provider-field", id: "builtin-provider-field" },
-		h("span", null, t("settings.builtinProvider")), this.#chosen, this.#picker, this.#pickHint);
+		h("span", null, t("settings.builtinProvider")), this.#chosen, this.#picker);
 	readonly #name = h("input", { class: "input", id: "provider-name", autocomplete: "off" });
 	readonly #baseUrl = h("input", { class: "input", id: "provider-base-url", placeholder: "https://example.com/v1", autocomplete: "off", spellcheck: "false" });
 	readonly #api = h("select", { class: "input", id: "provider-api" },
@@ -71,10 +70,11 @@ export class ProviderEditorSheet implements OverlayView {
 	readonly #manualSection = h("section", { class: "section", id: "provider-custom-models" });
 	readonly #manual = h("div", { class: "provider-models", id: "provider-manual-models" });
 	readonly #discovered = h("div", { class: "provider-models", id: "provider-discovered-models" });
-	readonly #status = h("p", { class: "section-hint", id: "provider-discovery-status", role: "status" });
+	readonly #status = h("p", { class: "provider-status", id: "provider-discovery-status", role: "status", hidden: true });
 	readonly #save = h("button", { class: "btn primary", id: "provider-save", type: "button" }, t("settings.save"));
 	readonly #refresh = h("button", { class: "btn small", id: "provider-refresh", type: "button" }, t("settings.getModels"));
 	readonly #delete = h("button", { class: "btn danger", id: "provider-delete", type: "button", hidden: true }, t("settings.deleteProvider"));
+	readonly #deleteConfirm: ConfirmControl;
 	#kind: ProviderKind;
 	#kindLocked: boolean;
 	#builtinId = "";
@@ -118,18 +118,23 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#save.addEventListener("click", () => void this.#saveProvider());
 		this.#refresh.addEventListener("click", () => void this.#discoverModels());
 		this.#delete.addEventListener("click", () => void this.#removeProvider());
-		const add = h("button", { class: "btn", id: "provider-add-model", type: "button", onclick: () => {
+		const add = h("button", { class: "btn small", id: "provider-add-model", type: "button", onclick: () => {
 			this.#draft.models.push(DEFAULT_MODEL());
 			this.#renderManual(true);
 		} }, icon("plus", 14), t("settings.addModel"));
+		this.#deleteConfirm = confirmControl(this.#delete, {
+			confirm: () => t("settings.confirmDelete"),
+			idle: () => [t("settings.deleteProvider")],
+		});
 		this.#typeSection.append(h("h3", null, t("settings.providerType")), this.#type.element);
 		this.#discoverySection.append(
 			h("div", { class: "section-heading" }, h("h3", null, t("settings.discoveredModels")), this.#refresh),
 			this.#discovered, this.#status,
 		);
-		this.#manualSection.append(h("h3", null, t("settings.manualModels")), this.#manual,
-			h("div", { class: "provider-section-action" }, add),
-			h("p", { class: "section-hint" }, t("settings.manualModelsHint")));
+		this.#manualSection.append(
+			h("div", { class: "section-heading" }, h("h3", null, t("settings.manualModels")), add),
+			this.#manual,
+		);
 		this.element = h("section", { class: "sheet", id: "provider-editor", role: "dialog", "aria-modal": "true", "aria-label": t("settings.providerEditor") },
 			h("div", { class: "panel-head" },
 				h("button", { class: "icon-btn", id: "provider-back", type: "button", "aria-label": t("settings.back"), onclick: onClose }, icon("back", 18)),
@@ -181,8 +186,7 @@ export class ProviderEditorSheet implements OverlayView {
 			this.#keyField,
 		]));
 		this.#manualSection.hidden = this.#kind !== "custom";
-		delete this.#delete.dataset.confirm;
-		this.#delete.textContent = t("settings.deleteProvider");
+		this.#deleteConfirm.reset();
 		this.refresh();
 		this.#setBusy(this.#busy);
 	}
@@ -202,7 +206,6 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#change.hidden = this.#kindLocked || (session !== undefined && session.status !== "failed");
 		this.#change.disabled = this.#search.disabled = this.#busy;
 		this.#picker.hidden = chosen !== undefined;
-		this.#pickHint.hidden = chosen !== undefined || offered.length === 0;
 		this.#search.hidden = offered.length === 0;
 		if (!chosen) this.#renderList(offered);
 	}
@@ -304,9 +307,10 @@ export class ProviderEditorSheet implements OverlayView {
 				});
 				this.#renderManual(true);
 			} }, t("settings.override"));
+		const capabilities = [compactTokens(model.contextWindow), model.vision ? t("settings.vision") : ""].filter(Boolean).join(" · ");
 		return h("div", { class: "discovered-model", "data-model": model.id },
-			h("div", null, h("strong", null, model.name), h("span", null, model.id)),
-			h("span", { class: "model-capabilities" }, `${compactTokens(model.contextWindow)} · ${model.vision ? t("settings.vision") : t("settings.textOnly")}`),
+			h("div", null, h("strong", null, model.name), model.name !== model.id ? h("span", null, model.id) : null),
+			h("span", { class: "model-capabilities" }, capabilities),
 			override);
 	}
 
@@ -400,11 +404,7 @@ export class ProviderEditorSheet implements OverlayView {
 	async #removeProvider() {
 		const provider = this.#currentSummary();
 		if (!provider || this.#busy) return;
-		if (this.#kind === "custom" && this.#delete.dataset.confirm !== "true") {
-			this.#delete.dataset.confirm = "true";
-			this.#delete.textContent = t("settings.confirmDelete");
-			return;
-		}
+		if (this.#kind === "custom" && !this.#deleteConfirm.armed) return this.#deleteConfirm.arm();
 		this.#setBusy(true, this.#delete);
 		try {
 			const source = this.#source();
@@ -415,8 +415,7 @@ export class ProviderEditorSheet implements OverlayView {
 			this.#onClose();
 		} catch (error) {
 			toastError(error);
-			delete this.#delete.dataset.confirm;
-			this.#delete.textContent = t("settings.deleteProvider");
+			this.#deleteConfirm.reset();
 		} finally {
 			this.#setBusy(false, this.#delete);
 		}
@@ -448,8 +447,10 @@ export class ProviderEditorSheet implements OverlayView {
 		this.#save.hidden = this.#keyField.hidden;
 		// A configured built-in provider lists what its key or account may use; only custom catalogs are editable.
 		this.#discoverySection.hidden = builtin && !summary?.configured;
-		this.#status.textContent = summary?.refreshing ? t("settings.discovering")
-			: summary?.discoveryError ?? (summary ? t("settings.discoveryReady", summary.models.length) : t("settings.unsavedProvider"));
+		const statusText = summary?.refreshing ? t("settings.discovering") : summary?.discoveryError ?? "";
+		this.#status.hidden = !statusText;
+		this.#status.textContent = statusText;
+		this.#status.dataset.error = String(Boolean(!summary?.refreshing && summary?.discoveryError));
 		this.#discovered.replaceChildren(...(summary?.models.length
 			? summary.models.map((model) => this.#modelRow(model))
 			: [h("div", { class: "list-empty" }, t("settings.noDiscoveredModels"))]));
@@ -461,6 +462,7 @@ export class ProviderEditorSheet implements OverlayView {
 
 	close() {
 		this.#closed = true;
+		this.#deleteConfirm.reset();
 		this.#key.value = "";
 	}
 }

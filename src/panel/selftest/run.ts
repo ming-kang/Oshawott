@@ -1,25 +1,15 @@
 import { ext } from "../../platform/webext.ts";
 import { testAttachmentComposer } from "./attachments.ts";
+import { click, until } from "./dom.ts";
 import { testPageTools } from "./page-tools.ts";
 import { testToolCards } from "./tool-cards.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 
-const until = async <T>(read: () => T | undefined | null | Promise<T | undefined | null>, ms = 20_000): Promise<T> => {
-	const deadline = Date.now() + ms;
-	for (;;) {
-		const value = await read();
-		if (value) return value;
-		if (Date.now() > deadline) throw new Error("timed out");
-		await new Promise((r) => setTimeout(r, 200));
-	}
-};
-
 export async function selftest(origin: string, panelTests: (origin?: string) => Promise<Step[]>) {
 	const steps: Step[] = [];
 	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, ...(detail ? { detail } : {}) });
 	const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
-	const click = (selector: string) => document.querySelector<HTMLElement>(selector)!.click();
 	const capture = (ext.tabs as unknown as { captureVisibleTab?(): Promise<string> }).captureVisibleTab;
 	const shot = () => capture?.call(ext.tabs).catch(() => undefined);
 	const download = async (path: string) => {

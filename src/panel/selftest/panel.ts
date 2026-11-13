@@ -4,6 +4,7 @@ import type { Workspace } from "../../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
 import { OverlayController, type OverlayView } from "../overlays.ts";
 import { t } from "../i18n/index.ts";
+import { click, until } from "./dom.ts";
 import { testAccountLogin } from "./login.ts";
 import { pickBuiltin, testModelManagement } from "./models.ts";
 import { MessageQueue, SendModeMenu, StopConfirmMenu } from "../queue.ts";
@@ -16,18 +17,6 @@ type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>,
 	| "autoTitle" | "autoCompaction" | "autoRetry" | "confirmActions" | "setPreference"
 	| "instructions" | "setInstructions" | "resetInstructions" | "logins" | "removeCredential"
 >;
-async function until(read: () => boolean) {
-	const deadline = Date.now() + 5000;
-	while (!read()) {
-		if (Date.now() >= deadline) throw new Error("panel control did not settle");
-		await new Promise((resolve) => setTimeout(resolve, 50));
-	}
-}
-const click = (selector: string) => {
-	const element = document.querySelector<HTMLElement>(`.overlay:not(.leaving) ${selector}`) ?? document.querySelector<HTMLElement>(selector);
-	if (!element) throw new Error(`No panel control ${selector}`);
-	element.click();
-};
 
 export async function testPanel(source: Source, origin?: string) {
 	const steps: Step[] = [];
@@ -72,7 +61,7 @@ export async function testPanel(source: Source, origin?: string) {
 	input.value = "panel-smoke-key";
 	click("#provider-save");
 	await until(() => source.providers.value.find((provider) => provider.id === "anthropic")?.configured === true
-		&& Boolean(document.querySelector('.provider[data-provider="anthropic"] .pill[data-on]')));
+		&& Boolean(document.querySelector('.provider[data-provider="anthropic"] [data-on]')));
 	step("saving a built-in provider adds a configured text row", !document.querySelector('.provider[data-provider="anthropic"] .provider-mark'));
 	click('.provider[data-provider="anthropic"] .provider-head');
 	step("settings refresh after saving a key without exposing it", document.querySelector<HTMLInputElement>("#provider-key")?.value === "");
