@@ -256,7 +256,9 @@ function openModelMenu() {
 			if (overlays.current === menu) overlays.close();
 		},
 	});
-	overlays.open(menu, { kind: "popover", anchor: composer.model, boundary: dock });
+	// Like Effort, the model picker is a local choice: it hugs its button even where the
+	// menu overlaps the composer, instead of clearing the whole dock.
+	overlays.open(menu, { kind: "popover", anchor: composer.model });
 	menu.focus();
 }
 

@@ -79,13 +79,15 @@ try {
 		await new Promise((resolve) => setTimeout(resolve, 80));
 		const layout = await panel.evaluate(() => {
 			const menu = document.querySelector("#model-menu").getBoundingClientRect();
-			const dock = document.querySelector(".composer-wrap").getBoundingClientRect();
-			const prompt = document.querySelector("#prompt").getBoundingClientRect();
-			return { viewport: innerWidth, document: document.documentElement.scrollWidth, menu: { top: menu.top, right: menu.right, bottom: menu.bottom, left: menu.left }, dockTop: dock.top, promptTop: prompt.top };
+			const button = document.querySelector("#model").getBoundingClientRect();
+			return { viewport: innerWidth, document: document.documentElement.scrollWidth, menu: { top: menu.top, right: menu.right, bottom: menu.bottom, left: menu.left }, button: { top: button.top, left: button.left } };
 		});
-		if (layout.document > width + 1 || layout.menu.left < 0 || layout.menu.right > width + 1 || layout.menu.top < 0 || layout.menu.bottom > height + 1
-			|| layout.menu.bottom > layout.dockTop || layout.menu.bottom > layout.promptTop) {
-			throw new Error(`model popover overlaps or overflows at ${width}x${height}: ${JSON.stringify(layout)}`);
+		if (layout.document > width + 1 || layout.menu.left < 0 || layout.menu.right > width + 1 || layout.menu.top < 0 || layout.menu.bottom > height + 1) {
+			throw new Error(`model popover overflows at ${width}x${height}: ${JSON.stringify(layout)}`);
+		}
+		// The menu hugs its button instead of clearing the whole dock.
+		if (Math.abs(layout.menu.left - layout.button.left) > 1 || Math.abs(layout.button.top - layout.menu.bottom - 8) > 1) {
+			throw new Error(`model popover does not hug its button at ${width}x${height}: ${JSON.stringify(layout)}`);
 		}
 	}
 	await panel.setViewport({ width: 400, height: 760, deviceScaleFactor: 2 });

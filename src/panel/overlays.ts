@@ -122,7 +122,10 @@ export class OverlayController {
 		const anchorRect = anchor.getBoundingClientRect();
 		const boundaryRect = boundary?.getBoundingClientRect() ?? anchorRect;
 		const gutter = innerWidth <= 380 ? 8 : 12;
-		const maxWidth = Math.max(0, innerWidth - gutter * 2);
+		const alignEnd = active.align === "end";
+		// A popover hugs its anchor: the width is bounded by the room between the anchor's aligned
+		// edge and the opposite gutter, so placing it never has to dodge the viewport edge.
+		const maxWidth = Math.max(0, (alignEnd ? anchorRect.right : innerWidth - anchorRect.left) - gutter);
 		root.style.left = "0px";
 		root.style.right = "auto";
 		root.style.top = "0px";
@@ -140,7 +143,8 @@ export class OverlayController {
 		root.style.maxHeight = `${available}px`;
 
 		const width = root.offsetWidth;
-		const preferredLeft = active.align === "end" ? anchorRect.right - width : anchorRect.left;
+		const preferredLeft = alignEnd ? anchorRect.right - width : anchorRect.left;
+		// The width bound above keeps the popover inside the viewport; this only guards the gutters.
 		const left = Math.max(gutter, Math.min(preferredLeft, innerWidth - gutter - width));
 		root.style.left = `${Math.round(left)}px`;
 		const height = root.offsetHeight;

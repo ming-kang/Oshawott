@@ -198,13 +198,16 @@ export async function testPanel(source: Source, origin?: string) {
 	await until(() => !document.querySelector("#chat-drawer"));
 
 	click("#model");
-	const menuRect = document.querySelector("#model-menu")!.getBoundingClientRect();
-	const dockRect = document.querySelector(".composer-wrap")!.getBoundingClientRect();
-	const promptRect = document.querySelector("#prompt")!.getBoundingClientRect();
-	step("model popovers clear the composer and stay inside the viewport", menuRect.bottom <= dockRect.top
-		&& (menuRect.bottom <= promptRect.top || menuRect.top >= promptRect.bottom)
-		&& menuRect.left >= 0 && menuRect.right <= innerWidth && menuRect.top >= 0 && menuRect.bottom <= innerHeight,
-	JSON.stringify({ menu: menuRect.toJSON(), dock: dockRect.toJSON(), prompt: promptRect.toJSON(), viewport: [innerWidth, innerHeight] }));
+	// Like Effort, the picker hugs its button and may overlap the composer instead of clearing it;
+	// poll past the entrance animation before measuring.
+	const modelAlignment = await until(() => {
+		const menu = document.querySelector("#model-menu")!.getBoundingClientRect();
+		const button = document.querySelector("#model")!.getBoundingClientRect();
+		const inside = menu.left >= 0 && menu.right <= innerWidth && menu.top >= 0 && menu.bottom <= innerHeight;
+		return Math.abs(menu.left - button.left) <= 1 && Math.abs(button.top - menu.bottom - 8) <= 1 && inside
+			? `menu left=${menu.left}; button left=${button.left}; gap=${button.top - menu.bottom}` : undefined;
+	});
+	step("the model menu hugs its button and stays inside the viewport", true, modelAlignment);
 	const search = document.querySelector<HTMLInputElement>("#model-menu input")!;
 	search.value = "demo";
 	search.dispatchEvent(new Event("input"));
