@@ -1,13 +1,13 @@
-// Committed entries never change and are built once by ID; a tool result fills its call's card.
-// Only `pi.live` (streaming answer, running tools, retry, last failure) is rebuilt on every change.
+// Committed entries are built once by ID; a tool result fills its call's card.
+// A generation owns a persistent AssistantView, promoted in place when its entry commits.
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { ToolResultEntry } from "@earendil-works/pi-durable";
-import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureReason } from "@earendil-works/pi-durable";
+import type { ConversationView, EntryRecord, LiveState, RunFailure, RunFailureReason, TaskId } from "@earendil-works/pi-durable";
 import { isImageAttachment, type AttachmentRef, USER_ENTRY, userInput } from "../lib/attachments.ts";
 import { fromBase64 } from "../lib/base64.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { t } from "./i18n/index.ts";
-import { markdown } from "./markdown-dom.ts";
+import { AssistantView } from "./assistant-view.ts";
 import { ToolCard } from "./tool-card.ts";
 import { copyButton, download, errorMessage, h, type IconName, icon, mascot, toastError } from "./ui.ts";
 
@@ -35,6 +35,17 @@ export type TranscriptState =
 const textOf = (content: UserMessage["content"]) =>
 	typeof content === "string" ? content : content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
+// Scheduler-salvaged partial entries can lack byTaskId. Only adopt an unmistakable continuation.
+function continuesResponse(before: AssistantMessage, after: AssistantMessage): boolean {
+	if (before.timestamp !== after.timestamp || before.provider !== after.provider || before.model !== after.model || before.content.length > after.content.length) return false;
+	return before.content.every((block, index) => {
+		const next = after.content[index];
+		if (block.type === "text") return next?.type === "text" && next.text.startsWith(block.text);
+		if (block.type === "thinking") return next?.type === "thinking" && next.thinking.startsWith(block.thinking);
+		return next?.type === "toolCall" && next.id === block.id && next.name === block.name;
+	});
+}
+
 function divider(text: string, live = false) {
 	return h("div", { class: "divider", "data-live": live || null }, h("span", null, text));
 }
@@ -54,7 +65,11 @@ export class Transcript {
 	readonly #nodes = new Map<string, HTMLElement>();
 	readonly #cards = new Map<string, ToolCard>();
 	readonly #live: HTMLElement;
-	#thinkingOpen = false;
+	readonly #assistantViews = new Map<string, AssistantView>();
+	#liveAssistant: AssistantView | undefined;
+	#liveKey: string | undefined;
+	#liveTask: TaskId | undefined;
+	#liveMessage: AssistantMessage | undefined;
 	#busy = false;
 	#objectUrls = new Map<string, Set<string>>();
 	#revision = 0;
@@ -73,16 +88,20 @@ export class Transcript {
 		this.#revision++;
 		for (const urls of this.#objectUrls.values()) for (const url of urls) URL.revokeObjectURL(url);
 		this.#objectUrls.clear();
+		for (const view of this.#assistantViews.values()) view.dispose();
+		this.#assistantViews.clear();
 		for (const node of this.#nodes.values()) node.remove();
 		this.#nodes.clear();
 		this.#cards.clear();
+		this.#retireLiveAssistant();
 		this.#live.replaceChildren();
-		this.#thinkingOpen = false;
 		this.#busy = false;
 	}
 
 	update(state: TranscriptState) {
 		if (state.kind === "loading") {
+			this.#retireLiveAssistant();
+			this.#busy = false;
 			this.#live.replaceChildren(h("div", { class: "connecting" }, h("span", { class: "spinner" }), t("connecting")));
 			return;
 		}
@@ -113,6 +132,8 @@ export class Transcript {
 			if (keep.has(key)) continue;
 			node.remove();
 			this.#nodes.delete(key);
+			this.#assistantViews.get(key)?.dispose();
+			this.#assistantViews.delete(key);
 			for (const url of this.#objectUrls.get(key) ?? []) URL.revokeObjectURL(url);
 			this.#objectUrls.delete(key);
 		}
@@ -130,7 +151,7 @@ export class Transcript {
 			case USER_ENTRY:
 				return message?.role === "user" ? this.#user(entry, message, String(entry.id)) : h("div", { hidden: true });
 			case "pi.assistant":
-				return message?.role === "assistant" ? this.#assistant(message, false) : h("div", { hidden: true });
+				return message?.role === "assistant" ? this.#commitAssistant(entry, message) : h("div", { hidden: true });
 			case "pi.tool-result": {
 				if (message?.role !== "toolResult") return h("div", { hidden: true });
 				const text = textOf(message.content);
@@ -213,50 +234,36 @@ export class Transcript {
 		return card;
 	}
 
-	#assistant(message: AssistantMessage, live: boolean): HTMLElement {
-		const root = h("div", { class: "msg assistant", "data-live": live || null });
-		const blocks = message.content;
-		let tools: HTMLElement | undefined;
-		blocks.forEach((block, i) => {
-			const last = i === blocks.length - 1;
-			if (block.type !== "toolCall") tools = undefined;
-			if (block.type === "thinking") {
-				if (block.redacted || !block.thinking.trim()) return;
-				const thinking = live && last;
-				const details = h(
-					"details",
-					{ class: "thinking", "data-live": thinking || null },
-					h("summary", null, icon("bulb", 14), h("span", null, thinking ? t("thinking.live") : t("thinking.title")), icon("chevron", 14)),
-					markdown(block.thinking),
-				);
-				if (live) {
-					details.open = this.#thinkingOpen;
-					details.addEventListener("toggle", () => (this.#thinkingOpen = details.open));
-				}
-				root.append(details);
-			} else if (block.type === "text") {
-				if (!block.text.trim() && !(live && last)) return;
-				root.append(markdown(block.text, live && last));
-			} else if (block.type === "toolCall") {
-				tools ??= root.appendChild(h("div", { class: "tools" }));
-				const card = new ToolCard(block.name, block.arguments, this.#actions.allowed);
-				if (live) card.setStatus("streaming");
-				else this.#cards.set(block.id, card);
-				tools.append(card.element);
-			}
-		});
-		if (!live) {
-			if (message.stopReason === "error" && message.errorMessage) root.append(notice("error", t("failure.model_error"), message.errorMessage));
-			const text = blocks
-				.filter((block) => block.type === "text")
-				.map((block) => block.text)
-				.join("\n\n")
-				.trim();
-			if (text && !blocks.some((block) => block.type === "toolCall")) {
-				root.append(h("div", { class: "msg-actions" }, copyButton(() => text, t("copy"))));
-			}
+	#commitAssistant(entry: EntryRecord, message: AssistantMessage): HTMLElement {
+		const promote = this.#liveAssistant && (entry.byTaskId !== undefined
+			? entry.byTaskId === this.#liveTask
+			: this.#liveMessage && continuesResponse(this.#liveMessage, message));
+		const assistant = (promote ? this.#releaseLiveAssistant() : undefined) ?? new AssistantView(this.#actions.allowed);
+		assistant.update(message, false);
+		const root = assistant.element;
+		this.#assistantViews.set(String(entry.id), assistant);
+		for (const [id, card] of assistant.cards) this.#cards.set(id, card);
+		if (message.stopReason === "error" && message.errorMessage) root.append(notice("error", t("failure.model_error"), message.errorMessage));
+		const text = message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n\n").trim();
+		if (text && !message.content.some((block) => block.type === "toolCall")) {
+			root.append(h("div", { class: "msg-actions" }, copyButton(() => text, t("copy"))));
 		}
 		return root;
+	}
+
+	#releaseLiveAssistant() {
+		const assistant = this.#liveAssistant;
+		this.#liveAssistant = undefined;
+		this.#liveKey = undefined;
+		this.#liveTask = undefined;
+		this.#liveMessage = undefined;
+		return assistant;
+	}
+
+	#retireLiveAssistant() {
+		const assistant = this.#releaseLiveAssistant();
+		assistant?.dispose();
+		assistant?.element.remove();
 	}
 
 	#renderLive(live: LiveState | undefined, empty: { ready: boolean } | undefined) {
@@ -277,7 +284,19 @@ export class Transcript {
 		const partial = message?.content?.some(
 			(block) => (block.type === "text" && block.text) || (block.type === "thinking" && block.thinking) || block.type === "toolCall",
 		);
-		if (busy && message && partial) parts.push(this.#assistant(message, true));
+		if (busy && message && partial) {
+			const key = `${live.run!.taskId}:${live.generation!.attempt}`;
+			if (this.#liveKey !== key) {
+				this.#retireLiveAssistant();
+				this.#liveAssistant = new AssistantView(this.#actions.allowed);
+				this.#liveKey = key;
+				this.#liveTask = live.run!.taskId;
+			}
+			this.#liveMessage = message;
+			this.#liveAssistant!.update(message, true);
+			// A sibling of the live notices, not their child: committing never reparents the answer.
+			if (this.#liveAssistant!.element.parentNode !== this.element) this.element.insertBefore(this.#liveAssistant!.element, this.#live);
+		} else this.#retireLiveAssistant();
 		const running = (live?.tools ?? []).some((slot) => slot.status === "running");
 		if (busy && !partial && !running) {
 			parts.push(h("div", { class: "typing", role: "status" }, h("span"), h("span", null, t("thinking.live"))));

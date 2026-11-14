@@ -86,9 +86,16 @@ export function modelApi() {
 
 export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 	const redirects = { get302: 0, post307: 0, target: 0 };
+	const markdownImage = { count: 0, referer: "" };
 	const server = createServer((req, res) => {
 		const route = routes[`${req.method} ${req.url}`];
 		if (route) return route(req, res);
+		if (req.url === "/markdown-image.png") {
+			markdownImage.count++;
+			markdownImage.referer = req.headers.referer ?? "";
+			return res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jIakAAAAASUVORK5CYII=", "base64"));
+		}
+		if (req.url === "/markdown-image-hits") return res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*", "cache-control": "no-store" }).end(JSON.stringify(markdownImage));
 		if (req.url === "/actions") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(ACTIONS_PAGE);
 		if (req.url?.startsWith("/inspect")) {
 			const strict = req.url === "/inspect-csp" ? { "content-security-policy": "default-src 'none'; script-src 'none'" } : {};

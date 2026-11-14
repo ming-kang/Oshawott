@@ -108,7 +108,10 @@ export class ToolCard {
 	readonly #state: HTMLElement;
 	readonly #body: HTMLElement;
 	readonly #summary: HTMLElement;
-	readonly #initialMeta: string;
+	#initialMeta: string;
+	#args: HTMLElement | undefined;
+	#argsText: HTMLPreElement | undefined;
+	#argsSource: string | undefined;
 	readonly #onAllowed: ((site: string) => void) | undefined;
 	#grant: HTMLButtonElement | undefined;
 	#result: HTMLElement | undefined;
@@ -124,9 +127,7 @@ export class ToolCard {
 		this.#meta = h("span", { class: "tool-meta" }, this.#initialMeta);
 		this.#state = h("span", { class: "tool-state", role: "status", "aria-live": "polite" });
 		this.#body = h("div", { class: "tool-body" });
-		const code = name === "codemode" && typeof args.code === "string" ? args.code : undefined;
-		if (code !== undefined) this.#body.append(section(t("tool.args"), h("pre", { class: "code" }, code)));
-		else if (Object.keys(args).length) this.#body.append(section(t("tool.args"), h("pre", null, pretty(args))));
+		this.setArguments(args);
 		this.#summary = h("summary", null, h("span", { class: "tool-icon" }, icon(iconName, 14)), h("span", { class: "tool-label" }, label), this.#meta, this.#state);
 		this.element = h("details", { class: "tool", "data-tool": name }, this.#summary, this.#body);
 		this.setStatus("pending");
@@ -134,6 +135,31 @@ export class ToolCard {
 
 	get settled() {
 		return this.#status === "done" || this.#status === "error";
+	}
+
+	/** A model may still be streaming the arguments; keep the disclosure and its controls. */
+	setArguments(args: Record<string, unknown>) {
+		const meta = toolLook(this.#name, args).meta ?? "";
+		if (this.#initialMeta !== meta) {
+			this.#initialMeta = meta;
+			if (!this.settled) this.#meta.textContent = meta;
+		}
+		const code = this.#name === "codemode" && typeof args.code === "string" ? args.code : undefined;
+		const source = code ?? (Object.keys(args).length ? pretty(args) : undefined);
+		if (source === this.#argsSource) return;
+		this.#argsSource = source;
+		if (source === undefined) {
+			this.#args?.remove();
+			this.#args = this.#argsText = undefined;
+			return;
+		}
+		if (!this.#argsText) {
+			this.#argsText = h("pre");
+			this.#args = section(t("tool.args"), this.#argsText);
+			this.#body.prepend(this.#args);
+		}
+		this.#argsText.classList.toggle("code", code !== undefined);
+		this.#argsText.textContent = source;
 	}
 
 	setStatus(status: ToolStatus) {

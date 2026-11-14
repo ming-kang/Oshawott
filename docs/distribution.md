@@ -61,6 +61,7 @@ git push --follow-tags
 ### 说明
 
 - **源码包**：构建产物经过 esbuild 打包压缩，AMO 要求附上源码和构建方法（`npm ci && npm run build`）。有未提交的改动时，`npm run package` 会提示
+- **第三方许可**：Markdown 依赖和字体的[许可通知](../static/MARKDOWN-NOTICES.txt)须随二进制包分发。解析器的 npm 产物已经预打包了内部依赖，升级时要核查实际产物，不能只依靠 lockfile；字体内嵌的许可也可能不同于 JavaScript 包的许可。
 - **数据收集声明**：AMO 要求新扩展声明 `data_collection_permissions`。Oshawott 会把页面内容和标签页的地址、标题发给所选的模型服务，因此声明了 `websiteContent` 和 `browsingActivity`，安装时 Firefox 会列出。这项声明从 Firefox 140 起支持，所以最低版本是 140
-- **检查**：`npx web-ext@10 lint --self-hosted --source-dir dist/firefox` 按 AMO 的规则检查构建。唯一的警告是 Android 版 Firefox 142 才支持数据收集声明：Oshawott 依赖 Android 上没有的侧边栏，所以不声明 `gecko_android`
+- **检查**：`npx web-ext@10 lint --self-hosted --source-dir dist/firefox` 按 AMO 的规则检查构建。高亮相关的 HTML 赋值警告需核对来源：高亮器自带的 DOM API 不参与渲染，Panel 的惰性模板只接收高亮器生成的转义结果，见[回答渲染](architecture.md#回答渲染)。另有 Android 数据收集声明的兼容性警告：Oshawott 依赖 Android 上没有的侧边栏，所以不声明 `gecko_android`。
 - **不经过 AMO**：Developer Edition、Nightly、ESR 和 [unbranded 构建](https://wiki.mozilla.org/Add-ons/Extension_Signing#Unbranded_Builds)可以在 `about:config` 把 `xpinstall.signatures.required` 设为 `false`，直接安装未签名的 xpi。`about:debugging` 临时加载的扩展在重启后失效，只适合开发

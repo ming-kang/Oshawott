@@ -3,6 +3,7 @@ import { testAttachmentComposer } from "./attachments.ts";
 import { click, until } from "./dom.ts";
 import { testPageTools } from "./page-tools.ts";
 import { testToolCards } from "./tool-cards.ts";
+import { testMarkdown } from "./markdown.ts";
 
 type Step = { name: string; ok: boolean; detail?: string };
 
@@ -120,7 +121,7 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 		} finally {
 			reopened?.close();
 		}
-		steps.push(...await testToolCards(), ...await panelTests(origin));
+		steps.push(...await testToolCards(), ...await testMarkdown(origin), ...await panelTests(origin));
 
 		const fresh = async (text: string) => {
 			click("#new-chat");

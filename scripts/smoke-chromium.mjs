@@ -158,6 +158,7 @@ try {
 	});
 	await new Promise((resolve) => setTimeout(resolve, 250));
 	for (const { name, ok, detail } of await panel.evaluate(() => globalThis.__oshawottTest.toolCards())) step(name, ok, detail);
+	for (const { name, ok, detail } of await panel.evaluate((origin) => globalThis.__oshawottTest.markdown(origin), site.url)) step(name, ok, detail);
 	for (const { name, ok, detail } of await panel.evaluate((origin) => globalThis.__oshawottTest.panel(origin), site.url)) step(name, ok, detail);
 	step("local model API receives an actual high-thinking chat request", models.requests.some((request) => request.model === "local-reasoning" && request.reasoning_effort === "high"), `${models.requests.length} request(s)`);
 	await panel.click("#new-chat");

@@ -22,13 +22,15 @@ import { initializeTheme, SettingsSheet } from "./settings.ts";
 import { StopControl } from "./stop.ts";
 import { TabTracker } from "./tab.ts";
 import { testToolCards } from "./selftest/tool-cards.ts";
+import { testMarkdown } from "./selftest/markdown.ts";
 import { ProviderEditorSheet } from "./provider-editor.ts";
 import { ThinkingMenu } from "./thinking-menu.ts";
 import { h, icon, toastError } from "./ui.ts";
 
 const context = BACKGROUND_CONTEXT;
 const host = createPanelHost();
-const session = new ChatSession(host, () => renderView());
+let viewFrame: number | undefined;
+const session = new ChatSession(host, scheduleView);
 const overlays = new OverlayController();
 initializeTheme();
 document.documentElement.lang = LANG;
@@ -102,18 +104,32 @@ function renderHeader() {
 }
 
 const nearBottom = () => $.scroller.scrollHeight - $.scroller.scrollTop - $.scroller.clientHeight < 72;
+let followBottom = true;
 function toBottom(smooth = false) {
+	followBottom = true;
 	$.scroller.scrollTo({ top: $.scroller.scrollHeight, behavior: smooth ? "smooth" : "auto" });
 	$.jump.hidden = true;
 }
 $.scroller.addEventListener("scroll", () => {
-	if (nearBottom()) $.jump.hidden = true;
+	followBottom = nearBottom();
+	if (followBottom) $.jump.hidden = true;
 	document.body.toggleAttribute("data-scrolled", $.scroller.scrollTop > 2);
 });
 $.jump.addEventListener("click", () => toBottom(true));
+// Typesetting and explicitly loaded images can change height after the state render.
+// Follow those changes only while the user is pinned to the bottom.
+new ResizeObserver(() => {
+	if (followBottom) toBottom();
+	else if (!nearBottom()) $.jump.hidden = false;
+}).observe(transcript.element);
+
+function scheduleView() {
+	viewFrame ??= requestAnimationFrame(() => { viewFrame = undefined; renderView(); });
+}
 
 function renderView() {
-	const stick = nearBottom();
+	if (viewFrame !== undefined) { cancelAnimationFrame(viewFrame); viewFrame = undefined; }
+	const stick = followBottom || nearBottom();
 	const height = $.scroller.scrollHeight;
 	const wasBusy = transcript.busy;
 	const value = session.view;
@@ -320,7 +336,7 @@ async function main() {
 
 	if (__OSHAWOTT_DEV__) {
 		const panelTests = (origin?: string) => testPanel(held, origin);
-		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, panel: panelTests, attachments: testAttachmentComposer, pageTools: testPageTools };
+		(globalThis as { __oshawottTest?: unknown }).__oshawottTest = { toolCards: testToolCards, markdown: testMarkdown, panel: panelTests, attachments: testAttachmentComposer, pageTools: testPageTools };
 		const origin = new URLSearchParams(location.search).get("selftest");
 		if (origin) void selftest(origin, panelTests);
 	}

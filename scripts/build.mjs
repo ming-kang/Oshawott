@@ -1,5 +1,5 @@
 import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { build } from "esbuild";
 import { manifestFor } from "../src/manifest.ts";
 import { freshDir, root } from "./lib/paths.mjs";
@@ -29,18 +29,28 @@ const bundles = {
 };
 const ICONS = [16, 32, 48, 96, 128].map((size) => `static/icons/icon-${size}.png`);
 const BRAND_SVGS = ["icon.svg", "icon-small.svg", "mascot.svg"].map((name) => `static/icons/${name}`);
+const SHARED_STATICS = [
+	"static/panel.html", ...ICONS, ...BRAND_SVGS, "node_modules/quickjs-wasi/quickjs.wasm",
+	// Binary distributions retain notices even though bundled JS omits license banners.
+	"static/MARKDOWN-NOTICES.txt", "static/fonts/COMMIT-MONO-LICENSE.txt",
+];
 const statics = {
-	chromium: ["static/engine.html", "static/panel.html", ...ICONS, ...BRAND_SVGS, "node_modules/quickjs-wasi/quickjs.wasm"],
-	firefox: ["static/panel.html", ...ICONS, ...BRAND_SVGS, "node_modules/quickjs-wasi/quickjs.wasm"],
+	chromium: ["static/engine.html", ...SHARED_STATICS],
+	firefox: SHARED_STATICS,
 };
 
 for (const target of targets.length ? targets : Object.keys(bundles)) {
 	if (!(target in bundles)) throw new Error(`Unknown target ${target}`);
 	const out = await freshDir(target);
+	const chunks = new Set();
 	for (const [file, [entry, format]] of Object.entries(bundles[target])) {
-		await build({
-			entryPoints: [join(root, entry)],
-			outfile: join(out, file),
+		const result = await build({
+			entryPoints: { [file.replace(/\.js$/, "")]: join(root, entry) },
+			outdir: out,
+			// Markdown enrichers are local lazy chunks, not remote code or a startup cost.
+			splitting: file === "panel.js",
+			chunkNames: "chunks/[name]-[hash]",
+			metafile: true,
 			bundle: true,
 			format,
 			platform: "browser",
@@ -54,8 +64,11 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			plugins: [piOAuth(), piNodeOnly()],
 			logLevel: "warning",
 		});
-		const leaked = staticNodeImports(await readFile(join(out, file), "utf8"));
-		if (leaked.length) throw new Error(`${target}/${file} imports ${[...new Set(leaked)].join(", ")} when it loads`);
+		for (const output of Object.keys(result.metafile.outputs).filter((path) => path.endsWith(".js"))) {
+			const leaked = staticNodeImports(await readFile(output, "utf8"));
+			if (leaked.length) throw new Error(`${output} imports ${[...new Set(leaked)].join(", ")} when it loads`);
+			if (output.replaceAll("\\", "/").includes("/chunks/")) chunks.add(output);
+		}
 	}
 	// Resolve the ordered CSS imports into the one stylesheet linked by panel.html.
 	await build({
@@ -71,6 +84,19 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 		loader: {".woff2": "file"},
 		logLevel: "warning",
 	});
+	// KaTeX CSS and fonts are fetched only when a formula is present. Both targets support WOFF2;
+	// omit the legacy WOFF/TTF alternatives rather than distributing three copies of every font.
+	await build({
+		entryPoints: [join(root, "node_modules/katex/dist/katex-swap.css")],
+		outfile: join(out, "katex.css"), bundle: true, minify: !dev, legalComments: "none",
+		loader: { ".woff2": "file" }, assetNames: "fonts/[name]-[hash]", logLevel: "warning",
+		plugins: [{ name: "katex-woff2", setup(build) {
+			build.onLoad({ filter: /katex-swap\.css$/ }, async ({ path }) => ({
+				contents: (await readFile(path, "utf8")).replace(/,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\([^)]*\)/g, ""),
+				loader: "css", resolveDir: dirname(path),
+			}));
+		} }],
+	});
 	await mkdir(join(out, "icons"), { recursive: true });
 	for (const file of statics[target]) {
 		const name = file.startsWith("static/icons/") ? `icons/${file.split("/").at(-1)}` : file.split("/").at(-1);
@@ -82,5 +108,6 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 	for (const file of [...Object.keys(bundles[target]), "quickjs.wasm"]) {
 		sizes.push(`${file} ${Math.round((await stat(join(out, file))).size / 1024)} KiB`);
 	}
+	for (const file of chunks) sizes.push(`${file.replaceAll("\\", "/").split("/").at(-1)} ${Math.round((await stat(file)).size / 1024)} KiB (lazy)`);
 	console.log(`dist/${target}: ${sizes.join(", ")}`);
 }
