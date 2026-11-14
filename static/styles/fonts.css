@@ -1,0 +1,22 @@
+/*
+ * Self-hosted Commit Mono (SIL OFL 1.1, see COMMIT-MONO-LICENSE.txt) for code,
+ * refs and other machine-readable text: the system mono stack renders
+ * inconsistently across Chromium, Firefox and the CJK UI font. Weights 400 and
+ * 700 only; 300 and the italic styles are unused.
+ */
+
+@font-face {
+	font-family: "Commit Mono";
+	src: url("../fonts/CommitMono-400-Regular.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: "Commit Mono";
+	src: url("../fonts/CommitMono-700-Regular.woff2") format("woff2");
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}

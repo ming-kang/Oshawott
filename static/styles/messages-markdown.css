@@ -1,6 +1,6 @@
 .msg {
 	min-width: 0;
-	animation: rise 0.22s var(--ease);
+	animation: rise var(--duration-slow) var(--ease);
 }
 
 @keyframes rise {
@@ -16,8 +16,8 @@
 }
 
 .msg.user .bubble {
-	padding: 8px 14px;
-	border-radius: 16px 16px 6px 16px;
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-l) var(--radius-l) var(--radius-s) var(--radius-l);
 	background: var(--user);
 	color: var(--user-text);
 	white-space: pre-wrap;
@@ -40,7 +40,7 @@
 	gap: 2px;
 	margin-top: -4px;
 	opacity: 0;
-	transition: opacity 0.15s;
+	transition: var(--transition-fade);
 }
 
 .msg.assistant:hover .msg-actions,
@@ -55,7 +55,7 @@
 .md {
 	min-width: 0;
 	overflow-wrap: anywhere;
-	line-height: 1.7;
+	line-height: var(--leading-relaxed);
 }
 
 .md > :first-child {
@@ -128,9 +128,9 @@
 
 .md code {
 	padding: 0.1em 0.36em;
-	border-radius: 4px;
+	border-radius: var(--radius-s);
 	background: var(--surface-2);
-	font: 0.86em/1.4 var(--mono);
+	font: var(--font-mono);
 }
 
 .md blockquote {
@@ -150,21 +150,21 @@
 .table-wrap {
 	margin: 0.7em 0;
 	overflow-x: auto;
-	border: 1px solid var(--line);
+	border: var(--border-width) solid var(--line);
 	border-radius: var(--radius-m);
 }
 
 .md table {
 	width: 100%;
 	border-collapse: collapse;
-	font-size: 12.5px;
-	line-height: 1.55;
+	font: var(--font-ui-secondary);
+	line-height: var(--leading-snug);
 }
 
 .md th,
 .md td {
-	padding: 6px 10px;
-	border-bottom: 1px solid var(--line);
+	padding: var(--space-1) var(--space-2);
+	border-bottom: var(--border-width) solid var(--line);
 	text-align: left;
 	vertical-align: top;
 }
@@ -183,7 +183,7 @@
 .codeblock {
 	margin: 0.7em 0;
 	overflow: hidden;
-	border: 1px solid var(--line);
+	border: var(--border-width) solid var(--line);
 	border-radius: var(--radius-m);
 	background: var(--code-bg);
 }
@@ -193,16 +193,16 @@
 	align-items: center;
 	justify-content: space-between;
 	height: 30px;
-	padding: 0 4px 0 12px;
+	padding: 0 var(--space-1) 0 var(--space-3);
 	color: var(--text-3);
-	font: 11.5px var(--mono);
+	font: var(--font-mono-sm);
 }
 
 .codeblock pre {
 	margin: 0;
-	padding: 2px 12px 11px;
+	padding: var(--space-1) var(--space-3) var(--space-3);
 	overflow-x: auto;
-	font: 12.5px/1.6 var(--mono);
+	font: var(--font-mono);
 	tab-size: 4;
 }
 
@@ -234,18 +234,18 @@
 .thinking > summary {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--space-2);
 	width: fit-content;
 	max-width: 100%;
 	min-height: 28px;
-	padding: 2px 8px 2px 0;
+	padding: var(--space-1) var(--space-2) var(--space-1) 0;
 	border-radius: var(--radius-s);
 	color: var(--text-3);
-	font-size: 13px;
+	font: var(--font-ui);
 	list-style: none;
 	cursor: pointer;
 	user-select: none;
-	transition: color 0.15s;
+	transition: color var(--duration-fast) var(--ease);
 }
 
 .thinking > summary::-webkit-details-marker {
@@ -262,7 +262,7 @@
 
 .thinking > summary .icon:last-child {
 	transform: rotate(-90deg);
-	transition: transform 0.2s var(--ease);
+	transition: transform var(--duration-slow) var(--ease);
 }
 
 .thinking[open] > summary .icon:last-child {
@@ -288,11 +288,11 @@
 }
 
 .thinking > .md {
-	margin: 2px 0 4px 7px;
-	padding: 2px 0 2px 16px;
-	border-left: 1px solid var(--line-strong);
+	margin: var(--space-1) 0 var(--space-1) 7px;
+	padding: var(--space-1) 0 var(--space-1) var(--space-4);
+	border-left: var(--border-width) solid var(--line-strong);
 	color: var(--text-2);
-	font-size: 13px;
-	line-height: 1.65;
+	font: var(--font-ui);
+	line-height: var(--leading-normal);
 }
 

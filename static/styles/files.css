@@ -13,13 +13,13 @@
 
 .files-location code {
 	color: var(--text-2);
-	font: 12px var(--mono);
+	font: var(--font-mono);
 }
 
 .files-summary {
 	margin-left: auto;
 	color: var(--text-3);
-	font-size: 11.5px;
+	font: var(--font-ui-tertiary);
 }
 
 .file-list[aria-busy="true"] {
@@ -29,8 +29,8 @@
 .file-row {
 	display: flex;
 	align-items: center;
-	gap: 10px;
-	padding: 12px;
+	gap: var(--space-2);
+	padding: var(--space-3);
 }
 
 .file-row + .file-row {
@@ -49,17 +49,17 @@
 
 .file-path {
 	display: block;
-	font: 12px/1.5 var(--mono);
+	font: var(--font-mono);
 	overflow-wrap: anywhere;
 }
 
 .file-meta {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 3px 8px;
-	margin-top: 3px;
+	gap: var(--space-1) var(--space-2);
+	margin-top: var(--space-1);
 	color: var(--text-3);
-	font-size: 11px;
+	font: var(--font-ui-tertiary);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -76,9 +76,9 @@
 
 .file-remove[data-confirm] {
 	width: auto;
-	padding: 0 8px;
+	padding: 0 var(--space-2);
 	background: var(--danger-soft);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 	white-space: nowrap;
 }
 
@@ -86,25 +86,25 @@
 	display: flex;
 	align-items: center;
 	flex-direction: column;
-	gap: 10px;
-	padding: 34px 20px;
+	gap: var(--space-2);
+	padding: var(--space-8) var(--space-5);
 	color: var(--text-3);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 	text-align: center;
 }
 
 .files-empty strong {
 	color: var(--text-2);
-	font-size: 13px;
+	font: var(--font-ui);
 }
 
 .files-error {
 	display: flex;
 	align-items: flex-start;
-	gap: 8px;
-	padding: 16px;
+	gap: var(--space-2);
+	padding: var(--space-4);
 	color: var(--danger);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 	overflow-wrap: anywhere;
 }
 

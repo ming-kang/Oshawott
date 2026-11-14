@@ -9,6 +9,7 @@
  * Keep this order when splitting sections further. Component constraints should
  * outrank shared primitives explicitly instead of relying on accidental ordering.
  */
+@import "./styles/fonts.css";
 @import "./styles/tokens.css";
 @import "./styles/base-controls.css";
 @import "./styles/layout-header.css";

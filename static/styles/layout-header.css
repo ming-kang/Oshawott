@@ -8,7 +8,7 @@
 	padding: 0 8px;
 	border-bottom: 1px solid transparent;
 	background: var(--bg);
-	transition: border-color 0.2s;
+	transition: border-color var(--duration-base) var(--ease);
 }
 
 body[data-scrolled] .topbar {
@@ -19,14 +19,14 @@ body[data-scrolled] .topbar {
 	flex: 1;
 	min-width: 0;
 	margin: 0;
-	padding: 0 8px;
+	padding: 0 var(--space-2);
 	overflow: hidden;
 	color: var(--text);
 	line-height: 34px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 14px;
-	font-weight: 600;
+	font-size: var(--text-lead);
+	font-weight: var(--weight-emphasis);
 }
 
 .main {
@@ -47,17 +47,17 @@ body[data-scrolled] .topbar {
 .thread {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: var(--space-4);
 	min-height: 100%;
 	max-width: 760px;
 	margin: 0 auto;
-	padding: 12px 16px 24px;
+	padding: var(--space-3) var(--space-4) var(--space-6);
 }
 
 .live {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: var(--space-4);
 }
 
 .live:empty {

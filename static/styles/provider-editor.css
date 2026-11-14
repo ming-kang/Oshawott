@@ -1,20 +1,20 @@
 .provider-editor-form {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
-	gap: 12px;
+	gap: var(--space-3);
 	width: 100%;
 	min-width: 0;
-	padding: 14px;
+	padding: var(--space-3);
 }
 
 .provider-field {
 	display: flex;
 	flex-direction: column;
-	gap: 5px;
+	gap: var(--space-1);
 	width: 100%;
 	min-width: 0;
 	color: var(--text-2);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 }
 
 .provider-field .input {
@@ -32,8 +32,8 @@
 
 .provider-field-note {
 	color: var(--text-3);
-	font-size: 11.5px;
-	line-height: 1.45;
+	font: var(--font-ui-tertiary);
+	line-height: var(--leading-snug);
 	word-break: break-all;
 }
 
@@ -65,8 +65,8 @@
 
 .provider-list {
 	max-height: 260px;
-	border: 1px solid var(--line);
-	border-radius: 10px;
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--bg);
 }
 
@@ -77,14 +77,14 @@
 .provider-chosen {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--space-2);
 	min-height: 36px;
-	padding: 3px 4px 3px 11px;
-	border: 1px solid var(--line-strong);
-	border-radius: 8px;
+	padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+	border: var(--border-width) solid var(--line-strong);
+	border-radius: var(--radius-s);
 	background: var(--bg);
 	color: var(--text);
-	font-size: 13px;
+	font: var(--font-ui);
 }
 
 .provider-chosen-name {
@@ -97,10 +97,10 @@
 }
 
 .provider-status {
-	margin: 8px 2px 0;
+	margin: var(--space-2) var(--space-1) 0;
 	color: var(--text-3);
-	font-size: 12px;
-	line-height: 1.5;
+	font: var(--font-ui-secondary);
+	line-height: var(--leading-snug);
 }
 
 .provider-status[data-error="true"] {
@@ -132,7 +132,7 @@
 
 .login-title {
 	color: var(--text-2);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 }
 
 .login-row,
@@ -147,7 +147,7 @@
 .login-error {
 	margin: 0;
 	color: var(--text-2);
-	font-size: 12.5px;
+	font: var(--font-ui);
 }
 
 .login-error {
@@ -155,12 +155,12 @@
 }
 
 .login-code {
-	padding: 6px 10px;
-	border: 1px solid var(--line);
-	border-radius: 8px;
+	padding: var(--space-1) var(--space-2);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-s);
 	background: var(--surface);
 	font-family: var(--mono);
-	font-size: 15px;
+	font-size: var(--text-lead);
 	letter-spacing: 0.08em;
 	user-select: all;
 }
@@ -176,8 +176,8 @@ a.btn {
 .provider-models {
 	min-width: 0;
 	overflow: hidden;
-	border: 1px solid var(--line);
-	border-radius: 12px;
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--surface);
 }
 
@@ -191,11 +191,11 @@ a.btn {
 	flex-wrap: wrap;
 	align-items: baseline;
 	justify-content: space-between;
-	gap: 4px 10px;
-	padding: 11px 12px;
+	gap: var(--space-1) var(--space-2);
+	padding: var(--space-2) var(--space-3);
 	cursor: pointer;
-	font-size: 13px;
-	font-weight: 500;
+	font: var(--font-ui);
+	font-weight: var(--weight-medium);
 }
 
 .model-editor-title {
@@ -208,7 +208,7 @@ a.btn {
 
 .model-editor-meta {
 	color: var(--text-3);
-	font-size: 11.5px;
+	font: var(--font-ui-tertiary);
 	font-weight: 400;
 	min-width: 0;
 	overflow: hidden;
@@ -228,10 +228,10 @@ a.btn {
 	grid-column: 1 / -1;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	padding: 10px;
-	border: 1px solid var(--line);
-	border-radius: 10px;
+	gap: var(--space-2);
+	padding: var(--space-2);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--bg);
 }
 
@@ -268,7 +268,7 @@ a.btn {
 .builtin-ref-label {
 	margin: 0;
 	color: var(--text-2);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 	word-break: break-word;
 }
 
@@ -276,8 +276,8 @@ a.btn {
 .builtin-diff-list {
 	max-height: 200px;
 	overflow-y: auto;
-	border: 1px solid var(--line);
-	border-radius: 8px;
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-s);
 	background: var(--surface);
 }
 
@@ -285,19 +285,25 @@ a.btn {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 2px;
+	gap: var(--space-1);
 	width: 100%;
-	padding: 8px 10px;
+	padding: var(--space-2) var(--space-2);
 	border: 0;
 	background: transparent;
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
-	transition: background 0.12s;
+	transition: var(--transition-press);
 }
 
-.builtin-candidate-row:hover {
-	background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+@media (hover: hover) {
+	.builtin-candidate-row:hover {
+		background: var(--fill-ghost-hover);
+	}
+}
+
+.builtin-candidate-row:active {
+	background: var(--fill-ghost-active);
 }
 
 .builtin-candidate-row + .builtin-candidate-row,
@@ -308,8 +314,8 @@ a.btn {
 .builtin-candidate-id {
 	max-width: 100%;
 	overflow: hidden;
-	font-size: 12.5px;
-	font-weight: 500;
+	font: var(--font-ui);
+	font-weight: var(--weight-medium);
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
@@ -317,8 +323,8 @@ a.btn {
 .builtin-diff-row {
 	display: flex;
 	align-items: flex-start;
-	gap: 9px;
-	padding: 8px 10px;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-2);
 	cursor: pointer;
 }
 
@@ -344,19 +350,19 @@ a.btn {
 }
 
 .builtin-diff-field {
-	font-size: 12px;
-	font-weight: 500;
+	font: var(--font-ui-secondary);
+	font-weight: var(--weight-medium);
 }
 
 .builtin-diff-values {
 	color: var(--text-2);
-	font-size: 11.5px;
+	font: var(--font-ui-tertiary);
 	word-break: break-word;
 }
 
 .provider-fetch-panel {
-	margin-bottom: 10px;
-	padding: 12px;
+	margin-bottom: var(--space-2);
+	padding: var(--space-3);
 }
 
 .provider-fetch-panel[hidden] {
@@ -379,15 +385,15 @@ a.btn {
 }
 
 .provider-fetch-title {
-	font-size: 13px;
-	font-weight: 600;
+	font: var(--font-ui);
+	font-weight: var(--weight-emphasis);
 }
 
 .provider-fetch-count,
 .provider-fetch-selected,
 .provider-fetch-note {
 	color: var(--text-3);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 }
 
 .provider-fetch-note {
@@ -397,8 +403,8 @@ a.btn {
 .provider-fetch-body {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	margin-top: 10px;
+	gap: var(--space-2);
+	margin-top: var(--space-2);
 }
 
 .provider-fetch-body[hidden] {
@@ -426,22 +432,24 @@ a.btn {
 .provider-fetch-list {
 	max-height: 240px;
 	overflow-y: auto;
-	border: 1px solid var(--line);
-	border-radius: 10px;
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--bg);
 }
 
 .fetch-model-row {
 	display: flex;
 	align-items: flex-start;
-	gap: 10px;
-	padding: 9px 10px;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-2);
 	cursor: pointer;
-	transition: background 0.12s;
+	transition: var(--transition-press);
 }
 
-.fetch-model-row:hover {
-	background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+@media (hover: hover) {
+	.fetch-model-row:hover {
+		background: var(--fill-ghost-hover);
+	}
 }
 
 .fetch-model-row[data-added="true"] {
@@ -477,29 +485,29 @@ a.btn {
 }
 
 .fetch-model-info strong {
-	font-size: 12.5px;
-	font-weight: 500;
+	font: var(--font-ui);
+	font-weight: var(--weight-medium);
 }
 
 .fetch-model-name {
 	color: var(--text-2);
-	font-size: 11.5px;
+	font: var(--font-ui-tertiary);
 }
 
 .model-editor-grid {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 12px;
-	padding: 0 12px 14px;
+	gap: var(--space-3);
+	padding: 0 var(--space-3) var(--space-3);
 }
 
 .vision-check,
 .thinking-checks label {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--space-1);
 	color: var(--text-2);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 }
 
 .model-thinking {
@@ -508,9 +516,9 @@ a.btn {
 
 .model-thinking > span {
 	display: block;
-	margin-bottom: 7px;
+	margin-bottom: var(--space-2);
 	color: var(--text-2);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 }
 
 .thinking-checks {
@@ -523,8 +531,8 @@ a.btn {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
-	gap: 6px 10px;
-	padding: 11px 12px;
+	gap: var(--space-1) var(--space-2);
+	padding: var(--space-2) var(--space-3);
 }
 
 .discovered-model > div {
@@ -540,13 +548,13 @@ a.btn {
 }
 
 .discovered-model strong {
-	font-size: 13px;
+	font: var(--font-ui);
 }
 
 .discovered-model > div > span,
 .model-capabilities {
 	color: var(--text-3);
-	font-size: 11px;
+	font: var(--font-ui-tertiary);
 }
 
 .model-capabilities {

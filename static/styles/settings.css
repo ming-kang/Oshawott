@@ -1,45 +1,51 @@
 .sheet-body {
 	display: flex;
 	flex-direction: column;
-	gap: 18px;
+	gap: var(--space-4);
 	width: 100%;
 	max-width: 620px;
 	margin: 0 auto;
-	padding: 16px 14px 28px;
+	padding: var(--space-4) var(--space-3) var(--space-8);
 	overflow-y: auto;
 }
 
 .section h3 {
-	margin: 0 0 8px 2px;
+	margin: 0 0 var(--space-2) var(--space-1);
 	color: var(--text-3);
-	font-size: 12px;
-	font-weight: 500;
+	font: var(--font-ui-secondary);
+	font-weight: var(--weight-medium);
 }
 
 .fold > summary {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: var(--space-2);
 	min-height: 44px;
-	padding: 8px 12px;
-	border: 1px solid var(--line);
-	border-radius: 12px;
+	padding: var(--space-2) var(--space-3);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--surface);
 	cursor: pointer;
 	list-style: none;
-	transition: background 0.12s;
+	transition: var(--transition-press);
 }
 
 .fold > summary::-webkit-details-marker {
 	display: none;
 }
 
-.fold > summary:hover {
-	background: var(--surface-2);
+@media (hover: hover) {
+	.fold > summary:hover {
+		background: var(--fill-ghost-hover);
+	}
+}
+
+.fold > summary:active {
+	background: var(--fill-ghost-active);
 }
 
 .fold[open] > summary {
-	margin-bottom: 10px;
+	margin-bottom: var(--space-2);
 }
 
 .fold > summary > .icon {
@@ -53,8 +59,8 @@
 
 .fold-title {
 	flex: none;
-	font-size: 13px;
-	font-weight: 500;
+	font: var(--font-ui);
+	font-weight: var(--weight-medium);
 }
 
 .fold-preview {
@@ -62,7 +68,7 @@
 	min-width: 0;
 	overflow: hidden;
 	color: var(--text-3);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 	text-align: right;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -76,18 +82,24 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 16px;
+	gap: var(--space-4);
 	min-height: 42px;
-	padding: 8px 12px;
+	padding: var(--space-2) var(--space-3);
 	background: var(--surface);
 	color: var(--text);
-	font-size: 13.5px;
+	font-size: var(--text-lead);
 	cursor: pointer;
-	transition: background 0.12s;
+	transition: var(--transition-press);
 }
 
-.setting-row:hover {
-	background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+@media (hover: hover) {
+	.setting-row:hover {
+		background: var(--fill-ghost-hover);
+	}
+}
+
+.setting-row:active {
+	background: var(--fill-ghost-active);
 }
 
 .card > .setting-row + .setting-row {
@@ -139,14 +151,15 @@
 .instructions-input {
 	width: 100%;
 	min-height: 180px;
-	padding: 11px 12px;
+	padding: var(--space-2) var(--space-3);
 	resize: vertical;
-	border: 1px solid var(--line-strong);
-	border-radius: 10px;
+	border: var(--border-width) solid var(--line-strong);
+	border-radius: var(--radius-m);
 	outline: 0;
 	background: var(--surface);
 	color: var(--text);
-	font: 12.5px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+	font: var(--font-mono);
+	line-height: var(--leading-normal);
 }
 
 .instructions-input:focus {
@@ -158,15 +171,15 @@
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
-	margin-top: 8px;
-	padding: 9px 10px;
-	border: 1px solid var(--line);
-	border-radius: 8px;
+	gap: var(--space-2);
+	margin-top: var(--space-2);
+	padding: var(--space-2);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-s);
 	background: var(--surface-2);
 	color: var(--text-2);
-	font-size: 12px;
-	line-height: 1.5;
+	font: var(--font-ui-secondary);
+	line-height: var(--leading-snug);
 }
 
 .instructions-status > span {
@@ -176,8 +189,8 @@
 
 .card {
 	overflow: hidden;
-	border: 1px solid var(--line);
-	border-radius: 12px;
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--surface);
 }
 
@@ -193,18 +206,24 @@
 .provider-head {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: var(--space-2);
 	width: 100%;
 	min-height: 48px;
-	padding: 8px 12px;
+	padding: var(--space-2) var(--space-3);
 	border: 0;
 	background: transparent;
 	text-align: left;
-	transition: background 0.12s;
+	transition: var(--transition-press);
 }
 
-.provider-head:hover {
-	background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+@media (hover: hover) {
+	.provider-head:hover {
+		background: var(--fill-ghost-hover);
+	}
+}
+
+.provider-head:active {
+	background: var(--fill-ghost-active);
 }
 
 .provider-head > .icon {
@@ -223,12 +242,12 @@
 
 .pill {
 	flex: none;
-	padding: 1px 8px;
-	border-radius: 999px;
+	padding: 2px var(--space-2);
+	border-radius: var(--radius-pill);
 	background: var(--surface-2);
 	color: var(--text-3);
-	font-size: 11.5px;
-	font-weight: 500;
+	font: var(--font-ui-tertiary);
+	font-weight: var(--weight-medium);
 }
 
 .pill[data-on] {
@@ -252,13 +271,13 @@
 	flex: 1 1 160px;
 	min-width: 0;
 	height: 32px;
-	padding: 0 11px;
-	border: 1px solid var(--line-strong);
-	border-radius: 8px;
+	padding: 0 var(--space-2);
+	border: var(--border-width) solid var(--line-strong);
+	border-radius: var(--radius-s);
 	outline: 0;
 	background: var(--bg);
-	font-size: 13px;
-	transition: border-color 0.15s, box-shadow 0.15s;
+	font: var(--font-ui);
+	transition: border-color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease);
 }
 
 .input:focus {
@@ -268,9 +287,9 @@
 
 .segmented {
 	display: flex;
-	gap: 2px;
-	padding: 3px;
-	border-radius: 10px;
+	gap: var(--space-1);
+	padding: var(--space-1);
+	border-radius: var(--radius-m);
 	background: var(--surface-2);
 }
 
@@ -278,12 +297,18 @@
 	flex: 1;
 	height: 30px;
 	border: 0;
-	border-radius: 8px;
+	border-radius: var(--radius-s);
 	background: transparent;
 	color: var(--text-2);
-	font-size: 13px;
-	font-weight: 500;
-	transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+	font: var(--font-ui);
+	font-weight: var(--weight-medium);
+	transition: var(--transition-press), box-shadow var(--duration-fast) var(--ease);
+}
+
+@media (hover: hover) {
+	.segmented button:hover:not([aria-checked="true"]) {
+		background: var(--fill-ghost-hover);
+	}
 }
 
 .segmented button[aria-checked="true"] {
@@ -306,7 +331,7 @@
 
 .about span {
 	color: var(--text-3);
-	font-size: 12.5px;
+	font: var(--font-ui-secondary);
 }
 
 .section-heading,

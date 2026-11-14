@@ -1,10 +1,10 @@
 .typing {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--space-2);
 	min-height: 28px;
 	color: var(--text-3);
-	font-size: 13px;
+	font: var(--font-ui);
 }
 
 .typing span {
@@ -33,14 +33,14 @@
 .notice {
 	display: flex;
 	align-items: flex-start;
-	gap: 10px;
-	padding: 10px 12px;
-	border: 1px solid var(--line);
-	border-radius: 12px;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--surface);
 	color: var(--text);
-	font-size: 13px;
-	animation: rise 0.22s var(--ease);
+	font: var(--font-ui);
+	animation: rise var(--duration-slow) var(--ease);
 }
 
 .notice-icon {
@@ -54,13 +54,14 @@
 	flex: 1;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 6px;
+	gap: var(--space-1);
 	min-width: 0;
 }
 
 .notice-detail {
 	color: var(--text-2);
-	font: 12px/1.5 var(--mono);
+	font: var(--font-mono-sm);
+	line-height: var(--leading-snug);
 	overflow-wrap: anywhere;
 }
 
@@ -85,9 +86,9 @@
 .divider {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: var(--space-2);
 	color: var(--text-3);
-	font-size: 12px;
+	font: var(--font-ui-secondary);
 }
 
 .divider::before,
@@ -101,54 +102,56 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	gap: 8px;
+	gap: var(--space-2);
 	flex: 1;
 	min-height: 50vh;
 	color: var(--text-3);
-	font-size: 13px;
+	font: var(--font-ui);
 }
 
 .banner {
 	position: absolute;
-	top: 8px;
+	top: var(--space-2);
 	left: 50%;
 	z-index: 3;
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	padding: 5px 12px;
-	border: 1px solid var(--line);
-	border-radius: 999px;
+	gap: var(--space-2);
+	padding: var(--space-1) var(--space-3);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-pill);
 	background: var(--surface);
 	box-shadow: var(--shadow-2);
 	color: var(--text-2);
-	font-size: 12.5px;
+	font: var(--font-ui-secondary);
 	white-space: nowrap;
 	transform: translateX(-50%);
 }
 
 .jump {
 	position: absolute;
-	bottom: 10px;
+	bottom: var(--space-2);
 	left: 50%;
 	z-index: 3;
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--space-1);
 	height: 30px;
-	padding: 0 12px;
-	border: 1px solid var(--line);
-	border-radius: 999px;
+	padding: 0 var(--space-3);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-pill);
 	background: var(--surface);
 	box-shadow: var(--shadow-2);
 	color: var(--text-2);
-	font-size: 12.5px;
+	font: var(--font-ui-secondary);
 	transform: translateX(-50%);
-	animation: rise 0.2s var(--ease);
+	animation: rise var(--duration-base) var(--ease);
 }
 
-.jump:hover {
-	color: var(--text);
+@media (hover: hover) {
+	.jump:hover {
+		color: var(--text);
+	}
 }
 
 .empty {
@@ -157,16 +160,16 @@
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 8px;
+	gap: var(--space-2);
 	min-height: 100%;
-	padding: 24px 4px 12px;
+	padding: var(--space-6) var(--space-1) var(--space-3);
 	text-align: center;
 }
 
 .empty-logo {
 	display: grid;
 	place-items: center;
-	margin-bottom: 6px;
+	margin-bottom: var(--space-2);
 }
 
 .empty-logo .mascot {
@@ -177,38 +180,44 @@
 .empty h1 {
 	max-width: 280px;
 	margin: 0;
-	font-size: 19px;
-	font-weight: 600;
-	line-height: 1.4;
+	font-size: var(--text-title);
+	font-weight: var(--weight-emphasis);
+	line-height: var(--leading-tight);
 	letter-spacing: -0.015em;
 	text-wrap: balance;
 }
 
 .suggestions {
 	display: grid;
-	gap: 6px;
+	gap: var(--space-2);
 	width: 100%;
 	max-width: 340px;
-	margin-top: 16px;
+	margin-top: var(--space-4);
 }
 
 .suggestion {
 	display: flex;
 	align-items: center;
-	gap: 10px;
-	padding: 10px 13px;
-	border: 1px solid var(--line);
-	border-radius: 11px;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--surface);
 	color: var(--text);
-	font-size: 13.5px;
+	font: var(--font-ui);
 	text-align: left;
-	transition: background 0.15s, border-color 0.15s;
+	transition: var(--transition-press);
 }
 
-.suggestion:hover {
-	border-color: var(--line-strong);
-	background: var(--surface-2);
+@media (hover: hover) {
+	.suggestion:hover {
+		border-color: var(--line-strong);
+		background: var(--fill-ghost-hover);
+	}
+}
+
+.suggestion:active {
+	background: var(--fill-ghost-active);
 }
 
 .suggestion-icon {
@@ -224,13 +233,13 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 10px;
+	gap: var(--space-2);
 	width: 100%;
 	max-width: 280px;
-	margin-top: 16px;
-	padding: 16px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius-l);
+	margin-top: var(--space-4);
+	padding: var(--space-4);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--surface);
 }
 
@@ -239,7 +248,7 @@
 	place-items: center;
 	width: 34px;
 	height: 34px;
-	border-radius: 10px;
+	border-radius: var(--radius-s);
 	background: var(--surface-2);
 	color: var(--text-2);
 }

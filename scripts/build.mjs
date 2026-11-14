@@ -67,6 +67,8 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 		minify: false,
 		sourcemap: dev ? "inline" : false,
 		legalComments: "none",
+		// Self-hosted font files ride along next to the bundled stylesheet.
+		loader: {".woff2": "file"},
 		logLevel: "warning",
 	});
 	await mkdir(join(out, "icons"), { recursive: true });

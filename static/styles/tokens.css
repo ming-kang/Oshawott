@@ -1,3 +1,11 @@
+/*
+ * Design tokens. The palette and elevation stay Oshawott's own; the scales below
+ * follow the Elanor design language (https://github.com/earendil-works/elanor):
+ * a small numeric step scale for type, space and radius, a three-step ghost fill
+ * for hover/active feedback, and named transitions instead of per-rule values.
+ * Keep new values on the scale; add a step before inventing a one-off size.
+ */
+
 :root {
 	color-scheme: light;
 	--bg: #ffffff;
@@ -24,16 +32,17 @@
 	--warn-soft: rgba(214, 140, 30, 0.1);
 	--success: #187a47;
 	--success-soft: rgba(47, 158, 98, 0.1);
+	--backdrop: rgba(20, 20, 19, 0.18);
 	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
 	--shadow-2: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px -8px rgba(0, 0, 0, 0.1);
-	--shadow-pop: 0 12px 32px -6px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.06);
-	--backdrop: rgba(20, 20, 19, 0.24);
-	--radius-s: 6px;
-	--radius-m: 10px;
-	--radius-l: 14px;
+	/* Tighter than a diffuse web-app shadow: separation comes from the border and
+	   a small, close shadow, so popups read as surfaces rather than floating cards. */
+	--shadow-pop: 0 2px 8px rgba(20, 20, 19, 0.16);
+	--shadow-drawer: 0 10px 30px -8px rgba(20, 20, 19, 0.18), 0 2px 8px -2px rgba(20, 20, 19, 0.08);
 	--font: "PingFang SC", system-ui, -apple-system, "Segoe UI", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
-	--mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+	--mono: "Commit Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
 	--ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
 :root[data-theme="dark"] {
@@ -64,7 +73,8 @@
 	--success-soft: rgba(82, 201, 138, 0.12);
 	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
 	--shadow-2: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -10px rgba(0, 0, 0, 0.5);
-	--shadow-pop: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+	--shadow-pop: 0 2px 10px rgba(0, 0, 0, 0.5);
+	--shadow-drawer: 0 12px 36px -8px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.3);
 	--backdrop: rgba(0, 0, 0, 0.5);
 }
 
@@ -97,8 +107,78 @@
 		--success-soft: rgba(82, 201, 138, 0.12);
 		--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
 		--shadow-2: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -10px rgba(0, 0, 0, 0.5);
-		--shadow-pop: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+		--shadow-pop: 0 2px 10px rgba(0, 0, 0, 0.5);
+		--shadow-drawer: 0 12px 36px -8px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.3);
 		--backdrop: rgba(0, 0, 0, 0.5);
 	}
 }
 
+/* Type scale. Sizes stay whole pixels: 11 for metadata, 12 for supporting text,
+   13 for interface copy and controls, 14 for emphasized rows and titles, 16 for
+   the empty-state heading. Composite styles below are the only way text is set. */
+:root {
+	--text-micro: 11px;
+	--text-minor: 12px;
+	--text-body: 13px;
+	--text-lead: 14px;
+	--text-title: 16px;
+	--leading-tight: 1.4;
+	--leading-snug: 1.5;
+	--leading-normal: 1.6;
+	--leading-relaxed: 1.7;
+	--weight-medium: 500;
+	--weight-emphasis: 600;
+	--font-ui: var(--text-body) / var(--leading-snug) var(--font);
+	--font-ui-secondary: var(--text-minor) / var(--leading-snug) var(--font);
+	--font-ui-tertiary: var(--text-micro) / var(--leading-tight) var(--font);
+	--font-mono: var(--text-minor) / var(--leading-snug) var(--mono);
+	--font-mono-sm: var(--text-micro) / var(--leading-snug) var(--mono);
+}
+
+/* Space scale on a 4px step. */
+:root {
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+}
+
+/* Radius: controls and inner surfaces 6px, containers 10px, large panels 14px. */
+:root {
+	--radius-s: 6px;
+	--radius-m: 10px;
+	--radius-l: 14px;
+	--radius-pill: 999px;
+	--border-width: 1px;
+	--focus-ring-width: 2px;
+	--focus-ring-offset: 2px;
+	--focus-ring: var(--accent);
+}
+
+/* Ghost fills: every pressable surface answers hover and press with a fill step,
+   never only a color shift. */
+:root {
+	--fill-ghost: transparent;
+	--fill-ghost-hover: var(--surface-2);
+	--fill-ghost-active: var(--surface-3);
+	--fill-quiet: var(--surface-2);
+	--fill-quiet-hover: var(--surface-3);
+	--opacity-disabled: 0.45;
+}
+
+/* Motion: 120ms for press feedback, 150ms for fades and popups, 220ms for
+   disclosure, 280ms for drawers. Reduced motion zeroes them in
+   accessibility-responsive.css. */
+:root {
+	--duration-fast: 120ms;
+	--duration-base: 150ms;
+	--duration-slow: 220ms;
+	--duration-drawer: 280ms;
+	--transition-press: background var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease),
+		border-color var(--duration-fast) var(--ease);
+	--transition-fade: opacity var(--duration-base) var(--ease);
+	--transition-popup: transform var(--duration-base) var(--ease), opacity var(--duration-base) var(--ease);
+}

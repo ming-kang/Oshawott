@@ -6,27 +6,27 @@
 
 .send-mode-menu .menu-item {
 	align-items: flex-start;
-	padding: 9px 8px;
+	padding: var(--space-2);
 }
 
 .menu-check {
 	display: inline-flex;
 	flex: none;
 	width: 16px;
-	padding-top: 2px;
+	padding-top: var(--space-1);
 	color: var(--accent);
 }
 
 .send-mode-copy {
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: var(--space-1);
 }
 
 .send-mode-description {
 	color: var(--text-3);
-	font-size: 11px;
-	line-height: 1.4;
+	font: var(--font-ui-tertiary);
+	line-height: var(--leading-tight);
 	white-space: normal;
 }
 
@@ -36,16 +36,16 @@
 }
 
 .stop-confirm-menu p {
-	margin: 0 0 10px;
+	margin: 0 0 var(--space-2);
 	color: var(--text-2);
-	font-size: 12px;
-	line-height: 1.5;
+	font: var(--font-ui-secondary);
+	line-height: var(--leading-snug);
 }
 
 .stop-confirm-actions {
 	display: flex;
 	justify-content: flex-end;
-	gap: 6px;
+	gap: var(--space-1);
 }
 
 .popover {
@@ -58,12 +58,12 @@
 	width: min(380px, calc(100vw - 24px));
 	max-height: min(420px, 60vh);
 	overflow: hidden;
-	border: 1px solid var(--line);
-	border-radius: var(--radius-l);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m);
 	background: var(--raised);
 	box-shadow: var(--shadow-pop);
 	transform-origin: bottom left;
-	animation: pop-above 0.16s var(--ease);
+	animation: pop-above var(--duration-base) var(--ease);
 }
 
 .popover[data-side="below"] {
@@ -95,14 +95,14 @@
 
 .menu-search {
 	flex: none;
-	height: 40px;
-	padding: 0 14px;
+	height: 36px;
+	padding: 0 var(--space-3);
 	border: 0;
-	border-bottom: 1px solid var(--line);
-	border-radius: 11px 11px 0 0;
+	border-bottom: var(--border-width) solid var(--line);
+	border-radius: var(--radius-m) var(--radius-m) 0 0;
 	outline: 0;
 	background: transparent;
-	font-size: 13px;
+	font: var(--font-ui);
 }
 
 .menu-search::placeholder,
@@ -116,29 +116,39 @@
 }
 
 .menu-group {
-	padding: 6px 8px 4px;
+	padding: var(--space-1) var(--space-2) var(--space-1);
 	color: var(--text-3);
-	font-size: 11.5px;
-	font-weight: 500;
+	font: var(--font-ui-secondary);
+	font-weight: var(--weight-medium);
 }
 
 .menu-item {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--space-2);
 	width: 100%;
-	min-height: 34px;
-	padding: 6px 8px;
+	min-height: 32px;
+	padding: var(--space-1) var(--space-2);
 	border: 0;
-	border-radius: 8px;
-	background: transparent;
-	font-size: 13px;
+	border-radius: var(--radius-s);
+	background: var(--fill-ghost);
+	font: var(--font-ui);
 	text-align: left;
+	transition: var(--transition-press);
 }
 
-.menu-item.active,
-.menu-item:hover {
-	background: var(--surface-2);
+.menu-item.active {
+	background: var(--fill-ghost-hover);
+}
+
+@media (hover: hover) {
+	.menu-item:hover:not([data-disabled]) {
+		background: var(--fill-ghost-hover);
+	}
+}
+
+.menu-item:active {
+	background: var(--fill-ghost-active);
 }
 
 .menu-item-name {
@@ -153,19 +163,22 @@
 	display: block;
 	overflow: hidden;
 	color: var(--text-3);
-	font-size: 10.5px;
+	font: var(--font-ui-tertiary);
 	font-weight: 400;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
+/* The level labels are short: the menu fits its content instead of taking the model menu's
+   width, with a floor so longer translated titles never collapse it. */
 .thinking-menu {
-	width: 240px;
+	width: max-content;
+	min-inline-size: 128px;
 	max-width: calc(100vw - 24px);
 }
 
 .thinking-menu .menu-group {
-	padding: 10px 14px 0;
+	padding: var(--space-2) var(--space-3) 0;
 }
 
 .menu-item[aria-selected="true"] {
@@ -177,9 +190,9 @@
 }
 
 .list-empty {
-	padding: 24px 12px;
+	padding: var(--space-6) var(--space-3);
 	color: var(--text-3);
-	font-size: 13px;
+	font: var(--font-ui-secondary);
 	text-align: center;
 }
 
@@ -193,7 +206,7 @@
 	position: absolute;
 	inset: 0;
 	background: var(--backdrop);
-	animation: fade 0.18s ease-out;
+	animation: fade var(--duration-base) var(--ease);
 }
 
 @keyframes fade {
@@ -208,6 +221,6 @@
 
 .overlay.leaving .backdrop {
 	opacity: 0;
-	transition: opacity 0.18s;
+	transition: var(--transition-fade);
 }
 
