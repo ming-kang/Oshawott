@@ -8,14 +8,37 @@
 		opacity: 1;
 	}
 
-	/* Touch has no hover to reveal them, so the actions take their own space again. */
+	/* Touch has no hover to reveal row or message actions. */
 	.chat-item > .chat-actions {
 		position: static;
+		flex-basis: auto;
+		width: auto;
 		padding: 0;
 		background: none;
 		opacity: 1;
 		pointer-events: auto;
 		transform: none;
+	}
+}
+
+@media (pointer: coarse) {
+	.icon-btn {
+		width: 40px;
+		height: 40px;
+	}
+
+	.icon-btn.small {
+		width: 34px;
+		height: 34px;
+	}
+
+	.btn {
+		min-height: 38px;
+	}
+
+	.send-btn {
+		width: 36px;
+		height: 36px;
 	}
 }
 
@@ -43,11 +66,6 @@
 
 	.model-btn {
 		max-width: calc(100% - 84px);
-	}
-
-	.popover {
-		right: 8px;
-		left: 8px;
 	}
 
 	.sheet-body {
@@ -83,6 +101,16 @@
 
 /* Forced colors can remove gradients without restoring the transparent text used by shimmer effects. */
 @media (forced-colors: active) {
+	.setting-row input[type="checkbox"] {
+		appearance: auto;
+		width: 18px;
+		height: 18px;
+	}
+
+	.setting-row input[type="checkbox"]::before {
+		display: none;
+	}
+
 	.thinking[data-live] > summary span,
 	.tool:is([data-status="running"], [data-status="pending"], [data-status="streaming"]) .tool-label,
 	.typing span + span {

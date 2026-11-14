@@ -82,24 +82,33 @@ button:disabled {
 	display: inline-grid;
 	place-items: center;
 	flex: none;
-	width: 32px;
-	height: 32px;
+	width: 34px;
+	height: 34px;
 	padding: 0;
 	border: 0;
 	border-radius: 8px;
 	background: transparent;
 	color: var(--text-2);
-	transition: background 0.15s, color 0.15s;
+	transition: background 0.15s, color 0.15s, transform 0.1s;
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled),
+.icon-btn[aria-expanded="true"] {
 	background: var(--surface-2);
 	color: var(--text);
 }
 
+.icon-btn:active:not(:disabled) {
+	transform: scale(0.94);
+}
+
+.icon-btn:disabled {
+	opacity: 0.45;
+}
+
 .icon-btn.small {
-	width: 26px;
-	height: 26px;
+	width: 28px;
+	height: 28px;
 	border-radius: var(--radius-s);
 }
 
@@ -109,7 +118,7 @@ button:disabled {
 	justify-content: center;
 	gap: 6px;
 	flex: none;
-	height: 32px;
+	height: 34px;
 	padding: 0 13px;
 	border: 1px solid var(--line-strong);
 	border-radius: 8px;
@@ -121,16 +130,16 @@ button:disabled {
 	transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
 	background: var(--surface-2);
 }
 
-.btn:active {
+.btn:active:not(:disabled) {
 	transform: scale(0.98);
 }
 
 .btn.small {
-	height: 28px;
+	height: 30px;
 	padding: 0 10px;
 	border-radius: 7px;
 	font-size: 12.5px;
@@ -140,9 +149,10 @@ button:disabled {
 	border-color: var(--accent);
 	background: var(--accent);
 	color: var(--on-accent);
+	font-weight: 600;
 }
 
-.btn.primary:hover {
+.btn.primary:hover:not(:disabled) {
 	border-color: var(--accent-strong);
 	background: var(--accent-strong);
 }
@@ -151,19 +161,24 @@ button:disabled {
 	color: var(--danger);
 }
 
+.btn.danger:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+	background: var(--danger-soft);
+}
+
 .btn.ghost {
 	border-color: transparent;
 	background: transparent;
 	color: var(--text-2);
 }
 
-.btn.ghost:hover {
+.btn.ghost:hover:not(:disabled) {
 	background: var(--surface-2);
 	color: var(--text);
 }
 
 .btn:disabled {
-	opacity: 0.55;
+	opacity: 0.5;
 }
 
 .spinner {

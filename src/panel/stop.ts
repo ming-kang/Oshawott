@@ -33,7 +33,10 @@ export class StopControl {
 			abort();
 		}, () => overlays.close());
 		this.#confirm = { menu, chat: target, anchor, count: queue.count };
-		overlays.open(menu, { kind: "popover", anchor });
+		overlays.open(menu, {
+			kind: "popover", anchor, align: "end",
+			boundary: anchor.closest<HTMLElement>(".composer-wrap") ?? undefined,
+		});
 		menu.focus();
 	}
 

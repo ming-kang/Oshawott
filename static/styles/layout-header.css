@@ -4,7 +4,7 @@
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	height: 48px;
+	height: 52px;
 	padding: 0 8px;
 	border-bottom: 1px solid transparent;
 	background: var(--bg);
@@ -22,7 +22,7 @@ body[data-scrolled] .topbar {
 	padding: 0 8px;
 	overflow: hidden;
 	color: var(--text);
-	line-height: 32px;
+	line-height: 34px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-size: 14px;

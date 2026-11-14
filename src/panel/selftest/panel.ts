@@ -149,6 +149,18 @@ export async function testPanel(source: Source, origin?: string) {
 
 	click("#chats-toggle");
 	step("chat rows are buttons inside a focus-managed dialog", document.querySelector("#chat-drawer")?.getAttribute("role") === "dialog" && document.querySelector(".chat-select") instanceof HTMLButtonElement && document.querySelector("#chat-drawer")?.contains(document.activeElement) === true);
+	const chatSelect = document.querySelector<HTMLElement>(".chat-select")!;
+	const chatActions = document.querySelector<HTMLElement>(".chat-item > .chat-actions")!;
+	const idleSelectRect = chatSelect.getBoundingClientRect();
+	const idleTimeRect = chatSelect.querySelector("time")!.getBoundingClientRect();
+	const idleLayout = chatActions.getBoundingClientRect().width === 0 && idleSelectRect.right - idleTimeRect.right <= 8;
+	chatActions.querySelector<HTMLButtonElement>("button")!.focus({ preventScroll: true });
+	const expandedSelectRect = chatSelect.getBoundingClientRect();
+	const expandedActionsRect = chatActions.getBoundingClientRect();
+	const expandedLayout = expandedActionsRect.width > 0 && expandedSelectRect.right <= expandedActionsRect.left
+		&& expandedActionsRect.right <= document.querySelector(".chat-item")!.getBoundingClientRect().right;
+	step("chat timestamps use the idle width and actions yield space without overlap", idleLayout && expandedLayout,
+		JSON.stringify({ idleTimeGap: idleSelectRect.right - idleTimeRect.right, expandedActionsWidth: expandedActionsRect.width }));
 	const renamedId = source.chats.value[0]?.id;
 	const originalTitle = source.chats.value[0]?.title ?? "";
 	const renamedRow = document.querySelector(`.chat-item[data-id="${renamedId}"]`);
@@ -186,6 +198,13 @@ export async function testPanel(source: Source, origin?: string) {
 	await until(() => !document.querySelector("#chat-drawer"));
 
 	click("#model");
+	const menuRect = document.querySelector("#model-menu")!.getBoundingClientRect();
+	const dockRect = document.querySelector(".composer-wrap")!.getBoundingClientRect();
+	const promptRect = document.querySelector("#prompt")!.getBoundingClientRect();
+	step("model popovers clear the composer and stay inside the viewport", menuRect.bottom <= dockRect.top
+		&& (menuRect.bottom <= promptRect.top || menuRect.top >= promptRect.bottom)
+		&& menuRect.left >= 0 && menuRect.right <= innerWidth && menuRect.top >= 0 && menuRect.bottom <= innerHeight,
+	JSON.stringify({ menu: menuRect.toJSON(), dock: dockRect.toJSON(), prompt: promptRect.toJSON(), viewport: [innerWidth, innerHeight] }));
 	const search = document.querySelector<HTMLInputElement>("#model-menu input")!;
 	search.value = "demo";
 	search.dispatchEvent(new Event("input"));

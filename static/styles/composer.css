@@ -21,6 +21,9 @@
 .composer-wrap {
 	position: relative;
 	z-index: 2;
+	display: flex;
+	flex-direction: column;
+	max-height: calc(100dvh - 76px);
 	padding: 4px 12px 12px;
 	background: var(--bg);
 }
@@ -37,6 +40,8 @@
 }
 
 .composer {
+	flex: none;
+	width: 100%;
 	max-width: 760px;
 	margin: 0 auto;
 	border: 1px solid var(--line-strong);
@@ -164,7 +169,7 @@
 	gap: 5px;
 	min-width: 0;
 	max-width: 75%;
-	height: 28px;
+	height: 30px;
 	padding: 0 8px;
 	border: 0;
 	border-radius: 999px;
@@ -175,7 +180,7 @@
 	transition: background 0.15s, color 0.15s;
 }
 
-.model-btn:hover,
+.model-btn:hover:not(:disabled),
 .model-btn[aria-expanded="true"] {
 	background: var(--surface-2);
 	color: var(--text);
@@ -238,8 +243,8 @@
 	display: grid;
 	place-items: center;
 	flex: none;
-	width: 30px;
-	height: 30px;
+	width: 32px;
+	height: 32px;
 	margin-left: auto;
 	padding: 0;
 	border: 0;

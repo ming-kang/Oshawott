@@ -6,8 +6,17 @@ export interface OverlayView {
 	close(): void;
 }
 
-type Placement = { kind: "drawer" | "sheet" | "popover"; anchor: HTMLElement; align?: "end" };
+type Placement = {
+	kind: "drawer" | "sheet" | "popover";
+	anchor: HTMLElement;
+	align?: "end";
+	/** A popover anchored in the composer stays above the whole dock, not over its prompt and buttons. */
+	boundary?: HTMLElement;
+};
 type ActiveOverlay = Placement & { view: OverlayView; root: HTMLElement };
+
+const POPOVER_GAP = 8;
+const POPOVER_MAX_HEIGHT = 420;
 
 const FOCUSABLE = "a[href], button, input, select, textarea, summary, [contenteditable='true'], [tabindex]";
 function focusable(root: ParentNode): HTMLElement[] {
@@ -25,9 +34,12 @@ function focusRelative(anchor: HTMLElement, direction: 1 | -1) {
 
 export class OverlayController {
 	#active: ActiveOverlay | undefined;
+	#observer: ResizeObserver | undefined;
 
 	constructor() {
 		document.addEventListener("keydown", this.#keydown);
+		document.addEventListener("scroll", this.#place, true);
+		window.addEventListener("resize", this.#place);
 	}
 
 	get current() {
@@ -39,12 +51,6 @@ export class OverlayController {
 		const { kind, anchor } = placement;
 		let root = view.element;
 		if (kind === "popover") {
-			const rect = anchor.getBoundingClientRect();
-			root.style.bottom = `${innerHeight - rect.top + 8}px`;
-			if (placement.align === "end") {
-				root.style.left = "auto";
-				root.style.right = `${Math.max(8, innerWidth - rect.right)}px`;
-			}
 			document.addEventListener("pointerdown", this.#outside, true);
 		} else {
 			view.element.setAttribute("role", view.element.getAttribute("role") ?? "dialog");
@@ -58,6 +64,13 @@ export class OverlayController {
 		this.#active = { ...placement, view, root };
 		anchor.setAttribute("aria-expanded", "true");
 		document.body.append(root);
+		if (kind === "popover") {
+			this.#place();
+			this.#observer = new ResizeObserver(this.#place);
+			this.#observer.observe(root);
+			this.#observer.observe(anchor);
+			if (placement.boundary) this.#observer.observe(placement.boundary);
+		}
 		if (kind !== "popover") {
 			const target = focusable(view.element)[0] ?? view.element;
 			if (target === view.element) view.element.tabIndex = -1;
@@ -67,7 +80,12 @@ export class OverlayController {
 	}
 
 	async refresh() {
-		await this.#active?.view.refresh();
+		const active = this.#active;
+		const pending = active?.view.refresh();
+		// Synchronous views are fully laid out before open() returns, so their first painted frame is already anchored.
+		if (this.#active === active) this.#place();
+		await pending;
+		if (this.#active === active) this.#place();
 	}
 
 	close(restoreFocus = true) {
@@ -75,6 +93,8 @@ export class OverlayController {
 		if (!active) return;
 		this.#active = undefined;
 		document.removeEventListener("pointerdown", this.#outside, true);
+		this.#observer?.disconnect();
+		this.#observer = undefined;
 		active.view.close();
 		active.anchor.setAttribute("aria-expanded", "false");
 		if (active.kind === "popover") active.root.remove();
@@ -90,7 +110,44 @@ export class OverlayController {
 	dispose() {
 		this.close();
 		document.removeEventListener("keydown", this.#keydown);
+		document.removeEventListener("scroll", this.#place, true);
+		window.removeEventListener("resize", this.#place);
 	}
+
+	/** Measures after every content refresh so menus remain inside the viewport without covering their dock. */
+	#place = () => {
+		const active = this.#active;
+		if (!active || active.kind !== "popover" || !active.root.isConnected) return;
+		const { root, anchor, boundary } = active;
+		const anchorRect = anchor.getBoundingClientRect();
+		const boundaryRect = boundary?.getBoundingClientRect() ?? anchorRect;
+		const gutter = innerWidth <= 380 ? 8 : 12;
+		const maxWidth = Math.max(0, innerWidth - gutter * 2);
+		root.style.left = "0px";
+		root.style.right = "auto";
+		root.style.top = "0px";
+		root.style.bottom = "auto";
+		root.style.maxWidth = `${maxWidth}px`;
+		root.style.maxHeight = `${POPOVER_MAX_HEIGHT}px`;
+
+		const above = Math.max(0, boundaryRect.top - POPOVER_GAP - gutter);
+		const below = Math.max(0, innerHeight - boundaryRect.bottom - POPOVER_GAP - gutter);
+		const desired = Math.min(root.scrollHeight, POPOVER_MAX_HEIGHT);
+		const side = above >= Math.min(desired, 220) || above >= below ? "above" : "below";
+		const available = side === "above" ? above : below;
+		root.dataset.side = side;
+		root.dataset.align = active.align === "end" ? "end" : "start";
+		root.style.maxHeight = `${available}px`;
+
+		const width = root.offsetWidth;
+		const preferredLeft = active.align === "end" ? anchorRect.right - width : anchorRect.left;
+		const left = Math.max(gutter, Math.min(preferredLeft, innerWidth - gutter - width));
+		root.style.left = `${Math.round(left)}px`;
+		const height = root.offsetHeight;
+		const preferredTop = side === "above" ? boundaryRect.top - POPOVER_GAP - height : boundaryRect.bottom + POPOVER_GAP;
+		const top = Math.max(gutter, Math.min(preferredTop, innerHeight - gutter - height));
+		root.style.top = `${Math.round(top)}px`;
+	};
 
 	#keydown = (event: KeyboardEvent) => {
 		const active = this.#active;

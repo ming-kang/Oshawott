@@ -102,8 +102,9 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		const effortAlignment = await until(() => {
 			const menu = control<HTMLElement>("#thinking-menu")!.getBoundingClientRect();
 			const button = document.querySelector<HTMLElement>("#thinking")!.getBoundingClientRect();
-			return Math.abs(menu.right - button.right) <= 1 && menu.bottom <= button.top
-				? `menu right=${menu.right}; button right=${button.right}` : undefined;
+			const gap = button.top - menu.bottom;
+			return Math.abs(menu.right - button.right) <= 1 && Math.abs(gap - 8) <= 1
+				? `menu right=${menu.right}; button right=${button.right}; gap=${gap}` : undefined;
 		});
 		step("Effort menu aligns with its button", true, effortAlignment);
 		click('#thinking-menu [data-level="high"]');

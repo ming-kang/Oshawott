@@ -50,7 +50,7 @@
 	align-items: center;
 	gap: 8px;
 	flex: none;
-	height: 48px;
+	height: 52px;
 	padding: 0 8px 0 12px;
 	border-bottom: 1px solid var(--line);
 }
@@ -175,23 +175,26 @@
 	align-items: center;
 }
 
-/* Hover actions overlay the row's right edge instead of reserving empty space; they stay focusable while hidden. */
+/* Hidden actions take no space; when revealed, the row yields real space instead of being covered. */
 .chat-item > .chat-actions {
-	position: absolute;
-	top: 50%;
-	right: 4px;
-	padding-left: 14px;
-	border-radius: 0 8px 8px 0;
-	background: linear-gradient(to right, transparent, var(--surface-2) 14px);
+	position: static;
+	flex: 0 0 0;
+	width: 0;
+	padding: 0;
+	overflow: hidden;
+	border-radius: 6px;
+	background: none;
 	opacity: 0;
 	pointer-events: none;
-	transform: translateY(-50%);
+	transform: none;
 	transition: opacity 0.12s;
 }
 
 .chat-item:hover > .chat-actions,
 .chat-item:focus-within > .chat-actions,
 .chat-item > .chat-actions:has([data-confirm]) {
+	flex-basis: auto;
+	width: auto;
 	opacity: 1;
 	pointer-events: auto;
 }

@@ -84,11 +84,15 @@ const transcript = new Transcript({
 	allowed: (site) => void send(t("tool.allowedMessage", site)),
 });
 $.scroller.append(transcript.element);
+const dock = h("footer", { class: "composer-wrap" }, approvals.element, queue.element, composer.element);
 document.body.append(
 	h("header", { class: "topbar" }, $.chats, $.title, $.newChat, $.files, $.settings),
 	h("main", { class: "main" }, $.banner, $.scroller, $.jump),
-	h("footer", { class: "composer-wrap" }, approvals.element, queue.element, composer.element),
+	dock,
 );
+new ResizeObserver(([entry]) => {
+	if (entry) document.documentElement.style.setProperty("--dock-height", `${entry.borderBoxSize[0]?.blockSize ?? dock.offsetHeight}px`);
+}).observe(dock);
 
 function renderHeader() {
 	const summary = session.chats.find((c) => c.id === session.id);
@@ -237,7 +241,7 @@ function openSendModeMenu() {
 		composer.focus();
 		void session.setBusyMode(mode).catch(toastError);
 	});
-	overlays.open(menu, { kind: "popover", anchor: composer.sendMode });
+	overlays.open(menu, { kind: "popover", anchor: composer.sendMode, boundary: dock, align: "end" });
 	menu.focus();
 }
 function openModelMenu() {
@@ -252,7 +256,7 @@ function openModelMenu() {
 			if (overlays.current === menu) overlays.close();
 		},
 	});
-	overlays.open(menu, { kind: "popover", anchor: composer.model });
+	overlays.open(menu, { kind: "popover", anchor: composer.model, boundary: dock });
 	menu.focus();
 }
 
@@ -270,6 +274,7 @@ function openThinkingMenu() {
 			if (overlays.current === menu) overlays.close();
 		},
 	});
+	// Effort is a local choice: stay attached to its button even where the menu overlaps the composer.
 	overlays.open(menu, { kind: "popover", anchor: composer.thinking, align: "end" });
 	menu.focus();
 }

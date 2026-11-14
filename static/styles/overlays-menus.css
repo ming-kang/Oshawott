@@ -1,6 +1,6 @@
-/* Explicit specificity keeps the component cap above the generic .popover below. */
+/* Explicit specificity keeps the component width above the generic .popover below. */
 .popover.send-mode-menu {
-	max-width: 340px;
+	width: min(340px, calc(100vw - 24px));
 	padding: 6px;
 }
 
@@ -31,6 +31,7 @@
 }
 
 .stop-confirm-menu {
+	width: min(320px, calc(100vw - 24px));
 	padding: 12px;
 }
 
@@ -49,26 +50,46 @@
 
 .popover {
 	position: fixed;
-	right: 12px;
-	left: 12px;
+	top: 0;
+	left: 0;
 	z-index: 30;
 	display: flex;
 	flex-direction: column;
-	max-width: 380px;
+	width: min(380px, calc(100vw - 24px));
 	max-height: min(420px, 60vh);
 	overflow: hidden;
 	border: 1px solid var(--line);
-	border-radius: 12px;
-	background: var(--surface);
+	border-radius: var(--radius-l);
+	background: var(--raised);
 	box-shadow: var(--shadow-pop);
 	transform-origin: bottom left;
-	animation: pop 0.16s var(--ease);
+	animation: pop-above 0.16s var(--ease);
 }
 
-@keyframes pop {
+.popover[data-side="below"] {
+	transform-origin: top left;
+	animation-name: pop-below;
+}
+
+.popover[data-align="end"] {
+	transform-origin: bottom right;
+}
+
+.popover[data-side="below"][data-align="end"] {
+	transform-origin: top right;
+}
+
+@keyframes pop-above {
 	from {
 		opacity: 0;
 		transform: translateY(6px) scale(0.98);
+	}
+}
+
+@keyframes pop-below {
+	from {
+		opacity: 0;
+		transform: translateY(-6px) scale(0.98);
 	}
 }
 

@@ -1,10 +1,13 @@
 .toast {
 	position: fixed;
-	bottom: 96px;
+	bottom: calc(var(--dock-height, 96px) + 12px);
 	left: 50%;
 	z-index: 40;
+	width: max-content;
 	max-width: calc(100% - 32px);
 	padding: 8px 14px;
+	overflow-wrap: anywhere;
+	text-align: center;
 	border-radius: 10px;
 	background: var(--text);
 	box-shadow: var(--shadow-pop);

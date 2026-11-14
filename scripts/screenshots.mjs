@@ -32,8 +32,12 @@ try {
 	const shoot = async (name, scheme) => {
 		await panel.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
 		await new Promise((r) => setTimeout(r, 350));
-		const width = await panel.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
-		if (width.document > width.viewport + 1) throw new Error(`${name}: horizontal layout overflow (${width.document} > ${width.viewport})`);
+		const layout = await panel.evaluate(() => ({
+			viewport: innerWidth, document: document.documentElement.scrollWidth,
+			height: innerHeight, dockBottom: document.querySelector(".composer-wrap").getBoundingClientRect().bottom,
+		}));
+		if (layout.document > layout.viewport + 1) throw new Error(`${name}: horizontal layout overflow (${layout.document} > ${layout.viewport})`);
+		if (layout.dockBottom > layout.height + 1) throw new Error(`${name}: composer dock leaves the viewport (${layout.dockBottom} > ${layout.height})`);
 		const path = join(out, `${name}-${scheme}.png`);
 		await panel.screenshot({ path });
 		shots.push(path);
@@ -70,10 +74,30 @@ try {
 
 	await panel.click("#model");
 	await until("the model menu", () => panel.$("#model-menu .menu-item"));
+	for (const [width, height] of [[280, 600], [400, 760], [640, 520]]) {
+		await panel.setViewport({ width, height, deviceScaleFactor: 2 });
+		await new Promise((resolve) => setTimeout(resolve, 80));
+		const layout = await panel.evaluate(() => {
+			const menu = document.querySelector("#model-menu").getBoundingClientRect();
+			const dock = document.querySelector(".composer-wrap").getBoundingClientRect();
+			const prompt = document.querySelector("#prompt").getBoundingClientRect();
+			return { viewport: innerWidth, document: document.documentElement.scrollWidth, menu: { top: menu.top, right: menu.right, bottom: menu.bottom, left: menu.left }, dockTop: dock.top, promptTop: prompt.top };
+		});
+		if (layout.document > width + 1 || layout.menu.left < 0 || layout.menu.right > width + 1 || layout.menu.top < 0 || layout.menu.bottom > height + 1
+			|| layout.menu.bottom > layout.dockTop || layout.menu.bottom > layout.promptTop) {
+			throw new Error(`model popover overlaps or overflows at ${width}x${height}: ${JSON.stringify(layout)}`);
+		}
+	}
+	await panel.setViewport({ width: 400, height: 760, deviceScaleFactor: 2 });
 	await both("models");
 	await panel.keyboard.press("Escape");
 	await panel.click("#thinking");
 	await until("the Effort menu", () => panel.$("#thinking-menu .menu-item"));
+	await until("the Effort menu anchored to its button", () => panel.evaluate(() => {
+		const menu = document.querySelector("#thinking-menu").getBoundingClientRect();
+		const button = document.querySelector("#thinking").getBoundingClientRect();
+		return Math.abs(menu.right - button.right) <= 1 && Math.abs(button.top - menu.bottom - 8) <= 1 || undefined;
+	}));
 	await both("thinking");
 	await panel.keyboard.press("Escape");
 
