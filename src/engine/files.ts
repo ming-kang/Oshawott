@@ -47,38 +47,6 @@ export interface FileBackend {
 	close?(): void;
 }
 
-export class MemoryFileBackend implements FileBackend {
-	readonly #trees = new Map<number, Map<string, { entry: Entry; data?: Uint8Array }>>();
-	#tail: Promise<unknown> = Promise.resolve();
-
-	transact<T>(chat: number, _mode: "readonly" | "readwrite", fn: (tx: FileTx) => Promise<T>): Promise<T> {
-		const run = async () => {
-			const staged = new Map(this.#trees.get(chat));
-			const result = await fn({
-				get: async (path) => staged.get(path)?.entry,
-				data: async (path) => staged.get(path)?.data?.slice(),
-				below: async (dir) => {
-					const prefix = dir === "/" ? "/" : `${dir}/`;
-					return [...staged].filter(([path]) => path.startsWith(prefix)).map(([path, { entry }]) => [path, entry] as const);
-				},
-				put: (path, entry, data) => void staged.set(path, { entry, ...(data ? { data: data.slice() } : {}) }),
-				delete: (path) => void staged.delete(path),
-			});
-			this.#trees.set(chat, staged);
-			return result;
-		};
-		const result = this.#tail.then(run);
-		this.#tail = result.catch(() => undefined);
-		return result;
-	}
-
-	clear(chat: number): Promise<void> {
-		const result = this.#tail.then(() => { this.#trees.delete(chat); });
-		this.#tail = result.catch(() => undefined);
-		return result;
-	}
-}
-
 export function resolvePath(cwd: string, path: string): string {
 	const parts: string[] = [];
 	for (const part of (path.startsWith("/") ? path : `${cwd}/${path}`).split("/")) {

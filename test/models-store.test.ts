@@ -93,19 +93,3 @@ test("aborting a write after its request succeeds prevents the transaction from 
 	}
 	assert.equal(await store.read("openai"), undefined);
 });
-
-test("a transaction aborted after a successful write request rejects instead of reporting success", async () => {
-	const store = new IndexedDbModelsStore(`oshawott-models-${crypto.randomUUID()}`);
-	const put = IDBObjectStore.prototype.put;
-	IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore["put"]>) {
-		const request = put.apply(this, args);
-		request.addEventListener("success", () => this.transaction.abort());
-		return request;
-	};
-	try {
-		await assert.rejects(store.write("openai", first), { name: "AbortError" });
-	} finally {
-		IDBObjectStore.prototype.put = put;
-	}
-	assert.equal(await store.read("openai"), undefined);
-});

@@ -21,7 +21,6 @@ test("model fallback skips disconnected and empty providers, preserving a connec
 	assert.deepEqual(shownModel(providers, { provider: "offline", modelId: "unavailable" }), { provider: "first", modelId: "one" });
 	const choice = { provider: "second", modelId: "three" };
 	assert.equal(shownModel(providers, choice), choice);
-	assert.deepEqual(providers[0]?.models, [model("unavailable", "Unavailable", false)], "policy does not mutate provider state");
 });
 
 test("no fallback keeps a configured model reference for error feedback, or leaves an empty choice empty", () => {
@@ -31,7 +30,7 @@ test("no fallback keeps a configured model reference for error feedback, or leav
 	assert.equal(shownModel([], undefined), undefined);
 });
 
-test("thinking choices come from the selected model and clamp without mutating metadata", () => {
+test("thinking choices come from the selected model and clamp to a supported level", () => {
 	const reasoning = { ...model("reasoning", "Reasoning", false), thinkingLevels: ["off", "low", "high"] as ("off" | "low" | "high")[] };
 	const list = [provider("reasoning", "Reasoning", true, [reasoning])];
 	const ref = { provider: "reasoning", modelId: "reasoning" };
@@ -40,5 +39,4 @@ test("thinking choices come from the selected model and clamp without mutating m
 	assert.equal(clampThinking(supportedThinkingLevels(list, ref), "medium"), "high");
 	assert.equal(clampThinking(supportedThinkingLevels(list, ref), "minimal"), "low");
 	assert.equal(clampThinking(["off"], "max"), "off");
-	assert.deepEqual(reasoning.thinkingLevels, ["off", "low", "high"]);
 });

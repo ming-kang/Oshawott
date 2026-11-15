@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "fake-indexeddb/auto";
 import { createEnvConformance, type EnvConformanceProvider } from "@earendil-works/pi-durable/testing";
+import { IndexedDbFileBackend } from "../../src/engine/files-idb.ts";
+
+/** A file backend on a fake IndexedDB database of its own; an Engine closes it, so a later one reopens it by `name`. */
+export const openFiles = (name = `oshawott-files-${crypto.randomUUID()}`) => IndexedDbFileBackend.open(name);
 
 /** Durable's `ExecutionEnv` cases a chat's files must pass; watching, commands and links are not part of them. */
 export function conformance(prefix: string, withEnv: EnvConformanceProvider): void {

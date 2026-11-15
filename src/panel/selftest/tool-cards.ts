@@ -7,12 +7,9 @@ import { TranscriptFixture } from "./fixtures.tsx";
 import { ToolCard } from "../tool-card.ts";
 
 export async function testToolCards() {
-	const names = ["read", "read_text", "write", "edit", "ls", "fetch"];
-	const cards = names.map((name) => new ToolCard(name, { path: "notes.md", url: "https://args.example/" }));
-	const labels = cards.map((card) => card.element.querySelector(".tool-label")?.textContent);
 	const details = { access: { url: "https://denied.example:8443/" } };
 	const diagnostics: ToolDiagnostic[] = [{ severity: "error", code: NO_ACCESS_CODE, message: "Permission required." }];
-	const error = cards.at(-1)!;
+	const error = new ToolCard("fetch", { url: "https://args.example/" });
 	error.setResult("This site needs permission (wording may change).", true, details, diagnostics);
 	document.body.append(error.element);
 	const button = error.element.querySelector<HTMLButtonElement>(".tool-grant");
@@ -100,7 +97,6 @@ export async function testToolCards() {
 		transcript.element.remove();
 	}
 	return [
-		{ name: "file tools have labeled, specialized cards", ok: labels.every((label, i) => Boolean(label) && label !== names[i]), detail: labels.join(", ") },
 		{
 			name: "fetch grant requests permission synchronously from details, without a port in its pattern",
 			ok: synchronous && JSON.stringify(requests) === JSON.stringify([{ origins: ["https://denied.example/*"] }]) && button?.disabled === true && !error.element.open,

@@ -4,8 +4,8 @@ import { createModels, fauxAssistantMessage, fauxProvider, InMemoryCredentialSto
 import { Chat, Workspace } from "../src/contracts/chat.ts";
 import type { Principal } from "../src/contracts/hosts.ts";
 import type { Engine } from "../src/engine/engine.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
 import { createHost } from "../src/lib/chord.ts";
+import { openFiles } from "./support/files.ts";
 import { until } from "./support/wait.ts";
 import { context, ignore, openEngine, persistentStorage, portPair, serveBrowser } from "./support/world.ts";
 
@@ -28,8 +28,8 @@ test("a run cut off by the Engine's eviction finishes on the next Engine, and th
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
 	const storage = persistentStorage();
-	const files = new MemoryFileBackend();
-	const open = () => openEngine(broker, { storage, models, files, pair: portPair });
+	const database = `oshawott-files-${crypto.randomUUID()}`;
+	const open = async () => openEngine(broker, { storage, models, files: await openFiles(database), pair: portPair });
 	const attachPanel = (engine: Engine) => {
 		const [panelEnd, engineEnd] = portPair();
 		engine.acceptPanel(engineEnd, "panel-1");

@@ -5,9 +5,10 @@ import type { ToolExecutionApi, ToolExecutionResult } from "@earendil-works/pi-d
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { NO_ACCESS } from "../src/contracts/browser.ts";
 import { BrokerHost, EngineHost, type Principal } from "../src/contracts/hosts.ts";
-import { ChatFiles, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
+import { ChatFiles, MAX_FILE_BYTES } from "../src/engine/files.ts";
 import { filesExtension, MAX_READ_CHARS, redirectGuesses } from "../src/engine/files-tools.ts";
 import { createHost, type Context } from "../src/lib/chord.ts";
+import { openFiles } from "./support/files.ts";
 import { context, fakeBrowser, linkTo, serveBrowser } from "./support/world.ts";
 
 type FetchCall = (args: Record<string, unknown>, ctx?: Context) => Promise<ToolExecutionResult>;
@@ -17,7 +18,7 @@ async function withFetch(network: typeof fetch, use: (call: FetchCall, files: Ch
 	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError: () => {} });
 	host.route(BrokerHost, { authorize: (principal) => principal.kind === "engine", resolve: async () => ({ link: linkTo(broker), principal: { kind: "broker" } }) }, context);
 	await host.load([], context);
-	const files = new ChatFiles(new MemoryFileBackend(), 1);
+	const files = new ChatFiles(await openFiles(), 1);
 	const tool = filesExtension({ host, fetch: network }).tools!.find((tool) => tool.name === "fetch")!;
 	const call: FetchCall = (args, ctx = context) => tool.execute(args, { env: files } as unknown as ToolExecutionApi, ctx);
 	try {
@@ -136,7 +137,7 @@ test("fetch rejects redirects instead of sending an unchecked request to a diffe
 
 test("read_text keeps full large single lines available to programs in bounded chunks", async () => {
 	const host = createHost<Principal>({ onError: () => {} });
-	const files = new ChatFiles(new MemoryFileBackend(), 1);
+	const files = new ChatFiles(await openFiles(), 1);
 	const tool = filesExtension({ host, fetch }).tools!.find((tool) => tool.name === "read_text")!;
 	const api = { env: files } as unknown as ToolExecutionApi;
 	const source = "x".repeat(MAX_READ_CHARS + 3) + "💧end";
@@ -159,7 +160,7 @@ test("read_text keeps full large single lines available to programs in bounded c
 
 test("read_text character chunks reassemble Unicode, strip BOM and support explicit encodings", async () => {
 	const host = createHost<Principal>({ onError: () => {} });
-	const files = new ChatFiles(new MemoryFileBackend(), 1);
+	const files = new ChatFiles(await openFiles(), 1);
 	const tool = filesExtension({ host, fetch }).tools!.find((tool) => tool.name === "read_text")!;
 	const api = { env: files } as unknown as ToolExecutionApi;
 	getOrThrow(await files.writeFile("unicode.txt", "\ufeffab💧汉字z", context));

@@ -6,7 +6,8 @@ import { type ExecutionEnv, getOrThrow } from "@earendil-works/pi-durable/env";
 import { obj } from "@earendil-works/pi-schema";
 import { WorkspaceDoc } from "../src/engine/docs.ts";
 import type { Engine } from "../src/engine/engine.ts";
-import { ChatFiles, type FileBackend, MemoryFileBackend } from "../src/engine/files.ts";
+import { ChatFiles, type FileBackend } from "../src/engine/files.ts";
+import { openFiles } from "./support/files.ts";
 import { connectPanel, context, openEngine, type Panel, persistentStorage, serveBrowser, useModel } from "./support/world.ts";
 
 type World = { engine(): Engine; panel(): Promise<Panel>; restart(): Promise<void>; faux: ReturnType<typeof fauxProvider> };
@@ -45,15 +46,16 @@ async function withWorld(files: FileBackend, use: (world: World) => Promise<void
 
 for (const when of ["before", "after"] as const) {
 	test(`file deletion resumes after a failure ${when} clearing, leaving other chats intact`, async () => {
-		class FailingBackend extends MemoryFileBackend {
-			fail = true;
-			override async clear(chat: number) {
-				if (when === "after") await super.clear(chat);
-				if (this.fail) { this.fail = false; throw new Error("simulated interruption"); }
-				if (when === "before") await super.clear(chat);
-			}
-		}
-		const files = new FailingBackend();
+		const inner = await openFiles();
+		let fail = true;
+		const files: FileBackend = {
+			transact: (chat, mode, fn) => inner.transact(chat, mode, fn),
+			async clear(chat) {
+				if (when === "after") await inner.clear(chat);
+				if (fail) { fail = false; throw new Error("simulated interruption"); }
+				if (when === "before") await inner.clear(chat);
+			},
+		};
 		await withWorld(files, async (world) => {
 			const panel = await world.panel();
 			const id = await panel.workspace.createChat({}, context);
@@ -73,7 +75,7 @@ for (const when of ["before", "after"] as const) {
 }
 
 test("deleted chats cannot submit or read files through old/new references or write through an old environment", async () => {
-	const files = new MemoryFileBackend();
+	const files = await openFiles();
 	let captured: ExecutionEnv | undefined;
 	const capture = defineExtension({ name: "capture", tools: [defineTool({
 		name: "capture_env", description: "test", parameters: obj({}),
@@ -103,7 +105,7 @@ test("deleted chats cannot submit or read files through old/new references or wr
 });
 
 test("deleting a running tool cancels it and rejects a late write through its captured environment", async () => {
-	const files = new MemoryFileBackend();
+	const files = await openFiles();
 	const started = Promise.withResolvers<void>();
 	const attempted = Promise.withResolvers<{ ok: boolean; code?: string }>();
 	const extension = defineExtension({ name: "wait", tools: [defineTool({
@@ -133,7 +135,7 @@ test("deleting a running tool cancels it and rejects a late write through its ca
 });
 
 test("a send with an old lookup is rejected on the admission commit after deletion", async () => {
-	const files = new MemoryFileBackend();
+	const files = await openFiles();
 	await withWorld(files, async (world) => {
 		const panel = await world.panel();
 		const id = await panel.workspace.createChat({}, context);
@@ -164,12 +166,13 @@ test("a send with an old lookup is rejected on the admission commit after deleti
 });
 
 test("another panel cannot admit input while file deletion is pending", async () => {
-	class DelayedBackend extends MemoryFileBackend {
-		started = Promise.withResolvers<void>();
-		proceed = Promise.withResolvers<void>();
-		override async clear(id: number) { this.started.resolve(); await this.proceed.promise; await super.clear(id); }
-	}
-	const files = new DelayedBackend();
+	const inner = await openFiles();
+	const started = Promise.withResolvers<void>();
+	const proceed = Promise.withResolvers<void>();
+	const files: FileBackend = {
+		transact: (chat, mode, fn) => inner.transact(chat, mode, fn),
+		async clear(chat) { started.resolve(); await proceed.promise; await inner.clear(chat); },
+	};
 	await withWorld(files, async (world) => {
 		const first = await world.panel();
 		const id = await first.workspace.createChat({}, context);
@@ -177,12 +180,12 @@ test("another panel cannot admit input while file deletion is pending", async ()
 		const held = await second.chat(id);
 		const deleting = first.workspace.deleteChat({ id }, context);
 		try {
-			await files.started.promise;
+			await started.promise;
 			assert.deepEqual((await world.engine().harness.snapshot(WorkspaceDoc, context))!.pendingFileDeletes, [id]);
 			await assert.rejects(held.send({ text: "Race.", requestId: "race" }, context), /No chat/);
 			await assert.rejects(held.files(context), /No chat/);
 		} finally {
-			files.proceed.resolve();
+			proceed.resolve();
 			await deleting;
 		}
 		assert.deepEqual(getOrThrow(await new ChatFiles(files, id).workspaceFiles(context)), []);

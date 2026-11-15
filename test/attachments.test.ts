@@ -5,8 +5,8 @@ import {
 	MAX_CHAT_FILE_BYTES, sniffImage, USER_ENTRY, userInput, validateAttachment, validateAttachmentBatch,
 } from "../src/lib/attachments.ts";
 import { inputForSend, inputForUpdate, type QueuedInput, safeAttachmentPath, storeAttachments } from "../src/engine/attachments.ts";
-import { MemoryFileBackend } from "../src/engine/files.ts";
 import { fromBase64 } from "../src/lib/base64.ts";
+import { openFiles } from "./support/files.ts";
 
 const PNG = fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 const encoder = new TextEncoder();
@@ -111,7 +111,7 @@ test("queued edits preserve image blocks and metadata, and removals are explicit
 });
 
 test("attachment storage enforces message quotas and isolates chats", async () => {
-	const files = new MemoryFileBackend();
+	const files = await openFiles();
 	const big = new Uint8Array(5 * 1024 * 1024);
 	const inputs = Array.from({ length: 8 }, (_, index) => input(`file-${index}`, `${index}.txt`, "text/plain", big));
 	await assert.rejects(storeAttachments(files, 1, inputs, () => 1, "batch"), /24 MiB/);

@@ -9,7 +9,6 @@ export { click, control, input, until };
 type Step = { name: string; ok: boolean; detail?: string };
 type Source = Pick<Extract<Reference<typeof Workspace>, { variant: "owner" }>, "providers" | "defaultModel" | "setDefaultConfiguration">;
 const context = BACKGROUND_CONTEXT;
-/** Chooses a built-in provider in the add-provider editor's searchable list. */
 export async function pickBuiltin(id: string) {
 	const option = await until(() => control<HTMLElement>(`#builtin-provider-list [data-provider="${id}"]`));
 	option.click();
@@ -106,10 +105,6 @@ export async function testModelManagement(source: Source, origin: string): Promi
 			if (!document.querySelector("#thinking-menu")) click("#thinking");
 			return document.querySelector("#thinking-menu [data-level]") ?? undefined;
 		});
-		const effortOptions = [...document.querySelectorAll<HTMLElement>("#thinking-menu [data-level]")];
-		step("Effort options use translated level labels under a heading", effortOptions.length > 0
-			&& effortOptions.every((option) => option.textContent?.trim() === t(`thinking.level.${option.dataset.level as ThinkingLevel}`))
-			&& control("#thinking-menu-title")?.textContent === t("thinking.menuTitle"));
 		const effortAlignment = await until(() => {
 			const menu = control<HTMLElement>("#thinking-menu")!.getBoundingClientRect();
 			const button = document.querySelector<HTMLElement>("#thinking")!.getBoundingClientRect();

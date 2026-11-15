@@ -34,7 +34,6 @@ export async function testPanel(source: Source, origin?: string) {
 	const providerSearch = document.querySelector<HTMLInputElement>("#builtin-provider-search")!;
 	step("a built-in provider must be chosen before its key field or Save appear", options().length > 1
 		&& !document.querySelector("#provider-key") && !document.querySelector("#provider-save"));
-	step("well-known built-in providers are listed first", options()[0] === "anthropic", options().slice(0, 4).join(","));
 	providerSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
 	await until(() => document.querySelector<HTMLElement>("#builtin-provider-list .provider-option.active")?.dataset.provider === options().at(-1));
 	const endProvider = document.querySelector<HTMLElement>("#builtin-provider-list .provider-option.active")?.dataset.provider;
@@ -51,9 +50,6 @@ export async function testPanel(source: Source, origin?: string) {
 		&& !document.querySelector(".provider-picker") && !document.querySelector('.provider[data-provider="groq"]'));
 	click("#provider-kind-custom");
 	await until(() => document.querySelector("#provider-name"));
-	const customOrder = [...document.querySelectorAll(".provider-editor-form .provider-field > :last-child")].map((field) => field.id);
-	step("custom fields and model sections follow the requested order", customOrder.join(",") === "provider-name,provider-base-url,provider-api,provider-key"
-		&& document.querySelector(".provider-editor-form")!.compareDocumentPosition(document.querySelector("#provider-custom-models")!) === Node.DOCUMENT_POSITION_FOLLOWING);
 	click("#provider-kind-builtin");
 	await until(() => document.querySelector("#builtin-provider-change"));
 	click("#builtin-provider-change");

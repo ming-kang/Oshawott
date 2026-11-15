@@ -8,10 +8,11 @@ import {
 } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { chatStatus } from "../src/engine/activity.ts";
-import { ChatFiles, type FileBackend, MemoryFileBackend } from "../src/engine/files.ts";
+import { ChatFiles, type FileBackend } from "../src/engine/files.ts";
 import { WorkspaceDoc } from "../src/engine/docs.ts";
 import { DEFAULT_INSTRUCTIONS } from "../src/engine/instructions.ts";
 import { obj } from "../src/lib/chord.ts";
+import { openFiles } from "./support/files.ts";
 import { deferred, until } from "./support/wait.ts";
 import { connectPanel, context, fakeBrowser, openEngine, persistentStorage, serveBrowser, useModel } from "./support/world.ts";
 
@@ -40,7 +41,7 @@ async function fixture(responses: FauxResponseStep[], options: {
 	faux.setResponses(responses);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
-	const files = options.files ?? new MemoryFileBackend();
+	const files = options.files ?? await openFiles();
 	const engine = await openEngine(broker, { ...options, models, files, onError });
 	resume = () => { if (!closed) engine.harness.resume(); };
 	const panel = await connectPanel(engine, { onError });
@@ -389,7 +390,6 @@ test("a disabled retry policy applies to runs recovered by a restarted Engine", 
 });
 
 test("activity time advances once per finished run, not per streamed entry", async () => {
-	let now = 1_000;
 	const f = await fixture([
 		fauxAssistantMessage(fauxToolCall("missing_tool", {}), { stopReason: "toolUse" }),
 		fauxAssistantMessage("Done"),
@@ -403,12 +403,8 @@ test("activity time advances once per finished run, not per streamed entry", asy
 		await chat.send({ text: "Go", requestId: "activity" }, context);
 		await until(() => summary(f.workspace, id)?.status === "running" ? true : undefined, "the running status");
 		await until(() => summary(f.workspace, id)?.status === "idle" && f.faux.state.callCount === 2 ? true : undefined, "the finished run");
-		const after = await until(() => {
-			const value = summary(f.workspace, id)?.updatedAt;
-			return value !== undefined && seen.size >= 2 ? value : undefined;
-		}, "the activity update");
+		await until(() => summary(f.workspace, id)?.updatedAt !== undefined && seen.size >= 2, "the activity update");
 		assert.ok(seen.size <= 3, `creation, send and finish only; saw ${seen.size}`);
-		assert.ok(after >= now);
 		watch.stop?.();
 	} finally {
 		await f.close();

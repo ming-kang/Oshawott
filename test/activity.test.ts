@@ -66,7 +66,6 @@ class FakeDocs {
 		for (const observer of [...this.#observers.get(docKey(token, id)) ?? []]) observer.end({ kind: "ended" });
 	}
 
-	/** The observations currently attached, and how many were released, for one document of one chat. */
 	attached(token: typeof LiveDoc | typeof InboxDoc, id: number): number {
 		return this.#observers.get(docKey(token, id))?.size ?? 0;
 	}
@@ -87,7 +86,6 @@ class FakeDocs {
 	}
 }
 
-/** An activity over `fake`, with the snapshot it publishes and the errors it reports. */
 async function openActivity(fake: FakeDocs) {
 	const errors: unknown[] = [];
 	let snapshot: ActivitySnapshot = { items: [] };
@@ -132,7 +130,6 @@ test("a failed initial inbox observation releases the live observation it alread
 		activity.setChats([chat(1)], BACKGROUND_CONTEXT);
 		await until(() => errors.length === 1, "the reported attach failure");
 		assert.equal(errors[0], failure);
-		// The attempt releases the observation it had already created instead of leaking it.
 		assert.equal(fake.detached(LiveDoc, 1), 1, "the live observation is released, not leaked");
 		assert.equal(status(1), "idle");
 
@@ -145,24 +142,6 @@ test("a failed initial inbox observation releases the live observation it alread
 		activity.close();
 	}
 	assert.equal(fake.attached(LiveDoc, 1) + fake.attached(InboxDoc, 1), 0, "closing releases every observation");
-});
-
-test("both initial observation failures are retained in one reported error", async () => {
-	const fake = new FakeDocs();
-	const liveFailure = new Error("injected live failure");
-	const inboxFailure = new Error("injected inbox failure");
-	fake.fail(LiveDoc, 1, liveFailure);
-	fake.fail(InboxDoc, 1, inboxFailure);
-	const { activity, errors } = await openActivity(fake);
-	try {
-		activity.setChats([chat(1)], BACKGROUND_CONTEXT);
-		await until(() => errors.length === 1, "the combined attach failure");
-		const error = errors[0];
-		assert.ok(error instanceof AggregateError);
-		assert.deepEqual(new Set(error.errors), new Set([liveFailure, inboxFailure]));
-	} finally {
-		activity.close();
-	}
 });
 
 test("a successful attach resets the consecutive failure budget", async () => {

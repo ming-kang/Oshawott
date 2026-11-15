@@ -5,19 +5,17 @@ import { ToolResultEntry } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { InlineCodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codemode";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { ChatFiles, type FileTx, MAX_FILE_BYTES, MemoryFileBackend } from "../src/engine/files.ts";
+import { ChatFiles, type FileBackend, MAX_FILE_BYTES } from "../src/engine/files.ts";
 import { NO_ACCESS } from "../src/contracts/browser.ts";
 import { withAbortSignal } from "../src/lib/chord.ts";
-import { conformance } from "./support/files.ts";
+import { openFiles } from "./support/files.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, fakeBrowser, openEngine, portPair, serveBrowser, useModel } from "./support/world.ts";
 
 const decoder = new TextDecoder();
 
-conformance("conformance", (use) => use(new ChatFiles(new MemoryFileBackend(), 1)));
-
 test("files: parents are created, directories move with their contents, and the working directory stays", async () => {
-	const files = new ChatFiles(new MemoryFileBackend(), 1);
+	const files = new ChatFiles(await openFiles(), 1);
 	getOrThrow(await files.writeFile("data/raw/a.csv", "x,y\n1,2\n", context));
 	getOrThrow(await files.appendFile("data/raw/a.csv", "3,4\n", context));
 	assert.equal(getOrThrow(await files.readTextFile("/workspace/data/raw/a.csv", context)), "x,y\n1,2\n3,4\n");
@@ -44,7 +42,7 @@ test("files: parents are created, directories move with their contents, and the 
 });
 
 test("files: each chat has its own tree, and clearing a chat removes only its files", async () => {
-	const backend = new MemoryFileBackend();
+	const backend = await openFiles();
 	const one = new ChatFiles(backend, 1);
 	const two = new ChatFiles(backend, 2);
 	getOrThrow(await one.writeFile("notes.md", "one", context));
@@ -57,7 +55,7 @@ test("files: each chat has its own tree, and clearing a chat removes only its fi
 });
 
 test("the virtual workspace is present in root directory and recursive listings", async () => {
-	const files = new ChatFiles(new MemoryFileBackend(), 1);
+	const files = new ChatFiles(await openFiles(), 1);
 	assert.deepEqual(getOrThrow(await files.listDir("/", context)).map((entry) => entry.path), ["/workspace"]);
 	getOrThrow(await files.writeFile("notes.txt", "x", context));
 	assert.deepEqual(getOrThrow(await files.listFiles("/", undefined, context)).entries, [
@@ -66,7 +64,7 @@ test("the virtual workspace is present in root directory and recursive listings"
 });
 
 test("joinPath preserves relative parent traversal and normalizes absolute paths", async () => {
-	const files = new ChatFiles(new MemoryFileBackend(), 1);
+	const files = new ChatFiles(await openFiles(), 1);
 	for (const [parts, expected] of [
 		[["..", "a.txt"], "../a.txt"], [["a", "..", "..", "b"], "../b"],
 		[["/workspace", "..", "tmp"], "/tmp"], [["/", "..", ".."], "/"], [[], "."],
@@ -74,15 +72,15 @@ test("joinPath preserves relative parent traversal and normalizes absolute paths
 });
 
 test("listFiles enforces its deadline after metadata reads and observes cancellation", async () => {
-	class SlowBackend extends MemoryFileBackend {
-		override transact<T>(chat: number, mode: "readonly" | "readwrite", fn: (tx: FileTx) => Promise<T>) {
-			return super.transact(chat, mode, (tx) => fn({ ...tx, below: async (dir) => {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-				return tx.below(dir);
-			} }));
-		}
-	}
-	const files = new ChatFiles(new SlowBackend(), 1);
+	const backend = await openFiles();
+	const slow: FileBackend = {
+		transact: async (chat, mode, fn) => {
+			if (mode === "readonly") await new Promise((resolve) => setTimeout(resolve, 10));
+			return backend.transact(chat, mode, fn);
+		},
+		clear: (chat) => backend.clear(chat),
+	};
+	const files = new ChatFiles(slow, 1);
 	getOrThrow(await files.writeFile("a.txt", "x", context));
 	const listing = getOrThrow(await files.listFiles(".", { timeoutMs: 1 }, context));
 	assert.deepEqual(listing, { entries: [], truncated: true });
@@ -130,7 +128,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
 
-	const backend = new MemoryFileBackend();
+	const backend = await openFiles();
 	const engine = await openEngine(broker, {
 		models, files: backend, fetch: network, pair: portPair, onError,
 		extensions: [createCodemodeExtension({ sandbox: new InlineCodemodeSandbox({ wasm: loadQuickJSWasm() }), models: false })],

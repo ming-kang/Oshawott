@@ -6,8 +6,9 @@ import { USER_ENTRY, userInput } from "../src/lib/attachments.ts";
 import { fromBase64, toBase64 } from "../src/lib/base64.ts";
 import { completeAttachmentDeletes } from "../src/engine/attachments.ts";
 import { AttachmentDeletesDoc } from "../src/engine/docs.ts";
-import { type FileBackend, type FileTx, MemoryFileBackend } from "../src/engine/files.ts";
+import type { FileBackend, FileTx } from "../src/engine/files.ts";
 import { obj } from "../src/lib/chord.ts";
+import { openFiles } from "./support/files.ts";
 import { deferred, until } from "./support/wait.ts";
 import { type ChatRef, connectPanel, context, fakeBrowser, openEngine, persistentStorage, portPair, serveBrowser, useModel } from "./support/world.ts";
 
@@ -316,8 +317,9 @@ test("queued attachment edits preserve images, honor removals and clean cancelle
 });
 
 class DeleteFailureBackend implements FileBackend {
-	readonly inner = new MemoryFileBackend();
+	readonly inner: FileBackend;
 	readonly failures = new Set<string>();
+	constructor(inner: FileBackend) { this.inner = inner; }
 	transact<T>(chat: number, mode: "readonly" | "readwrite", fn: (tx: FileTx) => Promise<T>): Promise<T> {
 		return this.inner.transact(chat, mode, (tx) => fn({
 			...tx,
@@ -331,7 +333,7 @@ class DeleteFailureBackend implements FileBackend {
 }
 
 test("post-commit cleanup failure preserves new files and retries only the removed paths", async () => {
-	const files = new DeleteFailureBackend();
+	const files = new DeleteFailureBackend(await openFiles());
 	const f = await fixture([
 		fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }),
 		fauxAssistantMessage("unused"),

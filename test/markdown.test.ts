@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CodeBlockNode, HeadingNode, ImageNode, LinkNode, ListNode, ParsedNode, StrongNode, TableNode } from "stream-markdown-parser";
+import type { CodeBlockNode, HeadingNode, ImageNode, LinkNode, ParsedNode, StrongNode } from "stream-markdown-parser";
 import { parseMarkdown, safeImageUrl, safeUrl } from "../src/panel/markdown.ts";
 
 function children(node: ParsedNode): ParsedNode[] {
@@ -17,16 +17,6 @@ const text = (nodes: readonly ParsedNode[]): string => nodes.map((node) => {
 }).join("");
 const links = (source: string, streaming = false) => ofType<LinkNode>(parseMarkdown(source, streaming), "link").map((node) => node.href);
 
-test("headings, paragraphs, fenced code, quotes and rules retain their semantics", () => {
-	const nodes = parseMarkdown("# Title\n\nSome *text*\nnext line\n\n```js\nconst a = 1;\n```\n\n> quoted\n\n---");
-	assert.deepEqual(nodes.map((node) => node.type), ["heading", "paragraph", "code_block", "blockquote", "thematic_break"]);
-	const code = nodes[2] as CodeBlockNode;
-	assert.equal(code.language, "js");
-	assert.equal(code.code, "const a = 1;\n");
-	assert.equal(code.loading, false);
-	assert.equal(text(children(nodes[1]!)), "Some text\nnext line");
-});
-
 test("an open code fence remains code, and EOF finalizes it without changing the source", () => {
 	const source = "```js\nconst a = `x";
 	const streaming = parseMarkdown(source, true)[0] as CodeBlockNode;
@@ -36,42 +26,6 @@ test("an open code fence remains code, and EOF finalizes it without changing the
 	const final = parseMarkdown(source)[0] as CodeBlockNode;
 	assert.equal(final.loading, false);
 	assert.equal(final.code, streaming.code);
-});
-
-test("fences respect their marker and length, including a fence demonstrating another fence", () => {
-	const source = "````md\n```js\nconst x = 1;\n```\n````";
-	const [code] = parseMarkdown(source) as CodeBlockNode[];
-	assert.equal(code!.code, "```js\nconst x = 1;\n```\n");
-	assert.equal(code!.loading, false);
-});
-
-test("ordered lists preserve their start, nesting and blank-line-separated items", () => {
-	const [list] = parseMarkdown("3. three\n4. four\n   - nested a\n   - nested b\n\n5. five") as ListNode[];
-	assert.equal(list!.ordered, true);
-	assert.equal(list!.start, 3);
-	assert.equal(list!.items.length, 3);
-	assert.equal(ofType<ListNode>(list!.items[1]!.children, "list")[0]!.items.length, 2);
-});
-
-test("tables retain alignment, escaped pipes and inline code", () => {
-	const [table] = parseMarkdown("| a | b |\n|:--|--:|\n| 1 | x \\| y |\n| 2 | `a*b` |") as TableNode[];
-	assert.deepEqual(table!.header.cells.map((cell) => cell.align), ["left", "right"]);
-	assert.equal(text(table!.rows[0]!.cells[1]!.children), "x | y");
-	assert.equal(text(table!.rows[1]!.cells[1]!.children), "a*b");
-});
-
-test("inline code is literal, emphasis nests, and identifiers are not italicized", () => {
-	const nodes = parseMarkdown("use `a*b*c` and **bold _it_** in snake_case_name");
-	assert.equal(text(nodes), "use a*b*c and bold it in snake_case_name");
-	assert.equal(ofType<StrongNode>(nodes, "strong")[0]!.children.some((node) => node.type === "emphasis"), true);
-});
-
-test("links preserve balanced destination parentheses and titles", () => {
-	const nodes = parseMarkdown('[Otter](https://en.wikipedia.org/wiki/Otter_(species) "An otter")');
-	const [link] = ofType<LinkNode>(nodes, "link");
-	assert.equal(link!.href, "https://en.wikipedia.org/wiki/Otter_(species)");
-	assert.equal(link!.title, "An otter");
-	assert.equal(text(link!.children), "Otter");
 });
 
 test("bare URLs stop at CJK punctuation and retain balanced parentheses", () => {

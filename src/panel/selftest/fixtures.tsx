@@ -58,12 +58,6 @@ export class TranscriptFixture {
 		await nextTick();
 	}
 
-	async clear() {
-		this.#transcript.value = null;
-		this.#status.value = "new";
-		await nextTick();
-	}
-
 	dispose() { this.#app.unmount(); }
 }
 

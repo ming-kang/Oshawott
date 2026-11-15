@@ -7,12 +7,12 @@ import { Chat, Workspace } from "../../src/contracts/chat.ts";
 import { BrokerHost, type Principal, TabHost } from "../../src/contracts/hosts.ts";
 import { Page } from "../../src/contracts/page.ts";
 import { type Engine, type EngineOptions, startEngine } from "../../src/engine/engine.ts";
-import { MemoryFileBackend } from "../../src/engine/files.ts";
 import {
 	BACKGROUND_CONTEXT, createHost, defineFacet, type Host, type Implementation, type Link, memoryLinkPair, type Reference,
 } from "../../src/lib/chord.ts";
 import { portLink } from "../../src/link/port-link.ts";
 import { fakePortPair } from "./fake-port.ts";
+import { openFiles } from "./files.ts";
 
 export const context = BACKGROUND_CONTEXT;
 export const ignore = () => {};
@@ -37,7 +37,6 @@ export function fakeBrowser(overrides: Partial<BrowserMembers> = {}): BrowserMem
 	};
 }
 
-/** A Broker host serving `members` as the Engine's `Browser`. */
 export async function serveBrowser(members = fakeBrowser(), onError: OnError = ignore): Promise<Host<Principal>> {
 	const broker = createHost<Principal>({ address: BrokerHost(), principal: { kind: "broker" }, onError });
 	await broker.load([{ name: "broker", facet: defineFacet<Principal>((host) => {
@@ -46,7 +45,6 @@ export async function serveBrowser(members = fakeBrowser(), onError: OnError = i
 	return broker;
 }
 
-/** A page host of `tabId` serving `members` as the Engine's `Page`. */
 export async function servePage(tabId: number, members: PageMembers, onError: OnError = ignore): Promise<Host<Principal>> {
 	const page = createHost<Principal>({ address: TabHost({ tabId }), principal: { kind: "tab", tabId }, onError });
 	await page.load([{ name: "page", facet: defineFacet<Principal>((host) => {
@@ -62,7 +60,6 @@ export const portPair: LinkPair = () => {
 	return [portLink(a), portLink(b)];
 };
 
-/** The Engine's end of a new link to `host`, which accepts the other end as the Engine. */
 export function linkTo(host: Host<Principal>, pair: LinkPair = memoryLinkPair): Link {
 	const [engineEnd, otherEnd] = pair();
 	host.accept(otherEnd, { principal: { kind: "engine" } }, context);
@@ -80,11 +77,7 @@ export function persistentStorage(): MemoryStorage {
 	});
 }
 
-/**
- * An Engine linked to `broker`, on memory storage, files and credentials unless `options` give them. It has no tab
- * route unless `options.tab` gives one; `pair` makes its links to the Broker.
- */
-export function openEngine(broker: Host<Principal>, options: Partial<EngineOptions> & { pair?: LinkPair } = {}): Promise<Engine> {
+export async function openEngine(broker: Host<Principal>, options: Partial<EngineOptions> & { pair?: LinkPair } = {}): Promise<Engine> {
 	const { pair, ...given } = options;
 	const credentials = given.credentials ?? new InMemoryCredentialStore();
 	return startEngine({
@@ -92,7 +85,7 @@ export function openEngine(broker: Host<Principal>, options: Partial<EngineOptio
 		credentials,
 		storage: given.storage ?? new MemoryStorage(),
 		models: given.models ?? createModels({ credentials }),
-		files: given.files ?? new MemoryFileBackend(),
+		files: given.files ?? await openFiles(),
 		onError: given.onError ?? ignore,
 		broker: given.broker ?? (async () => linkTo(broker, pair)),
 		tab: given.tab ?? (async () => { throw new Error("no tabs here"); }),
@@ -107,7 +100,6 @@ export interface Panel {
 	close(): Promise<void>;
 }
 
-/** A panel connected to `engine`, holding its Workspace. */
 export async function connectPanel(engine: Engine, options: { pair?: LinkPair; onError?: OnError } = {}): Promise<Panel> {
 	const host = createHost<Principal>({ onError: options.onError ?? ignore });
 	const [panelEnd, engineEnd] = (options.pair ?? memoryLinkPair)();
@@ -133,7 +125,6 @@ export async function connectPanel(engine: Engine, options: { pair?: LinkPair; o
 	};
 }
 
-/** Makes `faux`'s model the default for new chats. */
 export async function useModel(workspace: WorkspaceRef, faux: ReturnType<typeof fauxProvider>): Promise<void> {
 	const model = faux.getModel();
 	await workspace.setDefaultConfiguration({ model: { provider: model.provider, modelId: model.id } }, context);
