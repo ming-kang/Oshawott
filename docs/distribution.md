@@ -62,9 +62,8 @@ web-ext 参数接在 `--` 后，例如 `npm run sign:firefox -- --api-proxy=http
 ### 排错
 
 - **`Forbidden`**：凭据正确时，先到开发者中心接受新的条款
-- **版本已存在**：提高版本号
-- **等待超时**：web-ext 默认最多等校验 5 分钟、审核 15 分钟（`--approval-timeout` 可调），超时后 AMO 仍会继续审核；先等审核完成，不要重新提交同一版本
-- **取回签名文件**：等待超时或删除了 `dist/signed/` 时，到版本管理页下载；也可以用 `.env` 的凭据生成 JWT，带请求头 `Authorization: JWT <token>` 请求 `https://addons.mozilla.org/api/v5/addons/addon/oshawott@astralyn/versions/v<版本>/`，再带同样的请求头下载返回的 `file.url`
+- **签名中途失败**（等待审核超时、AMO 持续报错等）：重跑 Release 工作流的失败任务，或在本地重新运行 `npm run sign:firefox`；AMO 已有这个版本时不会重复提交，只等待审核并取回签名文件
+- **审核被拒**：到开发者中心查看原因，修复后提高版本号
 
 ### 说明
 
