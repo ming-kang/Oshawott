@@ -146,7 +146,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 			"form of the same address is followed; any other redirect is refused: request the final URL directly.",
 		parameters: obj({
 			url: str({ description: "An http or https URL." }),
-			method: opt(oneOf(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])),
+			method: opt({ type: "string", ...oneOf(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]) }),
 			headers: opt(map(str())),
 			body: opt(str({ description: "Request body, as text." })),
 			saveTo: opt(str({ description: "File to save the whole response body to (relative or absolute)." })),

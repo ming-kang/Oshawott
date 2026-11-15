@@ -39,8 +39,12 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 
 	const tabResolves: number[] = [];
 	const faux = fauxProvider({ models: [{ id: "faux-1", name: "Faux" }] });
+	let tools: { name: string; parameters: unknown }[] = [];
 	faux.setResponses([
-		fauxAssistantMessage(fauxToolCall("page_snapshot", {}), { stopReason: "toolUse" }),
+		(request) => {
+			tools = request.messages.flatMap((message) => (message.role === "system" ? message.toolsAdded ?? [] : []));
+			return fauxAssistantMessage(fauxToolCall("page_snapshot", {}), { stopReason: "toolUse" });
+		},
 		fauxAssistantMessage("The page is Example Domain."),
 	]);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
@@ -77,6 +81,9 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	}, "the answer in the panel's view");
 
 	assert.equal(answer, "The page is Example Domain.");
+	// Strict providers (Moonshot) refuse a tool whose parameter schema has a node without `type`.
+	assert.ok(tools.some((tool) => tool.name === "fetch"), "the files tools reach the model");
+	assert.deepEqual(tools.flatMap((tool) => untypedNodes(tool.parameters, tool.name)), []);
 	assert.equal(snapshots.length, 1, "the page tool ran once, on the page host");
 	assert.deepEqual(tabResolves, [7], "the Engine resolved the route to tab 7 once");
 	const kinds = (chat.view.value?.entries ?? []).map((entry) => (entry as { kind: string }).kind);
@@ -119,3 +126,18 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 		[],
 	);
 });
+
+function untypedNodes(schema: unknown, path: string): string[] {
+	if (typeof schema !== "object" || schema === null) return [];
+	const node = schema as Record<string, unknown>;
+	const branches = (node.anyOf ?? node.oneOf ?? node.allOf) as unknown[] | undefined;
+	if (branches) return branches.flatMap((branch, index) => untypedNodes(branch, `${path}|${index}`));
+	const own = node.type === undefined ? [path] : [];
+	const children = [
+		...Object.entries((node.properties ?? {}) as Record<string, unknown>).map(([key, child]) => [`${path}.${key}`, child] as const),
+		...Object.values((node.patternProperties ?? {}) as Record<string, unknown>).map((child) => [`${path}{}`, child] as const),
+		...(typeof node.additionalProperties === "object" ? [[`${path}{}`, node.additionalProperties] as const] : []),
+		...(node.items === undefined ? [] : [[`${path}[]`, node.items] as const]),
+	];
+	return [...own, ...children.flatMap(([childPath, child]) => untypedNodes(child, childPath))];
+}
