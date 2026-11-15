@@ -10,7 +10,6 @@ import { Published } from "./published.ts";
 export type ChatActivity = { id: number; status: ChatStatus };
 export type ActivitySnapshot = { items: ChatActivity[] };
 type Docs = { live?: LiveState; inbox?: InboxState };
-/** The observations one chat is attached with. */
 type Attached = { live?: Observation<Readonly<LiveState>>; inbox?: Observation<Readonly<InboxState>> };
 
 /** A conversation whose observation keeps failing is shown idle instead of reattaching forever. */
@@ -108,7 +107,6 @@ export class ConversationActivity {
 		this.#docs.delete(id);
 	}
 
-	/** Release an attempt's own observations, and forget the chat only while that attempt still owns its records. */
 	#release(id: number, attached: Attached) {
 		attached.live?.detach();
 		attached.inbox?.detach();
@@ -197,7 +195,6 @@ export class ConversationActivity {
 		return observation;
 	}
 
-	/** Count a chat's failed attachment against the retry bound, and reattach within it. */
 	#retry(id: number) {
 		this.#failures.set(id, (this.#failures.get(id) ?? 0) + 1);
 		this.#queueSync();

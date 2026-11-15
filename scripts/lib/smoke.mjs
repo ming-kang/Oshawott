@@ -1,4 +1,3 @@
-/** Polls the async `read` until it resolves to a truthy value; a rejection counts as not there yet. */
 export async function until(what, read, ms = 15_000) {
 	const deadline = Date.now() + ms;
 	for (;;) {
@@ -9,7 +8,6 @@ export async function until(what, read, ms = 15_000) {
 	}
 }
 
-/** A smoke run's checklist: `step` prints each result, `finish` fails the process if any step failed. */
 export function checklist() {
 	const failures = [];
 	return {

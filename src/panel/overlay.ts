@@ -14,7 +14,6 @@ export type OverlayPlacement = {
 };
 export type ActiveOverlay = OverlayPlacement & { key: number };
 
-/** One active overlay, described by data rather than imperative view classes. */
 export class Overlays {
 	readonly current = shallowRef<ActiveOverlay>();
 	#key = 0;

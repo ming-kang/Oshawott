@@ -36,7 +36,6 @@ async function resizeImage(data: Uint8Array, mimeType: string): Promise<Uint8Arr
 	}
 }
 
-/** Attachment ingestion is a reactive model; picker, tray and drop target are separate components. */
 export class AttachmentPicker {
 	readonly #items = shallowRef<readonly PendingAttachment[]>([]);
 	readonly #errors = shallowRef<readonly AttachmentError[]>([]);

@@ -1,4 +1,3 @@
-/** Runs operations one after another; a failed one does not stop the line. */
 export class Serial {
 	#tail: Promise<unknown> = Promise.resolve();
 
@@ -9,7 +8,6 @@ export class Serial {
 	}
 }
 
-/** One `Serial` line per key, kept only while it has work. */
 export class KeyedSerial<K> {
 	readonly #lines = new Map<K, { line: Serial; waiting: number }>();
 

@@ -8,7 +8,6 @@ import { h, icon, toast, toastError } from "./ui.ts";
 
 export type ToolStatus = "pending" | "running" | "done" | "error" | "stopped" | "streaming";
 
-/** The registered presentation for a tool call's header; unknown tools fall back to their name. */
 export function toolLook(name: string, args: Record<string, unknown>): ToolLook {
 	return resolveToolLook(name, args);
 }
@@ -123,8 +122,6 @@ export class ToolCard {
 		this.#output = undefined;
 		this.#result?.remove();
 		const view = toolViewFor(this.#name);
-		// A view may render a successful result richly from its structured details; otherwise the
-		// model's text is shown verbatim in a <pre>, and errors are always shown as text.
 		const rich = isError ? undefined : view?.body?.({ text, isError, details });
 		const shown = pretty(text);
 		const content = rich ?? h("pre", { class: isError ? "error" : null }, shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown);

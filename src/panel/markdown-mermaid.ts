@@ -21,7 +21,6 @@ let nextId = 0;
 
 let runtime: Promise<Mermaid> | undefined;
 
-/** Load Mermaid as its own lazy chunk, only when a Mermaid fence finalizes. */
 function loadMermaid(): Promise<Mermaid> {
 	runtime ??= import("mermaid").then((mod) => {
 		// The API is the default export; fall back to the namespace for interop.
@@ -40,7 +39,6 @@ function loadMermaid(): Promise<Mermaid> {
 	return runtime;
 }
 
-/** Match the panel's current light/dark theme for the diagram's own palette. */
 function resolvedTheme(): "dark" | "default" {
 	const preference = document.documentElement.dataset.theme;
 	const dark = preference === "dark" || (preference !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -80,7 +78,6 @@ class MermaidFence implements FenceEnricher {
 
 	render(host: FenceHost): (() => void) | void {
 		if (host.source.length > this.maxLength) { host.revert(); return; }
-		// Show a loading state while the chunk loads and the diagram lays out.
 		host.target.replaceChildren(h("div", { class: "mermaid-pending" }, h("span", { class: "spinner" }), t("markdown.diagramRendering")));
 		host.reveal();
 		let cancelled = false;
@@ -93,7 +90,6 @@ class MermaidFence implements FenceEnricher {
 			host.reveal();
 		}).catch(() => {
 			if (cancelled || host.stale()) return;
-			// The plain source stays visible as the safe fallback.
 			host.revert(true);
 		});
 		return () => { cancelled = true; };

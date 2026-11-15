@@ -106,7 +106,6 @@ export class ProviderManager {
 		void this.changed();
 	}
 
-	/** Active model IDs for a custom provider profile. */
 	candidateModelIds(profile: ProviderProfile): Set<string> {
 		return new Set(profile.models.map((model) => model.id));
 	}

@@ -83,7 +83,6 @@ export interface BrowserToolsOptions {
 export function browserExtension({ host, approvals, confirmActions }: BrowserToolsOptions): Extension {
 	const browser = <T>(context: Context, fn: (browser: Reference<typeof Browser>) => Promise<T>) => using(host, Browser, {}, context, fn);
 
-	/** The tab a call acts on: the one it names, else the chat's target while that tab exists, else the active tab. */
 	const tabOf = async (named: number | undefined, api: ToolExecutionApi, context: Context): Promise<Tab> => {
 		const id = named ?? (await api.snapshot(TargetDoc, api.conversationId, context))?.tabId ?? undefined;
 		const tab = id === undefined ? null : await browser(context, (browser) => browser.getTab({ tabId: id }, context));

@@ -70,10 +70,6 @@ function sortCandidates<T extends BuiltinCandidate>(items: T[]): T[] {
 	);
 }
 
-/**
- * Search built-in provider models (`providers` with `kind === "builtin"`), grouped by
- * exact ID, normalized ID, then fuzzy match. Empty queries return leading first-party models.
- */
 export function matchBuiltinModels(
 	providers: readonly ProviderSummary[],
 	query: string,
@@ -140,11 +136,6 @@ export interface DiffFormatters {
 	readonly unsetLabel: string;
 }
 
-/**
- * Compute per-field diff previews from `current` to `reference`.
- * Never touches `id`, `api`, `baseUrl`, or credentials.
- * Fields still at fallback defaults are pre-checked; manually customized fields stay unchecked by default.
- */
 export function computeBuiltinChanges(
 	current: ModelConfig,
 	reference: ModelSummary,

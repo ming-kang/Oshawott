@@ -1,7 +1,6 @@
 import type { AttachmentInput } from "../lib/attachments.ts";
 import { DraftStore, type ComposerDraft } from "./drafts.ts";
 
-/** What the session needs from the composer: its content, a change counter, and a way to write a draft back. */
 export interface DraftSource {
 	/** Bumped by every edit and import, so a slow read can tell whether the composer changed meanwhile. */
 	readonly revision: number;

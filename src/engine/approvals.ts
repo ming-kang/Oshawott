@@ -15,13 +15,11 @@ export const DECLINED = "The user declined this action. Do not retry it or reach
  */
 export class Approvals {
 	readonly #pending = new Map<string, Pending>();
-	/** Chats whose user answered "don't ask again in this chat". */
 	readonly #trusted = new Set<number>();
 	readonly #published = new Published<ApprovalSnapshot>({ items: [] });
 
 	readonly observe = this.#published.observe.bind(this.#published);
 
-	/** Resolves when the user allows the action; rejects with `DECLINED`, or with the signal's reason. */
 	request(request: ApprovalRequest, signal?: AbortSignal): Promise<void> {
 		if (this.#trusted.has(request.chat)) return Promise.resolve();
 		signal?.throwIfAborted();

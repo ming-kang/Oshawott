@@ -135,7 +135,6 @@
 	--font-mono-sm: var(--text-micro) / var(--leading-snug) var(--mono);
 }
 
-/* Space scale on a 4px step. */
 :root {
 	--space-1: 4px;
 	--space-2: 8px;

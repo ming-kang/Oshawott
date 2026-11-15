@@ -102,7 +102,6 @@ export class ChatSession {
 		await workspace.setBusyMode(mode, BACKGROUND_CONTEXT);
 	}
 
-	/** The visible chat; throws while none is open. */
 	get opened(): ChatRef {
 		if (!this.chat) throw new Error("The chat is not open.");
 		return this.chat;
@@ -124,7 +123,6 @@ export class ChatSession {
 		return this.loaded && this.id !== undefined ? this.chat?.view.value ?? null : null;
 	}
 
-	/** The configuration change in flight, if any. */
 	get configuring() {
 		return this.#task;
 	}
@@ -137,18 +135,15 @@ export class ChatSession {
 		return this.thinkingFor(this.model);
 	}
 
-	/** The current thinking level, clamped to what `model` supports. */
 	thinkingFor(model: ModelRef | undefined): ThinkingLevel {
 		return clampThinking(supportedThinkingLevels(this.providers, model), this.#thinking);
 	}
 
-	/** The model and thinking level a new message would run with. */
 	get configuration(): ChatConfiguration | undefined {
 		const model = this.model;
 		return model ? { model, thinkingLevel: this.thinking } : undefined;
 	}
 
-	/** Runs `use` on chat `id`: the visible chat if it is, otherwise one held just for the call. */
 	async with<T>(id: number, use: (target: ChatRef) => Promise<T>): Promise<T> {
 		if (this.id === id && this.chat) return use(this.chat);
 		const held = await this.#host.get(Chat, { id }, BACKGROUND_CONTEXT);
@@ -163,7 +158,6 @@ export class ChatSession {
 		}
 	}
 
-	/** Whether the visible chat already runs with `configuration`. */
 	matches(configuration: ChatConfiguration) {
 		return sameModel(this.#chatModel, configuration.model) && (this.#agent?.thinkingLevel ?? "off") === configuration.thinkingLevel;
 	}

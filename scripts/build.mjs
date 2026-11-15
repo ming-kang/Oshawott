@@ -81,7 +81,6 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			if (output.replaceAll("\\", "/").includes("/chunks/")) chunks.add(output);
 		}
 	}
-	// Resolve the ordered CSS imports into the one stylesheet linked by panel.html.
 	await build({
 		entryPoints: [join(root, "static/panel.css")],
 		outfile: join(out, "panel.css"),
@@ -91,7 +90,6 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 		minify: false,
 		sourcemap: dev ? "inline" : false,
 		legalComments: "none",
-		// Self-hosted font files ride along next to the bundled stylesheet.
 		loader: {".woff2": "file"},
 		logLevel: "warning",
 	});

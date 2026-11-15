@@ -58,7 +58,6 @@ const Inspected = obj({
 	ref: str(),
 	tag: str(),
 	visible: bool(),
-	/** Some HTML, attributes or attribute values were cut to the limits. */
 	truncated: bool(),
 	attributes: opt(map(str())),
 	box: opt(obj({ x: num(), y: num(), width: num(), height: num(), inViewport: bool() })),
@@ -172,7 +171,6 @@ export const pageTools = {
 
 export type PageToolName = keyof typeof pageTools;
 
-/** What a page action is about to act on, for a confirmation the user reads. */
 export const Described = obj({ role: str(), name: str() });
 
 export type PageToolArgs<N extends PageToolName> = StaticObject<(typeof pageTools)[N]["args"]>;

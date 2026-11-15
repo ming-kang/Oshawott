@@ -102,7 +102,7 @@ export async function intendAttachmentDeletes(tx: Tx, chat: number, paths: reado
 	(await tx.doc(AttachmentDeletesDoc)).pending.push({ id: crypto.randomUUID(), chat, paths: unique });
 }
 
-/** Delete every recorded intent's files, clearing each intent once its files are gone. Idempotent and retryable. */
+/** Idempotent and retryable. */
 export async function completeAttachmentDeletes(harness: Harness, files: FileBackend, context: Context, onError: (error: unknown) => void) {
 	for (const intent of (await harness.snapshot(AttachmentDeletesDoc, context))?.pending ?? []) {
 		try {
@@ -168,5 +168,4 @@ export function requireContentVision(models: MutableModels, ref: ModelRef | null
 	if (!model.input.includes("image")) invalid(`${model.name ?? model.id} cannot process images. Choose a vision-capable model before sending.`);
 }
 
-/** Attachment paths an input's entry owns. */
 export const attachmentPaths = (input: QueuedInput) => userInput(input.entry, input.content).attachments.map((item) => item.path);

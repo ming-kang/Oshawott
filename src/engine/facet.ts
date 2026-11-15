@@ -5,7 +5,6 @@ import { serveChat } from "./chat-facet.ts";
 import type { EngineServices, FacetServices } from "./facet-services.ts";
 import { serveWorkspace } from "./workspace-facet.ts";
 
-/** Everything a Panel may hold: the `Workspace` and one `Chat` per conversation. */
 export function panelFacet(services: EngineServices) {
 	const shared: FacetServices = { ...services, chatLine: new KeyedSerial() };
 	return defineFacet<Principal>((host) => {

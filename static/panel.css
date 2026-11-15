@@ -1,27 +1,9 @@
 /*
- * Panel CSS entry: scripts/build.mjs bundles these imports into a single
- * dist/<target>/panel.css for normal and --dev builds.
- *
- * The cascade is declared here, not implied by import order. Each layer is a
- * precedence band: a rule in a later layer beats a rule in an earlier one no
- * matter how specific the earlier rule is, so component constraints that must
- * outrank a shared primitive have to say so with specificity instead of relying
- * on which file happens to be imported last.
- *
- *   foundation  font faces, design tokens, theme palettes
- *   controls    reset plus the shared control primitives (.btn, .icon-btn, ...)
- *   layout      panel chrome: topbar, scroller, thread column
- *   content     conversation content: messages, Markdown, tool cards, states
- *   dock        composer and the queue/approvals that sit above it
- *   overlays    surfaces floating over content: popovers, drawers, sheets,
- *               settings, provider editor, files, toasts
- *   a11y        forced-colors, reduced-motion and breakpoint overrides
- *
- * Layer order only, never specificity, decides between bands. Inside a band the
- * import order below still applies, which is why overlays keeps the sequence
+ * Layer order only, never specificity, decides between layers. Inside a layer
+ * the import order below still applies, which is why overlays keeps the sequence
  * popovers -> drawers -> settings -> provider editor -> files -> toasts: those
  * files refine each other's primitives (.input, .sheet-body) and rely on
- * specificity within the band.
+ * specificity within the layer.
  */
 
 @layer foundation, controls, layout, content, dock, overlays, a11y;

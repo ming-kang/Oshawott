@@ -25,7 +25,6 @@ export const Browser = remote("oshawott.browser", {
 			methods: {
 				listTabs: method(undefined, arr(TabSchema)),
 				activeTab: method(obj({ windowId: opt(int()) }), union([TabSchema, nul()])),
-				/** Null when the tab no longer exists. */
 				getTab: method(obj({ tabId: int() }), union([TabSchema, nul()])),
 				openTab: method(obj({ url: str(), active: opt(bool()) }), TabSchema),
 				/** Loads `url` in the tab, or goes one step `back` in its history; returns once the page has loaded. */

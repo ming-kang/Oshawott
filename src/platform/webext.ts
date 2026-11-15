@@ -30,7 +30,6 @@ export interface TabInfo {
 	readonly active?: boolean;
 	readonly status?: string;
 	readonly favIconUrl?: string;
-	/** Milliseconds since the epoch. */
 	readonly lastAccessed?: number;
 }
 

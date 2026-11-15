@@ -53,7 +53,6 @@ export const ProviderSummary = obj({
 	baseUrl: str(),
 	api: union([ModelApi, nul()]),
 	configured: bool(),
-	/** The stored credential's kind; null when unconfigured. */
 	auth: union([oneOf("api_key", "oauth"), nul()]),
 	/** Whether an API key can be entered for this provider. */
 	apiKey: bool(),
@@ -176,7 +175,6 @@ export const Workspace = remote("oshawott.workspace", {
 				startLogin: method(obj({ provider: str() }), str()),
 				answerLogin: method(obj({ id: str(), promptId: str(), value: str({ max: 8192 }) })),
 				cancelLogin: method(obj({ id: str() })),
-				/** Forgets a finished sign-in's outcome. */
 				dismissLogin: method(obj({ id: str() })),
 				saveProvider: method(obj({ profile: ProviderProfile, key: opt(str({ min: 1 })) })),
 				deleteProvider: method(obj({ provider: str() })),
@@ -208,7 +206,6 @@ export const Chat = remote("oshawott.chat", {
 				view: typed<ConversationView | null>(unknown()),
 				/** The tab the page tools act on; null before the first message and after that tab is closed. */
 				target: union([int(), nul()]),
-				/** Actions of this chat waiting for the user's answer. */
 				approvals: arr(ApprovalView),
 			},
 			methods: {

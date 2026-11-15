@@ -24,7 +24,6 @@ function elementOf(value: unknown): HTMLElement | undefined {
 	return element instanceof HTMLElement ? element : undefined;
 }
 
-/** Keeps a local popover inside the viewport and outside its composer's dock. */
 export function placePopover(root: HTMLElement, active: ActiveOverlay) {
 	const { anchor, boundary } = active;
 	const anchorRect = anchor.getBoundingClientRect();

@@ -30,7 +30,6 @@ export type WorkspaceState = {
 	autoTitle?: boolean;
 	autoCompaction?: boolean;
 	autoRetry?: boolean;
-	/** Ask before each action that changes a page. */
 	confirmActions?: boolean;
 	/** Global native Durable instructions, shared by every chat; absent means the built-in text. */
 	instructions?: string;
@@ -49,7 +48,6 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	checkpointWhen: () => true,
 });
 
-/** A switch of `workspace`, or its default. */
 export const preference = (workspace: WorkspaceState | undefined, key: Preference): boolean => workspace?.[key] ?? PREFERENCE_DEFAULTS[key];
 
 /** Custom provider profiles contain no credentials and are restored before Durable resumes model work. */

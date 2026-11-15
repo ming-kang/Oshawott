@@ -72,7 +72,6 @@ export class ProviderAdmin {
 		});
 	}
 
-	/** Signs out or forgets the key: cancels a pending sign-in and deletes the stored credential. */
 	removeCredential(provider: string) {
 		const { models, logins, providers } = this.#services;
 		return this.serialize(async () => {
@@ -93,7 +92,6 @@ export class ProviderAdmin {
 		await Promise.all(missing.map((provider) => providers.refresh(provider.id, false)));
 	}
 
-	/** Probes a custom provider endpoint for selectable model candidates without mutating stored configuration. */
 	async probeModels(input: { provider?: string; baseUrl: string; api: ModelApi; key?: string }): Promise<ProbeModelsResult> {
 		let key = input.key?.trim() || undefined;
 		if (!key && input.provider) {
@@ -165,7 +163,6 @@ export class ProviderAdmin {
 		});
 	}
 
-	/** Every model a chat or the Workspace default points at. */
 	async #modelsInUse(ctx: Context): Promise<ModelRef[]> {
 		const { harness } = this.#services;
 		const workspace = await harness.snapshot(WorkspaceDoc, ctx);

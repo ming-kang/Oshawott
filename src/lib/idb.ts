@@ -1,4 +1,3 @@
-/** Settles with the request's result, or rejects with its error. */
 export function settle<T>(request: IDBRequest<T>): Promise<T> {
 	return new Promise((resolve, reject) => {
 		request.onsuccess = () => resolve(request.result);
@@ -6,7 +5,6 @@ export function settle<T>(request: IDBRequest<T>): Promise<T> {
 	});
 }
 
-/** Opens database `name`, letting `create` set up its object stores the first time. Another context deleting it closes it. */
 export async function openDatabase(name: string, create: (db: IDBDatabase) => void): Promise<IDBDatabase> {
 	const opening = indexedDB.open(name, 1);
 	opening.onupgradeneeded = () => create(opening.result);

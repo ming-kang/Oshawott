@@ -13,7 +13,6 @@ export class CodeBlockView {
 	readonly #label = h("span", { class: "codeblock-language" });
 	readonly #status = h("span", { class: "codeblock-live" });
 	readonly #code = h("code");
-	// The plain source display is the always-available fallback; an enricher may swap it for a rendered view.
 	readonly #pre = h("pre", { tabindex: 0 }, this.#code);
 	readonly #view = h("div", { class: "codeblock-view", hidden: true });
 	#text = "";
@@ -104,7 +103,6 @@ export class CodeBlockView {
 		}).catch(() => { /* The already visible source is the fallback. */ });
 	}
 
-	/** Hand the finalized source to the language's enricher, if one is registered and the source is in bounds. */
 	#enrichFence() {
 		const enricher = fenceEnricher(this.#language);
 		if (!enricher || this.#text.length > enricher.maxLength) return;

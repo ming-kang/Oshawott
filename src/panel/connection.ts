@@ -8,7 +8,6 @@ export type PanelHost = ReturnType<typeof createPanelHost>;
 
 export const createPanelHost = () => createHost<Principal>({ onError: (error) => console.debug("[oshawott panel]", error) });
 
-/** Reconnects with backoff and publishes whether the Engine link is currently reconnecting. */
 export function engineConnector(host: PanelHost, changed: (reconnecting: boolean) => void) {
 	let backoff = 250;
 	return async function connect() {

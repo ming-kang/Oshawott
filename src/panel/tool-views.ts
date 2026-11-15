@@ -3,43 +3,30 @@ import { hostOf } from "../platform/patterns.ts";
 import { t } from "./i18n/index.ts";
 import type { IconName } from "./ui.ts";
 
-/** A settled tool result handed to a view's rich-body hook. Model text is data, never markup. */
+/** Model text is data, never markup. */
 export interface ToolResult {
 	readonly text: string;
 	readonly isError: boolean;
 	readonly details?: unknown;
 }
 
-/**
- * How one tool — or a coherent family sharing a name list — reads in the panel.
- *
- * `icon` and `label` may be fixed or vary with the arguments; `argsMeta` and `resultMeta` are
- * optional header summaries; `body` is an opt-in rich rendering of a successful result. A `body`
- * must build safe nodes from the structured `details` (via `h`/`textContent`) and must never assign
- * model text to `innerHTML`.
- */
+/** A `body` must build safe nodes from the structured `details` (via `h`/`textContent`) and must never assign model text to `innerHTML`. */
 export interface ToolView {
-	/** A single tool name, or several names that share this view (a coherent family). */
 	readonly name?: string;
 	readonly names?: readonly string[];
 	readonly icon: IconName | ((args: Record<string, unknown>) => IconName);
 	readonly label: string | ((args: Record<string, unknown>) => string);
-	/** The argument summary shown in the header while the call streams and runs. */
 	readonly argsMeta?: (args: Record<string, unknown>) => string | undefined;
-	/** The result summary shown in the header once the call settles, read from structured details. */
 	readonly resultMeta?: (details: unknown) => string | undefined;
-	/** Opt-in rich result body for a successful call; build safe nodes, never model text as HTML. */
 	readonly body?: (result: ToolResult) => Node | undefined;
 }
 
-/** A tool call's header: its icon, label and argument summary line. */
 export interface ToolLook {
 	icon: IconName;
 	label: string;
 	meta?: string;
 }
 
-// Reusable argument summaries: the composable pieces a view's `argsMeta` can share.
 const refMeta = (args: Record<string, unknown>): string => String(args.ref ?? "");
 const refOrSelectorMeta = (args: Record<string, unknown>): string => String(args.ref ?? args.selector ?? "");
 const pathMeta = (args: Record<string, unknown>): string => String(args.path ?? "");
@@ -49,14 +36,12 @@ const hostMeta = (args: Record<string, unknown>): string => hostOf(args.url);
 const clip = (text: string, max: number): string => ([...text].length > max ? `${[...text].slice(0, max - 1).join("")}…` : text);
 const quotedTextMeta = (args: Record<string, unknown>): string => `“${clip(String(args.text ?? ""), 40)}”`;
 
-/** Narrows an unknown value to a plain object, or undefined; shared with the card's access check. */
 export function record(value: unknown): Record<string, unknown> | undefined {
 	return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
-// Result summaries, per tool that reports structured `details`.
 const fetchResultMeta = (details: unknown): string | undefined => {
 	const http = record(record(details)?.http);
 	return http && count(http.status) && http.status >= 100 && http.status <= 599 && count(http.bytes)
@@ -79,30 +64,22 @@ const inspectResultMeta = (details: unknown): string | undefined => {
 	return undefined;
 };
 
-// The registry, keyed by tool name: registering the same name again overwrites, never duplicates.
 const registry = new Map<string, ToolView>();
 
 const namesOf = (view: ToolView): readonly string[] => view.names ?? (view.name === undefined ? [] : [view.name]);
 
-/** Declares a view as an immutable definition. The seam for composing shared summaries. */
 export function defineToolView(view: ToolView): ToolView {
 	return Object.freeze(view);
 }
 
-/**
- * Registers a view under each of its tool names. Idempotent by name, so re-registration under a
- * hot reload or repeated test setup replaces rather than accumulates.
- */
 export function registerToolView(view: ToolView): void {
 	for (const name of namesOf(view)) registry.set(name, view);
 }
 
-/** The registered view for a tool, or undefined for an unknown tool. */
 export function toolViewFor(name: string): ToolView | undefined {
 	return registry.get(name);
 }
 
-/** Resolves a call's header. Unknown tools fall back to their raw name with the generic icon. */
 export function resolveToolLook(name: string, args: Record<string, unknown>): ToolLook {
 	const view = registry.get(name);
 	if (!view) return { icon: "tool", label: name };
@@ -112,7 +89,6 @@ export function resolveToolLook(name: string, args: Record<string, unknown>): To
 	return meta === undefined ? { icon, label } : { icon, label, meta };
 }
 
-// The built-in views: one definition per tool, or per coherent family (read / read_text).
 const BUILTIN_VIEWS: readonly ToolView[] = [
 	defineToolView({ name: "page_snapshot", icon: "eye", label: t("tool.snapshot"), argsMeta: refOrSelectorMeta, resultMeta: snapshotResultMeta }),
 	defineToolView({ name: "page_inspect", icon: "code", label: t("tool.inspect"), argsMeta: refOrSelectorMeta, resultMeta: inspectResultMeta }),

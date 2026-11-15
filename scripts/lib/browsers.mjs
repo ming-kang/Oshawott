@@ -3,7 +3,6 @@ import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 import { dist } from "./paths.mjs";
 
-/** `OSHAWOTT_CHROME`, else the newest Chromium that Playwright installed. */
 export function chromiumPath() {
 	if (process.env.OSHAWOTT_CHROME) return process.env.OSHAWOTT_CHROME;
 	const cache = join(process.env.LOCALAPPDATA ?? join(process.env.HOME ?? "", ".cache"), "ms-playwright");
@@ -23,7 +22,6 @@ const FIREFOX = {
 	linux: ["/usr/bin/firefox", "/usr/lib/firefox/firefox"],
 };
 
-/** `OSHAWOTT_FIREFOX`, else Firefox where the platform's installer puts it. */
 export function firefoxPath() {
 	if (process.env.OSHAWOTT_FIREFOX) return process.env.OSHAWOTT_FIREFOX;
 	const path = (FIREFOX[process.platform] ?? []).find((p) => existsSync(p));
@@ -31,7 +29,6 @@ export function firefoxPath() {
 	return path;
 }
 
-/** Headless Chromium with the `dist/chromium` build installed; `evaluateIn` runs an expression in an extension target. */
 export async function launchExtension({ args = [] } = {}) {
 	const browser = await puppeteer.launch({
 		executablePath: chromiumPath(),

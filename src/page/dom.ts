@@ -36,7 +36,6 @@ function visible(element: Element): boolean {
 
 const inputType = (element: Element) => element instanceof HTMLInputElement ? element.type : undefined;
 
-/** The first of the element's accessible-name sources that says something. */
 function nameOf(element: Element): string {
 	const type = inputType(element);
 	const labelled = element.getAttribute("aria-labelledby")?.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
@@ -68,7 +67,7 @@ const ariaFlag = (element: Element, name: string) => {
 	return value === "true" ? true : value === "false" ? false : undefined;
 };
 
-/** What a user sees of the element beyond its name. A password's text is never read. */
+/** A password's text is never read. */
 function stateOf(element: Element) {
 	const type = inputType(element);
 	const typed = element instanceof HTMLTextAreaElement
@@ -100,7 +99,6 @@ const tagOf = (element: Element) => clip(element.tagName.toLowerCase(), LIMITS.n
 
 const textOf = (element: Element) => (element instanceof HTMLElement ? element.innerText : element.textContent) ?? "";
 
-/** `root` and the elements under it matching `selector`, in document order. */
 function within(root: Element, selector: string): Element[] {
 	return [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll(selector)];
 }
@@ -113,7 +111,6 @@ function matching(selector: string): Element[] {
 	}
 }
 
-/** The element named by exactly one of `ref` and `selector`, or `fallback` when neither is given. */
 function target({ ref: name, selector }: { ref?: string; selector?: string }, fallback?: Element): Element[] {
 	if (name !== undefined && selector !== undefined) throw new Error("Pass either ref or selector, not both.");
 	if (name !== undefined) return [element(name)];
@@ -144,7 +141,6 @@ function gridRows(table: Element): RawRow[] {
 	});
 }
 
-/** Visible items, up to one past the limit. */
 function listItems(list: Element): string[] {
 	if (list.tagName !== "DL") return takeWhere(list.children, (child) => child.tagName === "LI" && visible(child), LIMITS.items + 1)[0].map(textOf);
 	const entries: { term: string; details: string[] }[] = [];
@@ -299,7 +295,6 @@ function center(target: Element) {
 	return { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
 }
 
-/** Pointer and mouse events at the element's centre; `false` when the page cancelled one. */
 function point(target: Element, kinds: readonly string[], buttons = 0) {
 	const init = { cancelable: true, composed: true, view: window, button: 0, buttons, ...center(target) };
 	let allowed = true;
@@ -339,7 +334,6 @@ export function click({ ref }: Args<"page_click">) {
 	return { ok: true, detail: done };
 }
 
-/** Key events on the element; `false` when the page cancelled the key. */
 function key(target: Element, name: string, modifiers: readonly string[] = []) {
 	const init = {
 		key: name, code: /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}` : name === " " ? "Space" : name,

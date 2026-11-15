@@ -393,7 +393,6 @@
 }
 .math-block:hover .math-actions, .math-actions:focus-within { opacity: 1; }
 
-/* Enriched fences (e.g. Mermaid) reveal rendered output in place of the source, which stays the fallback. */
 .codeblock-view { max-width: 100%; padding: var(--space-3); overflow: auto; }
 .codeblock-view[hidden] { display: none; }
 .codeblock pre[hidden] { display: none; }

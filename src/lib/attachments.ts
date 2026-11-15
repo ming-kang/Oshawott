@@ -290,7 +290,6 @@ export function userInput(entry: { kind: string; data?: unknown } | undefined, c
 	return { text: plainText(content), attachments: [] };
 }
 
-/** Build the model's user message: the text, a metadata block for the attachments, then native image blocks. */
 export function composeUserContent(text: string, attachments: readonly AttachmentRef[], images: readonly ImageContent[] = []): UserContent {
 	if (!attachments.length && !images.length) return text;
 	const blocks: Exclude<UserContent, string> = [];

@@ -4,7 +4,6 @@ import { AttachmentPicker, pendingInput } from "./attachments.ts";
 import type { ComposerDraft } from "./drafts.ts";
 import type { DraftSource } from "./draft-session.ts";
 
-/** Local composer state, independent of both the DOM and the durable chat. */
 export class ComposerState implements DraftSource {
 	readonly #text = shallowRef("");
 	readonly #revision = shallowRef(0);

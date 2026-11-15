@@ -211,10 +211,7 @@ export interface ProbeProviderModelsOptions {
 	readonly signal?: AbortSignal;
 }
 
-/**
- * Probe a custom provider endpoint for candidate models without mutating any stored catalog.
- * Errors deliberately omit response bodies, headers and credentials.
- */
+/** Errors deliberately omit response bodies, headers and credentials. */
 export async function probeProviderModels(
 	options: ProbeProviderModelsOptions,
 	fetcher: typeof fetch = fetch,
