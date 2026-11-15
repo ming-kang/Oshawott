@@ -52,8 +52,11 @@ export function noAccess(url: string) {
 	};
 }
 
+type Described = { role: string; name: string };
+
 /** A short summary for the tool card; the model reads the full result. */
-function detailsOf(name: PageToolName, result: unknown): { details: Record<string, Record<string, string | number>> } | undefined {
+function detailsOf(name: PageToolName, result: unknown, element: Described | undefined): { details: Record<string, Record<string, string | number>> } | undefined {
+	if (element) return { details: { element: { role: element.role, name: element.name } } };
 	if (name === "page_snapshot") {
 		const snapshot = result as Static<typeof SnapshotResult>;
 		return { details: { snapshot: { title: snapshot.title, elementCount: snapshot.elements.length } } };
@@ -113,14 +116,15 @@ export function browserExtension({ host, approvals, confirmActions }: BrowserToo
 				const tab = await tabOf(named, api, context);
 				if (!/^https?:/.test(tab.url)) throw new Error(`Page tools cannot run on ${tab.url || "this tab"}: only on http and https pages.`);
 				if (!tab.access) return noAccess(tab.url);
+				// Described before the action, which may remove the element; the tool card names it instead of its ref.
+				const element = rest.ref === undefined || name === "page_snapshot" || name === "page_inspect" ? undefined
+					: await callPage(host, tab.tabId, "describe", { ref: rest.ref }, context) as Described;
 				if (spec.replay === "unsafe" && confirmActions()) {
-					const element = rest.ref === undefined ? undefined
-						: await callPage(host, tab.tabId, "describe", { ref: rest.ref }, context) as { role: string; name: string };
 					const target = element ? `${element.name || element.role} (${element.role})` : tab.title;
 					await approve(api, name, `${target}${quoted(name, rest)}`, tab.url, context);
 				}
 				const result = await callPage(host, tab.tabId, name, rest, context);
-				return { output: text(result), structuredOutput: result as never, ...detailsOf(name, result) };
+				return { output: text(result), structuredOutput: result as never, ...detailsOf(name, result, element) };
 			},
 		});
 	};

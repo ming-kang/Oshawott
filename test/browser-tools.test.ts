@@ -116,8 +116,10 @@ test("with confirmation on, a page action waits for the user and a refusal reach
 		assert.equal((await f.call("page_click", { ref: "e1" }, 7, answer("allow_chat"))).isError, false);
 		assert.deepEqual(f.clicks, [7]);
 		// Trusted for the rest of the chat: the next action does not ask.
-		assert.equal((await f.call("page_click", { ref: "e1" }, 7)).isError, false);
+		const trusted = await f.call("page_click", { ref: "e1" }, 7);
+		assert.equal(trusted.isError, false);
 		assert.deepEqual(f.clicks, [7, 7]);
+		assert.deepEqual(trusted.details, { element: { role: "button", name: "Buy now" } }, "the card can name the element without an approval");
 		// Reading a page never asks.
 		assert.equal((await f.call("page_snapshot", {}, 7)).isError, false);
 	} finally {

@@ -64,7 +64,8 @@
 }
 
 .provider-list {
-	max-height: 260px;
+	/* The picker is the whole step: it takes the rest of the sheet instead of a short window. */
+	max-height: max(260px, calc(100dvh - 320px));
 	border: var(--border-width) solid var(--line);
 	border-radius: var(--radius-m);
 	background: var(--bg);

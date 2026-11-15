@@ -105,6 +105,10 @@
 	font: var(--font-ui);
 }
 
+.menu-search::-webkit-search-cancel-button {
+	display: none;
+}
+
 .menu-search::placeholder,
 .input::placeholder {
 	color: var(--text-3);

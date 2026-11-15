@@ -1,6 +1,7 @@
+/* The search field owns the focus whenever its menu is open: an accent rule marks it without boxing the menu's top. */
 .menu-search:focus-visible {
-	outline: var(--focus-ring-width) solid var(--focus-ring);
-	outline-offset: calc(-1 * var(--focus-ring-offset));
+	outline: 0;
+	border-bottom-color: var(--accent);
 }
 
 @media (hover: none) {
@@ -9,16 +10,13 @@
 		opacity: 1;
 	}
 
-	/* Touch has no hover to reveal row or message actions. */
-	.chat-item > .chat-actions {
-		position: static;
-		flex-basis: auto;
-		width: auto;
-		padding: 0;
-		background: none;
+	/* Touch has no hover to reveal the row menu, so it replaces the time for good. */
+	.chat-more {
 		opacity: 1;
-		pointer-events: auto;
-		transform: none;
+	}
+
+	.chat-trail time {
+		display: none;
 	}
 }
 
@@ -35,6 +33,20 @@
 
 	.btn {
 		min-height: 38px;
+	}
+
+	.chat-row,
+	.rename-form {
+		min-height: 44px;
+	}
+
+	.chat-trail {
+		min-width: 34px;
+		height: 34px;
+	}
+
+	.chat-action {
+		height: 34px;
 	}
 
 	.send-btn {
@@ -121,6 +133,11 @@
 	.typing span + span {
 		background: none;
 		color: CanvasText;
+	}
+
+	.menu-search:focus-visible {
+		outline: var(--focus-ring-width) solid Highlight;
+		outline-offset: calc(-1 * var(--focus-ring-offset));
 	}
 
 	/* Fills that carry state disappear with the background, so the state moves to an outline. */

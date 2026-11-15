@@ -54,7 +54,7 @@ export const LoginCard = defineComponent({
 			<>
 				<p class="login-status" id="login-status" role="status"><span class="spinner" />{current.progress ?? (current.userCode ? t("login.codeHint") : current.url ? t("login.openHint") : t("login.starting"))}</p>
 				{current.userCode && <div class="login-row"><code class="login-code" id="login-code">{current.userCode}</code>
-					<button class="btn small" id="login-copy" type="button" onClick={async () => toast(await copyText(current.userCode!) ? t("copied") : t("login.copyFailed"), "info")}>
+					<button class="btn small" id="login-copy" type="button" onClick={async () => { if (await copyText(current.userCode!)) toast(t("copied")); else toast(t("login.copyFailed"), "error"); }}>
 						<Icon name="copy" size={14} />{t("copy")}</button></div>}
 				{current.url && <a class="btn" id="login-open" href={current.url} target="_blank" rel="noopener noreferrer"><Icon name="external" size={14} />{t("login.open")}</a>}
 				{current.prompt && (

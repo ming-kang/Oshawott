@@ -106,6 +106,10 @@ try {
 	await panel.click("#chats-toggle");
 	await until("the drawer", () => panel.$(".chat-item"));
 	await both("chats");
+	await panel.click(".chat-item [data-action='more']");
+	await until("the chat's actions", () => panel.$(".chat-item .chat-actions"));
+	await both("chats-menu");
+	await panel.keyboard.press("Escape");
 	await panel.keyboard.press("Escape");
 	await new Promise((r) => setTimeout(r, 300));
 

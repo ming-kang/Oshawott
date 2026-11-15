@@ -102,6 +102,8 @@ export const ModelEditor = defineComponent({
 		model: { type: Object as PropType<ModelConfig>, required: true },
 		providers: { type: Array as PropType<readonly ProviderSummary[]>, required: true },
 		remove: { type: Function as PropType<() => void>, required: true },
+		/** The model ID is missing and a save was refused for it. */
+		invalid: Boolean,
 	},
 	setup(props) {
 		const expanded = shallowRef(!props.model.id);
@@ -117,7 +119,7 @@ export const ModelEditor = defineComponent({
 			<details class="model-editor" open={expanded.value} data-model={props.model.id} onToggle={(event) => { expanded.value = (event.target as HTMLDetailsElement).open; }}>
 				<summary class="model-editor-summary"><strong class="model-editor-title">{title.value}</strong><span class="model-editor-meta">{subtitle.value}</span></summary>
 				<div class="model-editor-grid">
-					<Field label={t("settings.modelId")}><input class="input" value={props.model.id} placeholder="model-id" aria-label={t("settings.modelId")}
+					<Field label={t("settings.modelId")}><input class="input" value={props.model.id} placeholder="model-id" aria-label={t("settings.modelId")} aria-invalid={props.invalid}
 						onInput={(event) => { props.model.id = (event.target as HTMLInputElement).value; }} /></Field>
 					<Field label={t("settings.modelName")}><input class="input" value={props.model.name} placeholder={props.model.id || "Model"} aria-label={t("settings.modelName")}
 						onInput={(event) => { props.model.name = (event.target as HTMLInputElement).value; }} /></Field>

@@ -1,10 +1,23 @@
-.toast {
+.toasts {
 	position: fixed;
+	right: var(--space-4);
 	bottom: calc(var(--dock-height, 96px) + var(--space-3));
-	left: 50%;
+	left: var(--space-4);
 	z-index: 40;
-	width: max-content;
-	max-width: calc(100% - var(--space-8));
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-2);
+	pointer-events: none;
+}
+
+/* A sheet covers the dock, so its toasts sit at the bottom of the sheet. */
+body:has(.sheet) .toasts {
+	bottom: var(--space-4);
+}
+
+.toast {
+	max-width: 100%;
 	padding: var(--space-2) var(--space-3);
 	overflow-wrap: anywhere;
 	text-align: center;
@@ -13,25 +26,25 @@
 	box-shadow: var(--shadow-pop);
 	color: var(--bg);
 	font: var(--font-ui);
-	transform: translateX(-50%);
+	cursor: pointer;
+	pointer-events: auto;
 	animation: toast-in var(--duration-base) var(--ease);
 }
 
 .toast[data-tone="error"] {
 	background: var(--danger);
-	color: #fff;
+	color: var(--bg);
 }
 
 .toast.leaving {
 	opacity: 0;
-	transform: translate(-50%, 6px);
+	transform: translateY(6px);
 	transition: var(--transition-popup);
 }
 
 @keyframes toast-in {
 	from {
 		opacity: 0;
-		transform: translate(-50%, 6px);
+		transform: translateY(6px);
 	}
 }
-

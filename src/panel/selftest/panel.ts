@@ -155,20 +155,31 @@ export async function testPanel(source: Source, origin?: string) {
 	await until(() => document.querySelector("#chat-drawer")?.contains(document.activeElement));
 	step("chat rows are buttons inside a focus-managed dialog", document.querySelector("#chat-drawer")?.getAttribute("role") === "dialog" && document.querySelector(".chat-select") instanceof HTMLButtonElement && document.querySelector("#chat-drawer")?.contains(document.activeElement) === true);
 	const chatSelect = document.querySelector<HTMLElement>(".chat-select")!;
-	const chatActions = document.querySelector<HTMLElement>(".chat-item > .chat-actions")!;
-	const idleSelectRect = chatSelect.getBoundingClientRect();
-	const idleTimeRect = chatSelect.querySelector("time")!.getBoundingClientRect();
-	const idleLayout = chatActions.getBoundingClientRect().width === 0 && idleSelectRect.right - idleTimeRect.right <= 8;
-	chatActions.querySelector<HTMLButtonElement>("button")!.focus({ preventScroll: true });
-	const expandedSelectRect = chatSelect.getBoundingClientRect();
-	const expandedActionsRect = chatActions.getBoundingClientRect();
-	const expandedLayout = expandedActionsRect.width > 0 && expandedSelectRect.right <= expandedActionsRect.left
-		&& expandedActionsRect.right <= document.querySelector(".chat-item")!.getBoundingClientRect().right;
-	step("chat timestamps use the idle width and actions yield space without overlap", idleLayout && expandedLayout,
-		JSON.stringify({ idleTimeGap: idleSelectRect.right - idleTimeRect.right, expandedActionsWidth: expandedActionsRect.width }));
+	const chatRow = chatSelect.closest<HTMLElement>(".chat-item")!;
+	// The drawer slides in and the actions rise: measure the resting layout. A running chat's pulse never finishes.
+	const settled = () => Promise.all(document.querySelector("#chat-drawer")!.getAnimations({ subtree: true })
+		.filter((animation) => animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished));
+	await settled();
+	const idleSelect = chatSelect.getBoundingClientRect();
+	chatRow.querySelector<HTMLButtonElement>('[data-action="more"]')!.click();
+	const chatActions = await until(() => chatRow.querySelector<HTMLElement>(".chat-actions"));
+	await settled();
+	const openSelect = chatSelect.getBoundingClientRect();
+	const actionsRect = chatActions.getBoundingClientRect();
+	const rowRect = chatRow.getBoundingClientRect();
+	step("opening a chat's menu leaves its title in place and keeps the actions inside the row",
+		idleSelect.left === openSelect.left && idleSelect.top === openSelect.top && idleSelect.width === openSelect.width
+		&& actionsRect.top >= openSelect.bottom && actionsRect.right <= rowRect.right && actionsRect.bottom <= rowRect.bottom,
+		JSON.stringify({ idle: idleSelect, open: openSelect, actions: actionsRect }));
+	const openMenu = async (id: number | undefined) => {
+		const row = `.chat-item[data-id="${id}"]`;
+		if (!document.querySelector(`${row} .chat-actions`)) click(`${row} [data-action="more"]`);
+		await until(() => document.querySelector(`${row} [data-action="rename"]`));
+	};
 	const renamedId = source.chats.value[0]?.id;
 	const originalTitle = source.chats.value[0]?.title ?? "";
 	const renamedRow = document.querySelector(`.chat-item[data-id="${renamedId}"]`);
+	await openMenu(renamedId);
 	click(`.chat-item[data-id="${renamedId}"] [data-action="rename"]`);
 	await until(() => document.querySelector(".rename-input"));
 	const rename = document.querySelector<HTMLInputElement>(".rename-input")!;
@@ -177,24 +188,32 @@ export async function testPanel(source: Source, origin?: string) {
 	rename.focus();
 	rename.setSelectionRange(6, 11);
 	const resetId = await source.createChat({ title: "Panel smoke reset" }, BACKGROUND_CONTEXT);
-	await until(() => document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="reset"]`) !== null);
-	await source.renameChat({ id: resetId, title: "Panel smoke reset updated" }, BACKGROUND_CONTEXT);
-	await until(() => document.querySelector(`.chat-item[data-id="${resetId}"] .chat-title`)?.textContent === "Panel smoke reset updated");
-	step("live chat updates preserve row identity, rename drafts and the caret", document.querySelector(`.chat-item[data-id="${renamedId}"]`) === renamedRow
+	await until(() => document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="more"]`) !== null);
+	// Two days on, this update moves every row out of "today": a row that changes day group must keep its state.
+	const realNow = Date.now;
+	Date.now = () => realNow() + 2 * 86_400_000;
+	let regrouped = false;
+	try {
+		await source.renameChat({ id: resetId, title: "Panel smoke reset updated" }, BACKGROUND_CONTEXT);
+		await until(() => document.querySelector(`.chat-item[data-id="${resetId}"] .chat-title`)?.textContent === "Panel smoke reset updated");
+		regrouped = document.querySelector("#chat-drawer h3")?.textContent === t("chat.group.week");
+	} finally { Date.now = realNow; }
+	step("live chat updates preserve row identity, rename drafts and the caret across day groups", regrouped && document.querySelector(`.chat-item[data-id="${renamedId}"]`) === renamedRow
 		&& document.querySelector(".rename-input") === rename && rename.value === "Panel smoke title"
 		&& document.activeElement === rename && rename.selectionStart === 6 && rename.selectionEnd === 11);
 	click('[data-action="save"]');
 	await until(() => source.chats.value.find((chat) => chat.id === renamedId)?.title === "Panel smoke title" && !document.querySelector(".rename-input"));
 	await source.renameChat({ id: renamedId!, title: originalTitle }, BACKGROUND_CONTEXT);
 	step("chat titles can be edited inline without leaving the drawer", document.querySelector("#chat-drawer") !== null);
+	await openMenu(resetId);
 	const reset = document.querySelector<HTMLButtonElement>(`.chat-item[data-id="${resetId}"] [data-action="reset"]`)!;
 	click(`.chat-item[data-id="${resetId}"] [data-action="reset"]`);
 	await until(() => reset.hasAttribute("data-confirm"));
 	const requiresConfirm = reset.hasAttribute("data-confirm") && !reset.disabled;
 	click(`.chat-item[data-id="${resetId}"] [data-action="reset"]`);
-	await until(() => !reset.disabled && !reset.hasAttribute("data-confirm") && Boolean(reset.querySelector("svg")));
+	await until(() => !reset.disabled && !reset.hasAttribute("data-confirm"));
 	step("resetting a background chat keeps its row and focus-managed controls", source.chats.value.some((chat) => chat.id === resetId));
-	step("reset requires confirmation and restores its icon after completion", requiresConfirm && !reset.hasAttribute("data-confirm") && Boolean(reset.querySelector("svg"))
+	step("reset requires confirmation and returns to its idle label after completion", requiresConfirm && !reset.hasAttribute("data-confirm")
 		&& document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="reset"]`) === reset);
 	click(`.chat-item[data-id="${resetId}"] [data-action="rename"]`);
 	await until(() => document.querySelector(".rename-input"));

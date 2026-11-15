@@ -94,7 +94,7 @@ export const SettingsSheet = defineComponent({
 			return (
 				<section class="sheet" id="settings" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
 					<div class="panel-head">
-						<button class="icon-btn" id="settings-back" type="button" aria-label={t("settings.back")} onClick={() => controller.overlays.close()}><Icon name="back" size={18} /></button>
+						<button class="icon-btn" id="settings-back" type="button" title={t("settings.back")} aria-label={t("settings.back")} onClick={() => controller.overlays.close()}><Icon name="back" size={18} /></button>
 						<span class="panel-title">{t("settings.title")}</span>
 					</div>
 					<div class="sheet-body">

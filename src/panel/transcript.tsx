@@ -62,7 +62,7 @@ const UserAttachment = defineComponent({
 				{preview.value ? <img class="user-attachment-preview" src={preview.value} alt="" />
 					: failed.value ? <Icon name="alert" size={17} /> : isImageAttachment(props.attachment) ? <span class="attachment-loading"><span class="spinner" /></span> : <Icon name="file" size={18} />}
 				<span class="user-attachment-copy"><span class="attachment-name">{props.attachment.name}</span>
-					<span class="attachment-size">{formatBytes(props.attachment.size)}{props.attachment.lines !== undefined ? ` · ${props.attachment.lines} lines` : ""}</span></span>
+					<span class="attachment-size">{formatBytes(props.attachment.size)}{props.attachment.lines !== undefined ? ` · ${t("attachments.lines", props.attachment.lines)}` : ""}</span></span>
 				<Icon name="download" size={14} />
 				{failed.value && <span class="sr-only">{t("files.download")}</span>}
 			</button>
@@ -200,6 +200,16 @@ const FailureNotice = defineComponent({
 	},
 });
 
+const RetryNotice = defineComponent({
+	props: { retry: { type: Object as PropType<{ at: number; error: string }>, required: true } },
+	setup(props) {
+		const now = shallowRef(Date.now());
+		const timer = setInterval(() => { now.value = Date.now(); }, 1000);
+		onBeforeUnmount(() => clearInterval(timer));
+		return () => <Notice tone="warn" text={t("live.retry", props.retry.error, Math.max(0, Math.round((props.retry.at - now.value) / 1000)))} />;
+	},
+});
+
 const EmptyState = defineComponent({
 	props: { controller: { type: Object as PropType<PanelController>, required: true } },
 	setup(props) {
@@ -257,7 +267,7 @@ export const Transcript = defineComponent({
 					{view && empty && <EmptyState controller={props.controller} />}
 					{!view && store.loaded.value && store.status.value === "new" && <EmptyState controller={props.controller} />}
 					{busy && !partial && !running && <div class="typing" role="status"><span /><span>{t("thinking.live")}</span></div>}
-					{live?.generation?.retry && <Notice tone="warn" text={t("live.retry", live.generation.retry.error, Math.max(0, Math.round((live.generation.retry.at - Date.now()) / 1000)))} />}
+					{live?.generation?.retry && <RetryNotice retry={live.generation.retry} />}
 					{live?.compactions?.length ? <div class="divider" data-live="true"><span>{t("live.compacting")}</span></div> : null}
 					{!busy && live?.runFailure && <FailureNotice controller={props.controller} failure={live.runFailure} />}
 				</div>

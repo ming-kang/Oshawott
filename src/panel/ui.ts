@@ -1,3 +1,5 @@
+import { t } from "./i18n/index.ts";
+
 type Child = Node | string | number | null | undefined | false;
 type Props = Record<string, string | number | boolean | null | undefined | ((event: never) => void)>;
 
@@ -59,6 +61,8 @@ export const ICONS = {
 	folder: ["M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"],
 	download: ["M12 3v12", "m7 10 5 5 5-5", "M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"],
 	refresh: ["M20 11a8 8 0 0 0-14-5", "M4 13a8 8 0 0 0 14 5", "M20 4v7h-7", "M4 20v-7h7"],
+	more: ["c:5.5,12,1", "c:12,12,1", "c:18.5,12,1"],
+	search: ["c:11,11,6.5", "m16 16 4.5 4.5"],
 	sun: ["c:12,12,4", "M12 2.5v2", "M12 19.5v2", "M2.5 12h2", "M19.5 12h2", "m5.3 5.3 1.4 1.4", "m17.3 17.3 1.4 1.4", "m5.3 18.7 1.4-1.4", "m17.3 6.7 1.4-1.4"],
 } as const;
 
@@ -92,11 +96,25 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 	return svg;
 }
 
+let toasts: HTMLElement | undefined;
+
 export function toast(text: string, tone: "info" | "error" = "info") {
+	if (!toasts?.isConnected) {
+		toasts = h("div", { class: "toasts" });
+		document.body.appendChild(toasts);
+	}
+	// A repeated message restarts its own reading time instead of stacking a copy.
+	for (const shown of [...toasts.children]) if (shown.textContent === text) shown.remove();
 	const node = h("div", { class: "toast", "data-tone": tone, role: tone === "error" ? "alert" : "status" }, text);
-	document.body.appendChild(node);
-	setTimeout(() => node.classList.add("leaving"), 1800);
-	setTimeout(() => node.remove(), 2100);
+	toasts.appendChild(node);
+	const leave = () => {
+		clearTimeout(timer);
+		node.classList.add("leaving");
+		setTimeout(() => node.remove(), 300);
+	};
+	// Reading time grows with the message; an error is unexpected, so it stays longer.
+	const timer = setTimeout(leave, Math.min(10_000, (tone === "error" ? 4000 : 2000) + text.length * 60));
+	node.addEventListener("click", leave);
 }
 
 export const errorMessage = (error: unknown) => String((error as Error)?.message ?? error);
@@ -126,10 +144,18 @@ export async function copyText(text: string): Promise<boolean> {
 
 export function copyButton(text: () => string, label: string): HTMLButtonElement {
 	const button = h("button", { class: "icon-btn small", type: "button", title: label, "aria-label": label }, icon("copy", 14));
+	let restore: ReturnType<typeof setTimeout> | undefined;
 	button.addEventListener("click", async () => {
-		if (!(await copyText(text()))) return;
+		if (!(await copyText(text()))) return toast(t("copyFailed"), "error");
+		clearTimeout(restore);
 		button.replaceChildren(icon("check", 14));
-		setTimeout(() => button.replaceChildren(icon("copy", 14)), 1200);
+		button.title = t("copied");
+		button.setAttribute("aria-label", t("copied"));
+		restore = setTimeout(() => {
+			button.replaceChildren(icon("copy", 14));
+			button.title = label;
+			button.setAttribute("aria-label", label);
+		}, 1200);
 	});
 	return button;
 }

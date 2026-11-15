@@ -16,3 +16,11 @@ test("a view can vary its icon and summary with the arguments", () => {
 	assert.equal(resolveToolLook("tab_navigate", { url: "https://ex.com/p?q=1" }).icon, "globe");
 	assert.equal(resolveToolLook("tab_navigate", { url: "https://ex.com/p?q=1" }).meta, "ex.com");
 });
+
+test("an action names the element it touched and keeps its input", () => {
+	const element = { element: { role: "textbox", name: "Email" } };
+	assert.equal(toolViewFor("page_click")?.resultMeta?.(element, "p1.e4"), "Email (textbox)");
+	assert.equal(toolViewFor("page_type")?.resultMeta?.(element, "“a@b.c”"), "Email (textbox) · “a@b.c”");
+	assert.equal(toolViewFor("page_click")?.resultMeta?.({ element: { role: "button", name: "" } }, "p1.e4"), "button");
+	assert.equal(toolViewFor("page_scroll")?.resultMeta?.(undefined, "300px"), undefined, "without an element the card keeps the argument summary");
+});

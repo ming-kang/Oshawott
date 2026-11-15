@@ -69,7 +69,7 @@
 	white-space: nowrap;
 }
 
-.tool:is([data-tool="read"], [data-tool="read_text"], [data-tool="write"], [data-tool="edit"], [data-tool="ls"], [data-tool="page_click"], [data-tool="page_scroll"]) .tool-meta {
+.tool:is([data-tool="read"], [data-tool="read_text"], [data-tool="write"], [data-tool="edit"], [data-tool="ls"]) .tool-meta {
 	font: 12px/1.5 var(--mono);
 }
 

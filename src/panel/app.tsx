@@ -40,7 +40,15 @@ export const PanelApp = defineComponent({
 			});
 			threadObserver.observe(element);
 		};
+		// Typing with nothing focused goes to the prompt, as it would in a chat window.
+		const typeToFocus = (event: KeyboardEvent) => {
+			if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || controller.overlays.current.value) return;
+			const printable = (event.key.length === 1 && event.key !== " ") || event.key === "Process";
+			if (!printable || (event.target as Element | null)?.closest?.("input, textarea, select, button, a, summary, [contenteditable], [tabindex]")) return;
+			composer.focus({ preventScroll: true });
+		};
 		onMounted(() => {
+			document.addEventListener("keydown", typeToFocus);
 			void observeThread();
 			if (dock.value) {
 				dockObserver = new ResizeObserver(([entry]) => {
@@ -49,7 +57,7 @@ export const PanelApp = defineComponent({
 				dockObserver.observe(dock.value);
 			}
 		});
-		onBeforeUnmount(() => { dockObserver?.disconnect(); threadObserver?.disconnect(); });
+		onBeforeUnmount(() => { document.removeEventListener("keydown", typeToFocus); dockObserver?.disconnect(); threadObserver?.disconnect(); });
 		watch(store.conversationKey, async () => {
 			await observeThread();
 			if (store.id.value !== undefined) toBottom();

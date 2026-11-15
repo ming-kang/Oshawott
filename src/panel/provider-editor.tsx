@@ -35,6 +35,20 @@ export const ProviderEditorSheet = defineComponent({
 		const fetchChecked = shallowRef<ReadonlySet<string>>(new Set());
 		const fetchSearch = shallowRef("");
 		const removeConfirmation = useConfirmation();
+		/** Set by a refused save or fetch: from then on the fields that block it are marked until they are filled. */
+		const checked = shallowRef<"save" | "fetch">();
+		// A refusal was about the provider then shown; another one starts unmarked.
+		watch([kind, builtinId], () => { checked.value = undefined; });
+		const sheet = shallowRef<HTMLElement>();
+		const refuse = (reason: "save" | "fetch", message: string) => {
+			checked.value = reason;
+			toast(message, "error");
+			void nextTick(() => {
+				const field = sheet.value?.querySelector<HTMLElement>('[aria-invalid="true"]');
+				field?.closest("details")?.setAttribute("open", "");
+				field?.focus();
+			});
+		};
 		const draft = reactive<ProviderProfile>({
 			id, name: existing?.name ?? "", baseUrl: existing?.baseUrl ?? "", api: existing?.api ?? "openai-responses",
 			models: existing?.models.map((model) => ({ ...model, thinkingLevels: [...model.thinkingLevels] })) ?? [],
@@ -60,6 +74,8 @@ export const ProviderEditorSheet = defineComponent({
 		watch(pickerProviders, () => { activeOption.value = 0; });
 		const endpoint = computed(() => connectionNote(draft.api, draft.baseUrl));
 		const keyFieldHidden = computed(() => kind.value === "builtin" && (!currentSummary.value || currentSummary.value.apiKey === false));
+		const keyMissing = computed(() => !key.value.trim() && !currentSummary.value?.configured);
+		const endpointInvalid = computed(() => checked.value === "fetch" ? !validEndpointUrl(draft.baseUrl.trim()) : checked.value === "save" && !draft.baseUrl.trim());
 		const filteredFetch = computed(() => {
 			if (fetchState.value.kind !== "results") return [];
 			const existing = new Set(draft.models.map((model) => model.id.trim()).filter(Boolean));
@@ -99,9 +115,10 @@ export const ProviderEditorSheet = defineComponent({
 		const probeCustomModels = async () => {
 			if (busy.value || fetchState.value.kind === "loading") return;
 			const rawUrl = draft.baseUrl.trim();
-			if (!rawUrl) return toast(t("settings.endpointRequired"), "error");
+			if (!rawUrl) return refuse("fetch", t("settings.endpointRequired"));
 			const baseUrl = validEndpointUrl(rawUrl);
-			if (!baseUrl) return toast(t("settings.endpointInvalid"), "error");
+			if (!baseUrl) return refuse("fetch", t("settings.endpointInvalid"));
+			checked.value = undefined;
 			const asked = requestModelAccess(baseUrl);
 			busyAction.value = "fetch";
 			fetchState.value = { kind: "loading" };
@@ -130,8 +147,9 @@ export const ProviderEditorSheet = defineComponent({
 					vision: model.vision, thinkingLevels: model.thinkingLevels.length ? [...model.thinkingLevels] : ["off"],
 				})),
 			};
-			if (!profile.name || !profile.baseUrl || profile.models.some((model) => !model.id)) { toast(t("settings.completeFields"), "error"); return false; }
-			if (!summary()?.configured && !key.value.trim()) { toast(t("settings.keyRequired"), "error"); return false; }
+			if (!profile.name || !profile.baseUrl || profile.models.some((model) => !model.id)) { refuse("save", t("settings.completeFields")); return false; }
+			if (keyMissing.value) { refuse("save", t("settings.keyRequired")); return false; }
+			checked.value = undefined;
 			const asked = requestModelAccess(profile.baseUrl);
 			busyAction.value = "save";
 			try {
@@ -153,7 +171,7 @@ export const ProviderEditorSheet = defineComponent({
 			if (!provider) return toast(t("settings.noBuiltinProviders"), "error");
 			if (!key.value.trim()) {
 				if (provider.configured) controller.openSettings();
-				else toast(t("settings.keyRequired"), "error");
+				else refuse("save", t("settings.keyRequired"));
 				return;
 			}
 			const asked = requestModelAccess(provider.baseUrl);
@@ -196,9 +214,9 @@ export const ProviderEditorSheet = defineComponent({
 		});
 
 		return () => (
-			<section class="sheet" id="provider-editor" role="dialog" aria-modal="true" aria-label={t("settings.providerEditor")} data-busy={String(busy.value)}>
+			<section class="sheet" id="provider-editor" role="dialog" aria-modal="true" aria-label={t("settings.providerEditor")} data-busy={String(busy.value)} ref={sheet}>
 				<div class="panel-head">
-					<button class="icon-btn" id="provider-back" type="button" aria-label={t("settings.back")} onClick={() => controller.openSettings()}><Icon name="back" size={18} /></button>
+					<button class="icon-btn" id="provider-back" type="button" title={t("settings.backLabel")} aria-label={t("settings.backLabel")} onClick={() => controller.openSettings()}><Icon name="back" size={18} /></button>
 					<span class="panel-title">{t(kindLocked.value ? "settings.editProvider" : "settings.addProvider")}</span>
 				</div>
 				<div class="sheet-body">
@@ -240,9 +258,10 @@ export const ProviderEditorSheet = defineComponent({
 						) : (
 							<>
 								<Field label={t("settings.providerName")}><input class="input" id="provider-name" autocomplete="off" value={draft.name}
+									aria-invalid={checked.value === "save" && !draft.name.trim()}
 									onInput={(event) => { draft.name = (event.target as HTMLInputElement).value; }} /></Field>
 								<div class="provider-field-group"><Field label={t("settings.providerEndpoint")}><input class="input" id="provider-base-url" placeholder={baseUrlPlaceholder(draft.api)}
-									autocomplete="off" spellcheck="false" value={draft.baseUrl} onInput={(event) => { draft.baseUrl = (event.target as HTMLInputElement).value; }} /></Field>
+									autocomplete="off" spellcheck="false" value={draft.baseUrl} aria-invalid={endpointInvalid.value} onInput={(event) => { draft.baseUrl = (event.target as HTMLInputElement).value; }} /></Field>
 									{endpoint.value && <span class="provider-field-note" id="provider-endpoint-hint" data-warning={String(endpoint.value.warning)}>{endpoint.value.text}</span>}</div>
 								<Field label={t("settings.providerApi")}><select class="input" id="provider-api" value={draft.api} onChange={(event) => { draft.api = (event.target as HTMLSelectElement).value as ModelApi; }}>
 									<option value="openai-responses">OpenAI Responses</option><option value="openai-completions">OpenAI Chat Completions</option><option value="anthropic-messages">Anthropic Messages</option>
@@ -251,7 +270,9 @@ export const ProviderEditorSheet = defineComponent({
 						)}
 						{!keyFieldHidden.value && <Field label="API Key"><input class="input" id="provider-key" type="password" autocomplete="off" spellcheck="false"
 							placeholder={currentSummary.value?.configured ? t("settings.keepKey") : t("settings.keyPlaceholder")} value={key.value} ref={keyInput}
-							onInput={(event) => { key.value = (event.target as HTMLInputElement).value; }} /></Field>}
+							aria-invalid={checked.value === "save" && keyMissing.value}
+							onInput={(event) => { key.value = (event.target as HTMLInputElement).value; }}
+							onKeydown={(event) => { if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); void save(); } }} /></Field>}
 						{kind.value === "builtin" && <LoginCard controller={controller} provider={currentSummary.value} onSignedIn={() => { kindLocked.value = true; }} />}
 					</div></section>
 					{kind.value === "builtin" && currentSummary.value?.configured && <section class="section" id="provider-discovery">
@@ -273,7 +294,7 @@ export const ProviderEditorSheet = defineComponent({
 						{fetchState.value.kind !== "idle" && <div class="card provider-fetch-panel" id="provider-fetch-panel">
 							<div class="provider-fetch-head"><div class="provider-fetch-title-row"><strong class="provider-fetch-title">{t("settings.fetchTitle")}</strong>
 								<span class="provider-fetch-count">{fetchState.value.kind === "results" ? t("settings.fetchCount", fetchState.value.models.length) : ""}</span></div>
-								<button class="icon-btn small" id="provider-fetch-close" type="button" aria-label={t("settings.cancel")} onClick={closeFetch}><Icon name="x" size={14} /></button></div>
+								<button class="icon-btn small" id="provider-fetch-close" type="button" title={t("settings.cancel")} aria-label={t("settings.cancel")} onClick={closeFetch}><Icon name="x" size={14} /></button></div>
 							{fetchState.value.kind === "loading" || fetchState.value.kind === "error" ? <p class="provider-status" id="provider-fetch-status" role="status" data-error={String(fetchState.value.kind === "error")}>
 								{fetchState.value.kind === "loading" ? t("settings.discovering") : fetchState.value.message}</p> : (
 								<div class="provider-fetch-body">
@@ -307,7 +328,8 @@ export const ProviderEditorSheet = defineComponent({
 							)}
 						</div>}
 						<div class="provider-models" id="provider-manual-models">{draft.models.length ? draft.models.map((model, index) => (
-							<ModelEditor model={model} providers={controller.store.providers.value} remove={() => draft.models.splice(index, 1)} key={modelKey(model)} />
+							<ModelEditor model={model} providers={controller.store.providers.value} invalid={checked.value === "save" && !model.id.trim()}
+								remove={() => draft.models.splice(index, 1)} key={modelKey(model)} />
 						)) : <div class="list-empty">{t("settings.noModels")}</div>}</div>
 					</section>}
 					<section class="section provider-footer"><div class="provider-actions">

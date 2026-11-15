@@ -88,7 +88,7 @@ export const FilesSheet = defineComponent({
 		return () => (
 			<section class="sheet" id="files" role="dialog" aria-modal="true" aria-label={t("files.title")}>
 				<div class="panel-head">
-					<button class="icon-btn" id="files-back" type="button" aria-label={t("files.back")} onClick={() => props.controller.overlays.close()}><Icon name="back" size={18} /></button>
+					<button class="icon-btn" id="files-back" type="button" title={t("files.back")} aria-label={t("files.back")} onClick={() => props.controller.overlays.close()}><Icon name="back" size={18} /></button>
 					<span class="panel-title">{t("files.title")}</span>
 					<button class="icon-btn" id="files-refresh" type="button" title={t("files.refresh")} aria-label={t("files.refresh")}
 						disabled={loading.value} onClick={() => void refresh()}><Icon name="refresh" size={18} /></button>

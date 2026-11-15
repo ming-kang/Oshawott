@@ -127,7 +127,7 @@ export class ToolCard {
 		const content = rich ?? h("pre", { class: isError ? "error" : null }, shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown);
 		this.#result = section(t("tool.result"), content);
 		this.#body.append(this.#result);
-		const meta = isError ? undefined : view?.resultMeta?.(details);
+		const meta = isError ? undefined : view?.resultMeta?.(details, this.#initialMeta);
 		this.#meta.textContent = meta ?? this.#initialMeta;
 		this.setStatus(isError ? "error" : "done");
 		this.#grant?.remove();

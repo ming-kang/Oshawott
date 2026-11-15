@@ -17,7 +17,8 @@ export interface ToolView {
 	readonly icon: IconName | ((args: Record<string, unknown>) => IconName);
 	readonly label: string | ((args: Record<string, unknown>) => string);
 	readonly argsMeta?: (args: Record<string, unknown>) => string | undefined;
-	readonly resultMeta?: (details: unknown) => string | undefined;
+	/** `argsMeta` is what the card showed while the call ran. */
+	readonly resultMeta?: (details: unknown, argsMeta: string) => string | undefined;
 	readonly body?: (result: ToolResult) => Node | undefined;
 }
 
@@ -64,6 +65,17 @@ const inspectResultMeta = (details: unknown): string | undefined => {
 	return undefined;
 };
 
+/** The element an action touched, by its accessible name: a ref means nothing to the reader. */
+const elementLabel = (details: unknown): string | undefined => {
+	const element = record(record(details)?.element);
+	if (!element || typeof element.role !== "string" || typeof element.name !== "string") return undefined;
+	return element.name ? `${clip(element.name, 40)} (${element.role})` : element.role;
+};
+const elementAndInputMeta = (details: unknown, argsMeta: string): string | undefined => {
+	const element = elementLabel(details);
+	return element && [element, argsMeta].filter(Boolean).join(" · ");
+};
+
 const registry = new Map<string, ToolView>();
 
 const namesOf = (view: ToolView): readonly string[] => view.names ?? (view.name === undefined ? [] : [view.name]);
@@ -92,13 +104,13 @@ export function resolveToolLook(name: string, args: Record<string, unknown>): To
 const BUILTIN_VIEWS: readonly ToolView[] = [
 	defineToolView({ name: "page_snapshot", icon: "eye", label: t("tool.snapshot"), argsMeta: refOrSelectorMeta, resultMeta: snapshotResultMeta }),
 	defineToolView({ name: "page_inspect", icon: "code", label: t("tool.inspect"), argsMeta: refOrSelectorMeta, resultMeta: inspectResultMeta }),
-	defineToolView({ name: "page_click", icon: "pointer", label: t("tool.click"), argsMeta: refMeta }),
-	defineToolView({ name: "page_type", icon: "keyboard", label: t("tool.type"), argsMeta: quotedTextMeta }),
-	defineToolView({ name: "page_select", icon: "list", label: t("tool.select"), argsMeta: (args) => String(args.option ?? "") }),
-	defineToolView({ name: "page_press", icon: "keyboard", label: t("tool.press"), argsMeta: (args) => [...(Array.isArray(args.modifiers) ? args.modifiers : []), args.key ?? ""].join("+") }),
-	defineToolView({ name: "page_hover", icon: "pointer", label: t("tool.hover"), argsMeta: refMeta }),
+	defineToolView({ name: "page_click", icon: "pointer", label: t("tool.click"), argsMeta: refMeta, resultMeta: elementLabel }),
+	defineToolView({ name: "page_type", icon: "keyboard", label: t("tool.type"), argsMeta: quotedTextMeta, resultMeta: elementAndInputMeta }),
+	defineToolView({ name: "page_select", icon: "list", label: t("tool.select"), argsMeta: (args) => String(args.option ?? ""), resultMeta: elementAndInputMeta }),
+	defineToolView({ name: "page_press", icon: "keyboard", label: t("tool.press"), argsMeta: (args) => [...(Array.isArray(args.modifiers) ? args.modifiers : []), args.key ?? ""].join("+"), resultMeta: elementAndInputMeta }),
+	defineToolView({ name: "page_hover", icon: "pointer", label: t("tool.hover"), argsMeta: refMeta, resultMeta: elementLabel }),
 	defineToolView({ name: "page_wait", icon: "refresh", label: t("tool.wait"), argsMeta: (args) => String(args.selector ?? args.text ?? (args.timeoutMs ? `${args.timeoutMs} ms` : "")) }),
-	defineToolView({ name: "page_scroll", icon: "scroll", label: t("tool.scroll"), argsMeta: (args) => (args.ref ? String(args.ref) : args.pixels ? `${args.pixels}px` : "") }),
+	defineToolView({ name: "page_scroll", icon: "scroll", label: t("tool.scroll"), argsMeta: (args) => (args.ref ? String(args.ref) : args.pixels ? `${args.pixels}px` : ""), resultMeta: elementLabel }),
 	defineToolView({ name: "tabs_list", icon: "tabs", label: t("tool.tabs") }),
 	defineToolView({ name: "tab_open", icon: "external", label: t("tool.open"), argsMeta: hostMeta }),
 	defineToolView({

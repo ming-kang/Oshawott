@@ -154,6 +154,11 @@
 	min-width: 0;
 }
 
+.approval-head .tool-icon {
+	background: none;
+	color: var(--warn);
+}
+
 .approval-head strong {
 	flex: none;
 }
