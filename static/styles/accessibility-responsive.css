@@ -65,7 +65,11 @@
 		padding: 4px 8px 10px;
 	}
 
-	.model-btn {
+	/* Generic only: composer.css caps both real model buttons (#model,
+	   .model-btn.thinking-btn) with higher specificity, so this tightening never
+	   reached them. Layer order alone would reverse that, so keep the rule
+	   subordinate to the component caps with :where(). */
+	:where(.model-btn) {
 		max-width: calc(100% - 84px);
 	}
 
