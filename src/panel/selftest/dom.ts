@@ -19,7 +19,7 @@ export async function until<T>(read: () => T | undefined | null | false | Promis
 	for (;;) {
 		const value = await read();
 		if (value) return value;
-		if (Date.now() >= deadline) throw new Error("panel control did not settle");
+		if (Date.now() >= deadline) throw new Error(`panel control did not settle: ${read.toString().slice(0, 300)}`);
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
 }

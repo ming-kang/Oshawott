@@ -1,7 +1,7 @@
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type TaskId } from "@earendil-works/pi-durable";
 import { MarkdownView } from "../markdown-dom.ts";
-import { Transcript } from "../render.ts";
+import { TranscriptFixture } from "./fixtures.tsx";
 import { h } from "../ui.ts";
 import { until } from "./dom.ts";
 
@@ -18,8 +18,8 @@ export async function testMarkdown(origin?: string) {
 	const steps: { name: string; ok: boolean; detail?: string }[] = [];
 	const step = (name: string, ok: boolean, detail?: string) => steps.push({ name, ok, detail });
 	const fixture = h("div", { style: "position:fixed;top:0;left:0;width:320px;height:500px;overflow:auto;background:var(--bg);z-index:1000" });
-	const transcript = new Transcript(actions);
-	const tools = new Transcript(actions);
+	const transcript = new TranscriptFixture(actions);
+	const tools = new TranscriptFixture(actions);
 	const views: MarkdownView[] = [];
 	const addView = (source: string, streaming = false) => {
 		const view = new MarkdownView(source, streaming);
@@ -46,7 +46,7 @@ export async function testMarkdown(origin?: string) {
 			} } };
 			return { conversation, entries: [], docs: { "pi.live": live } };
 		};
-		transcript.update({ kind: "conversation", view: view(source), ready: true });
+		await transcript.update({ kind: "conversation", view: view(source), ready: true });
 		const answer = transcript.element.querySelector(".msg.assistant")!;
 		const thinking = answer.querySelector<HTMLDetailsElement>(".thinking")!;
 		thinking.open = true;
@@ -64,7 +64,7 @@ export async function testMarkdown(origin?: string) {
 		selection?.addRange(range);
 		const selected = selection?.toString();
 		const next = `${source}\nconsole.log(result);`;
-		transcript.update({ kind: "conversation", view: view(next, "Reading the page. Found the content."), ready: true });
+		await transcript.update({ kind: "conversation", view: view(next, "Reading the page. Found the content."), ready: true });
 		const afterStreaming = selection?.toString();
 		step("Markdown streaming preserves the answer, completed paragraphs and thinking disclosure", transcript.element.querySelector(".msg.assistant") === answer
 			&& answer.querySelector(":scope > .md > p") === paragraph && answer.querySelector(".thinking") === thinking && thinking.open);
@@ -80,7 +80,7 @@ export async function testMarkdown(origin?: string) {
 		selection?.addRange(range);
 		const beforeCommit = selection?.toString();
 		const final = `${next}\n\`\`\``;
-		transcript.update({ kind: "conversation", ready: true, view: {
+		await transcript.update({ kind: "conversation", ready: true, view: {
 			conversation, docs: {},
 			entries: [{ id: 1 as EntryId, byTaskId: 42 as TaskId, conversationId: conversation.id, kind: "pi.assistant", model: [message(final, "Reading the page. Found the content.")] }],
 		} });
@@ -150,6 +150,20 @@ export async function testMarkdown(origin?: string) {
 		await frames();
 		step("unknown languages fall back to literal source without stale coloring", changedCode.element.querySelector("code")?.textContent === "<plain & literal>" && !changedCode.element.querySelector("code span"));
 
+		const diagram = addView("```mermaid\ngraph TD; A[One]-->B[Two];\n```");
+		await until(() => diagram.element.querySelector(".codeblock-view svg"));
+		step("Mermaid fences render local SVG under the extension CSP", diagram.element.querySelector(".codeblock-view")?.textContent?.includes("One") === true
+			&& !diagram.element.querySelector(".codeblock-view script, .codeblock-view foreignObject") && diagram.element.querySelector<HTMLElement>("pre")?.hidden === true);
+		const streamedDiagram = addView("```mermaid\ngraph TD; A[Streamed]-->B;", true);
+		diagram.update("```mermaid\ngraph TD; A[Changed]-->B[Two];\n```");
+		streamedDiagram.update("```mermaid\ngraph TD; A[Streamed]-->B;\n```");
+		await until(() => streamedDiagram.element.querySelector(".codeblock-view svg")?.textContent?.includes("Streamed"));
+		step("closing an unchanged streaming fence starts its enricher", streamedDiagram.element.querySelector("pre")?.hasAttribute("hidden") === true);
+		await until(() => diagram.element.querySelector(".codeblock-view svg")?.textContent?.includes("Changed"));
+		diagram.update("```ts\nconst plainCode = 1;\n```");
+		step("fence enrichment is revision-safe and ordinary code returns to source", diagram.element.querySelector<HTMLElement>("pre")?.hidden === false
+			&& diagram.element.querySelector("code")?.textContent === "const plainCode = 1;" && diagram.element.querySelector<HTMLElement>(".codeblock-view")?.hidden === true);
+
 		const math = addView(String.raw`Euler: $e^{i\pi}+1=0$.
 
 $$\frac{a}{b}=\sqrt{x}$$`);
@@ -197,7 +211,14 @@ $$\frac{a}{b}=\sqrt{x}$$`);
 			const unrequested = await hits();
 			step("rendering a Markdown image causes no network request", unrequested.count === before!.count);
 			image.element.querySelector<HTMLButtonElement>("button")!.click();
-			await until(() => image.element.querySelector("img")?.naturalWidth);
+			// Firefox defers lazy images outside the fixture's 500px viewport; diagram tests above
+			// made that off-screen position deterministic. Simulate the user seeing the consent button.
+			image.element.scrollIntoView({ block: "center" });
+			try {
+				await until(() => image.element.querySelector("img")?.naturalWidth);
+			} catch (error) {
+				throw new Error(`${(error as Error).message}; image=${image.element.innerHTML.slice(0, 400)}; hits=${JSON.stringify(await hits())}`);
+			}
 			const after = await hits();
 			step("explicit image loading uses the local server without a referrer", after.count === before!.count + 1 && !after.referer && image.element.querySelector("img")?.referrerPolicy === "no-referrer");
 		}
@@ -211,36 +232,37 @@ $$\frac{a}{b}=\sqrt{x}$$`);
 			api: partial.api, provider: partial.provider, model: partial.model, usage: partial.usage, stopReason: partial.stopReason, timestamp: partial.timestamp,
 		} } };
 		const updateTools = (entries: EntryRecord[], liveState?: LiveState) => tools.update({ kind: "conversation", ready: true, view: { conversation, entries, docs: liveState ? { "pi.live": liveState } : {} } });
-		updateTools([], live);
+		await updateTools([], live);
 		const call = tools.element.querySelector<HTMLDetailsElement>(".tool")!;
 		call.open = true;
 		live.generation!.message!.content = [{ type: "toolCall", id: "live-call", name: "write", arguments: { path: "report.md", content: "final content" } }];
-		updateTools([], live);
+		await updateTools([], live);
 		step("streaming tool arguments update without resetting their disclosure", tools.element.querySelector(".tool") === call && call.open && call.querySelector(".tool-meta")?.textContent === "report.md" && call.textContent?.includes("final content") === true);
 		const own = tools.element.querySelector(".msg.assistant[data-live]");
 		const unrelated: EntryRecord = { id: 1 as EntryId, byTaskId: 99 as TaskId, conversationId: conversation.id, kind: "pi.assistant", model: [fauxAssistantMessage("An unrelated entry")] };
-		updateTools([unrelated], live);
+		await updateTools([unrelated], live);
 		step("an unrelated committed assistant cannot consume the active generation", tools.element.querySelector(".msg.assistant[data-live]") === own);
-		updateTools([unrelated,
-			{ id: 2 as EntryId, byTaskId: 75 as TaskId, conversationId: conversation.id, kind: "pi.assistant", model: [fauxAssistantMessage(fauxToolCall("write", { path: "report.md", content: "final content" }, { id: "live-call" }), { stopReason: "toolUse" })] },
+		await updateTools([unrelated,
+			{ id: 2 as EntryId, byTaskId: 75 as TaskId, conversationId: conversation.id, kind: "pi.assistant", model: [fauxAssistantMessage(fauxToolCall("write", { path: "report.md", content: "final content" }, { id: "live-call" }), { stopReason: "toolUse", timestamp: partial.timestamp })] },
 			{ id: 3 as EntryId, conversationId: conversation.id, kind: "pi.tool-result", model: [{ role: "toolResult", toolCallId: "live-call", toolName: "write", content: [{ type: "text", text: "Saved report." }], isError: false, timestamp: 0 }] },
 		]);
 		step("promoted live tool cards receive results in place, without orphan duplicates", tools.element.querySelectorAll(".tool").length === 1 && tools.element.querySelector(".tool") === call && call.open && call.dataset.status === "done" && call.textContent?.includes("Saved report.") === true);
 
 		const retry = view("```ts\nconst oldAttempt = 1;");
-		transcript.update({ kind: "conversation", view: retry, ready: true });
+		await transcript.update({ kind: "conversation", view: retry, ready: true });
 		const oldAttempt = transcript.element.querySelector(".msg.assistant[data-live]")!;
 		(retry.docs["pi.live"] as LiveState).generation!.attempt = 2;
 		(retry.docs["pi.live"] as LiveState).generation!.message!.content = [{ type: "text", text: "```ts\nconst freshAttempt = 2;\n```" }];
-		transcript.update({ kind: "conversation", view: retry, ready: true });
+		await transcript.update({ kind: "conversation", view: retry, ready: true });
 		await until(() => transcript.element.querySelector(".hljs-keyword"));
 		step("a retry owns a new view and cancels the previous attempt's work", transcript.element.querySelector(".msg.assistant[data-live]") !== oldAttempt && !oldAttempt.isConnected
-			&& transcript.element.querySelector(".codeblock code")?.textContent === "const freshAttempt = 2;");
+			&& transcript.element.querySelector(".msg[data-live] .codeblock code")?.textContent === "const freshAttempt = 2;",
+			JSON.stringify({ oldConnected: oldAttempt.isConnected, fixtureContains: transcript.element.contains(oldAttempt), oldParent: oldAttempt.parentElement?.outerHTML.slice(0, 300), answers: [...transcript.element.querySelectorAll(".msg.assistant")].map((node) => ({ live: node.hasAttribute("data-live"), text: node.textContent })) }));
 	} finally {
 		navigator.clipboard.writeText = write;
 		for (const view of views) view.dispose();
-		transcript.clear();
-		tools.clear();
+		transcript.dispose();
+		tools.dispose();
 		fixture.remove();
 		selection?.removeAllRanges();
 		for (const range of originalSelection) selection?.addRange(range);

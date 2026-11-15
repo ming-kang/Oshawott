@@ -1,0 +1,96 @@
+import { defineComponent, nextTick, onBeforeUnmount, onMounted, shallowRef, watch, type PropType } from "vue";
+import { ApprovalBar } from "./approvals.tsx";
+import { Composer } from "./composer.tsx";
+import type { PanelController } from "./controller.ts";
+import { Icon } from "./components.tsx";
+import { MessageQueue } from "./queue.tsx";
+import { OverlayHost } from "./overlay-host.tsx";
+import { Transcript } from "./transcript.tsx";
+import { t } from "./i18n/index.ts";
+
+export const PanelApp = defineComponent({
+	props: { controller: { type: Object as PropType<PanelController>, required: true } },
+	setup(props) {
+		const { controller } = props;
+		const { store, composer } = controller;
+		const scroller = controller.scroller;
+		const dock = composer.dock;
+		const jump = shallowRef(false);
+		let followBottom = true;
+		let dockObserver: ResizeObserver | undefined;
+		let threadObserver: ResizeObserver | undefined;
+		const nearBottom = () => {
+			const element = scroller.value;
+			return !element || element.scrollHeight - element.scrollTop - element.clientHeight < 72;
+		};
+		const toBottom = (smooth = false) => {
+			followBottom = true;
+			scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+			jump.value = false;
+		};
+		controller.scrollToBottom.value = toBottom;
+		const observeThread = async () => {
+			await nextTick();
+			threadObserver?.disconnect();
+			const element = scroller.value?.querySelector<HTMLElement>(".thread");
+			if (!element) return;
+			threadObserver = new ResizeObserver(() => {
+				if (followBottom) toBottom();
+				else if (!nearBottom()) jump.value = true;
+			});
+			threadObserver.observe(element);
+		};
+		onMounted(() => {
+			void observeThread();
+			if (dock.value) {
+				dockObserver = new ResizeObserver(([entry]) => {
+					if (entry) document.documentElement.style.setProperty("--dock-height", `${entry.borderBoxSize[0]?.blockSize ?? dock.value!.offsetHeight}px`);
+				});
+				dockObserver.observe(dock.value);
+			}
+		});
+		onBeforeUnmount(() => { dockObserver?.disconnect(); threadObserver?.disconnect(); });
+		watch(store.conversationKey, async () => {
+			await observeThread();
+			if (store.id.value !== undefined) toBottom();
+		});
+		watch(store.transcript, async (_value, _previous, onCleanup) => {
+			const stick = followBottom || nearBottom();
+			const height = scroller.value?.scrollHeight ?? 0;
+			let cancelled = false;
+			onCleanup(() => { cancelled = true; });
+			await nextTick();
+			if (cancelled) return;
+			if (stick) toBottom();
+			else if ((scroller.value?.scrollHeight ?? 0) > height) jump.value = true;
+		}, { flush: "pre" });
+		return () => (
+			<>
+				<header class="topbar">
+					<button class="icon-btn" id="chats-toggle" type="button" title={t("chat.list")} aria-label={t("chat.list")} ref={controller.chatsButton} onClick={() => controller.openChats()}><Icon name="menu" size={18} /></button>
+					<h1 class="title" id="title" title={store.title.value || t("chat.untitled")}>{store.title.value || t("chat.untitled")}</h1>
+					<button class="icon-btn" id="new-chat" type="button" title={t("chat.new")} aria-label={t("chat.new")} hidden={store.status.value === "new"}
+						onClick={() => { void controller.open(undefined); composer.focus(); }}><Icon name="compose" size={18} /></button>
+					<button class="icon-btn" id="files-toggle" type="button" title={t("files.title")} aria-label={t("files.title")} hidden={store.status.value === "new"}
+						disabled={!controller.session.chat} ref={controller.filesButton} onClick={() => controller.openFiles()}><Icon name="folder" size={18} /></button>
+					<button class="icon-btn" id="settings-toggle" type="button" title={t("settings.title")} aria-label={t("settings.title")} ref={controller.settingsButton} onClick={() => controller.openSettings()}><Icon name="sliders" size={18} /></button>
+				</header>
+				<main class="main">
+					{store.reconnecting.value && <div class="banner" role="status"><span class="spinner" />{t("reconnecting")}</div>}
+					<div class="scroller" id="scroller" ref={scroller} onScroll={() => {
+						followBottom = nearBottom();
+						if (followBottom) jump.value = false;
+						document.body.toggleAttribute("data-scrolled", (scroller.value?.scrollTop ?? 0) > 2);
+					}}>
+						<Transcript controller={controller} key={store.conversationKey.value} />
+					</div>
+					<button class="jump" type="button" hidden={!jump.value} onClick={() => toBottom(true)}><Icon name="down" size={14} />{t("jump")}</button>
+				</main>
+				<footer class="composer-wrap" ref={dock}>
+					<ApprovalBar controller={controller} /><MessageQueue controller={controller} /><Composer controller={controller} />
+				</footer>
+				<OverlayHost overlays={controller.overlays} />
+			</>
+		);
+	},
+});

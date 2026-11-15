@@ -48,6 +48,7 @@ export async function testAttachmentComposer(): Promise<AttachmentTestStep[]> {
 		await until(() => prompt.value === "Attachment draft" && chips().length === 3 || undefined);
 		step("text and pending bytes restore only their own chat", prompt.value === "Attachment draft" && chips().length === 3);
 
+		await until(() => document.querySelector<HTMLButtonElement>("#send")?.disabled === false);
 		click("#send");
 		const cards = await until(() => {
 			const users = [...document.querySelectorAll<HTMLElement>(".msg.user")];

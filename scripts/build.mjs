@@ -4,6 +4,7 @@ import { build } from "esbuild";
 import { manifestFor } from "../src/manifest.ts";
 import { freshDir, root } from "./lib/paths.mjs";
 import { piNodeOnly, piOAuth, staticNodeImports } from "./lib/pi-ai.mjs";
+import { bundledPackages, panelNotices } from "./lib/notices.mjs";
 
 const args = process.argv.slice(2);
 const dev = args.includes("--dev");
@@ -43,6 +44,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 	if (!(target in bundles)) throw new Error(`Unknown target ${target}`);
 	const out = await freshDir(target);
 	const chunks = new Set();
+	const panelPackages = new Set();
 	for (const [file, [entry, format]] of Object.entries(bundles[target])) {
 		const result = await build({
 			entryPoints: { [file.replace(/\.js$/, "")]: join(root, entry) },
@@ -58,12 +60,21 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 			minify: !dev,
 			sourcemap: dev ? "inline" : false,
 			legalComments: "none",
-			define: { __OSHAWOTT_DEV__: JSON.stringify(dev) },
+			define: {
+				__OSHAWOTT_DEV__: JSON.stringify(dev),
+				__VUE_OPTIONS_API__: "false",
+				__VUE_PROD_DEVTOOLS__: "false",
+				__VUE_PROD_HYDRATION_MISMATCH_DETAILS__: "false",
+				"process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
+			},
+			// TSX keeps panel type-checking on TypeScript 7; vue-tsc cannot consume it yet.
+			...(file === "panel.js" ? { jsx: "automatic", jsxImportSource: "vue" } : {}),
 			// SDK code paths for Node (proxies, files) that a browser never takes.
 			external: ["node:*"],
 			plugins: [piOAuth(), piNodeOnly()],
 			logLevel: "warning",
 		});
+		if (file === "panel.js") for (const name of bundledPackages(result.metafile)) panelPackages.add(name);
 		for (const output of Object.keys(result.metafile.outputs).filter((path) => path.endsWith(".js"))) {
 			const leaked = staticNodeImports(await readFile(output, "utf8"));
 			if (leaked.length) throw new Error(`${output} imports ${[...new Set(leaked)].join(", ")} when it loads`);
@@ -103,6 +114,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 		await copyFile(join(root, file), join(out, name));
 	}
 	await writeFile(join(out, "manifest.json"), `${JSON.stringify(manifestFor(target, version, { dev }), null, 2)}\n`);
+	await writeFile(join(out, "PANEL-NOTICES.txt"), await panelNotices(panelPackages));
 
 	const sizes = [];
 	for (const file of [...Object.keys(bundles[target]), "quickjs.wasm"]) {

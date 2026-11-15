@@ -3,7 +3,7 @@ import { type ConversationView, type EntryId, type EntryRecord, type LiveState, 
 import { NO_ACCESS_CODE } from "../../contracts/browser.ts";
 import { ext } from "../../platform/webext.ts";
 import { t } from "../i18n/index.ts";
-import { Transcript } from "../render.ts";
+import { TranscriptFixture } from "./fixtures.tsx";
 import { ToolCard } from "../tool-card.ts";
 
 export async function testToolCards() {
@@ -61,7 +61,7 @@ export async function testToolCards() {
 	inspect.setResult("{}", false, { inspect: { matched: 30, shown: 5 } });
 	const inspectMeta = metaOf(inspect);
 
-	const transcript = new Transcript({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined, allowed: () => {} });
+	const transcript = new TranscriptFixture({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined, allowed: () => {} });
 	const conversationId = ROOT_CONVERSATION_ID;
 	const entries: EntryRecord[] = [{
 		id: 1 as EntryId, conversationId, kind: "pi.assistant",
@@ -78,7 +78,7 @@ export async function testToolCards() {
 	let forwarded = false;
 	document.body.append(transcript.element);
 	try {
-		transcript.update({ kind: "conversation", view, ready: true });
+		await transcript.update({ kind: "conversation", view, ready: true });
 		const running = transcript.element.querySelector<HTMLDetailsElement>(".tool")!;
 		const wasRunning = running.dataset.status === "running";
 		entries.push({
@@ -90,13 +90,13 @@ export async function testToolCards() {
 			model: [{ role: "toolResult", toolCallId, toolName: "fetch", content: [{ type: "text", text: "Permission required." }],
 				details, isError: true, timestamp: 0 }],
 		})));
-		transcript.update({ kind: "conversation", view: { ...view, docs: {} }, ready: true });
+		await transcript.update({ kind: "conversation", view: { ...view, docs: {} }, ready: true });
 		const rendered = [...transcript.element.querySelectorAll<HTMLDetailsElement>(".tool")];
 		forwarded = wasRunning && rendered.length === 3 && rendered[0] === running && running.dataset.status === "done"
 			&& running.querySelector(".tool-meta")?.textContent === "HTTP 206 · 2 KiB"
 			&& rendered.slice(1).every((card) => card.dataset.status === "error" && Boolean(card.querySelector(".tool-grant")));
 	} finally {
-		transcript.clear();
+		transcript.dispose();
 		transcript.element.remove();
 	}
 	return [

@@ -8,8 +8,8 @@ export type PanelHost = ReturnType<typeof createPanelHost>;
 
 export const createPanelHost = () => createHost<Principal>({ onError: (error) => console.debug("[oshawott panel]", error) });
 
-/** Returns a function that links `host` to the Engine and, whenever the port closes, shows `banner` and links again with backoff. */
-export function engineConnector(host: PanelHost, banner: HTMLElement) {
+/** Reconnects with backoff and publishes whether the Engine link is currently reconnecting. */
+export function engineConnector(host: PanelHost, changed: (reconnecting: boolean) => void) {
 	let backoff = 250;
 	return async function connect() {
 		try {
@@ -20,11 +20,11 @@ export function engineConnector(host: PanelHost, banner: HTMLElement) {
 		host.connect(link, { principal: { kind: "engine" }, limits: PANEL_LINK_LIMITS }, BACKGROUND_CONTEXT);
 		const healthy = setTimeout(() => {
 			backoff = 250;
-			banner.hidden = true;
+			changed(false);
 		}, 1500);
 		void link.done.then(() => {
 			clearTimeout(healthy);
-			banner.hidden = false;
+			changed(true);
 			setTimeout(() => void connect(), backoff);
 			backoff = Math.min(backoff * 2, 10_000);
 		});

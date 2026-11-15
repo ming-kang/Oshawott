@@ -13,6 +13,7 @@ const context = BACKGROUND_CONTEXT;
 export async function pickBuiltin(id: string) {
 	const option = await until(() => control<HTMLElement>(`#builtin-provider-list [data-provider="${id}"]`));
 	option.click();
+	await until(() => control<HTMLElement>("#builtin-provider-chosen")?.dataset.provider === id);
 }
 
 export async function testModelManagement(source: Source, origin: string): Promise<Step[]> {
@@ -25,8 +26,11 @@ export async function testModelManagement(source: Source, origin: string): Promi
 	if (navigator.userAgent.includes("Firefox")) ext.permissions.request = async () => true;
 	try {
 		click("#settings-toggle");
+		await until(() => control("#add-provider"));
 		click("#add-provider");
+		await until(() => control("#provider-kind-custom"));
 		click("#provider-kind-custom");
+		await until(() => control("#provider-name"));
 		input("#provider-name", "Local test service");
 		input("#provider-base-url", `${origin.replace(/\/+$/, "")}/v1`);
 		const api = control<HTMLSelectElement>("#provider-api")!;
@@ -40,6 +44,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		step("probing shows a selectable checklist without auto-saving the provider", Boolean(unusedRow)
 			&& !source.providers.value.some((provider) => provider.name === "Local test service"));
 		reasoningBox.click();
+		await until(() => control<HTMLButtonElement>("#provider-import-models")?.disabled === false);
 		click("#provider-import-models");
 		await until(() => control('#provider-manual-models [data-model="local-reasoning"]') ? true : undefined);
 		step("importing adds only the checked model to the draft list", !control('#provider-manual-models [data-model="local-unused"]'));
@@ -52,6 +57,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 			&& !local.models.some((model) => model.id === "local-unused"), `${local.models.map((model) => model.id).join(", ")}`);
 
 		click(`.provider[data-provider="${customId}"] .provider-head`);
+		await until(() => control("#provider-refresh"));
 		click("#provider-refresh");
 		phase = "re-probing an existing provider without re-entering the key";
 		const alreadyAdded = await until(() => control<HTMLElement>('#provider-fetch-list [data-model="local-reasoning"][data-added="true"]'));
@@ -60,11 +66,13 @@ export async function testModelManagement(source: Source, origin: string): Promi
 
 		phase = "testing Use built-in data on a custom model";
 		click("#provider-add-model");
+		await until(() => control("#provider-manual-models details:last-child input[placeholder='model-id']"));
 		const newModelEditor = control<HTMLDetailsElement>("#provider-manual-models details:last-child")!;
 		const newIdInput = newModelEditor.querySelector<HTMLInputElement>('input[placeholder="model-id"]')!;
 		newIdInput.value = "custom-sonnet";
 		newIdInput.dispatchEvent(new Event("input", { bubbles: true }));
 		newModelEditor.querySelector<HTMLButtonElement>(".model-use-builtin")!.click();
+		await until(() => newModelEditor.querySelector(".builtin-search"));
 		const builtinSearch = newModelEditor.querySelector<HTMLInputElement>(".builtin-search")!;
 		builtinSearch.value = "claude-sonnet";
 		builtinSearch.dispatchEvent(new Event("input", { bubbles: true }));
@@ -72,6 +80,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		candidate.click();
 		const ctxDiff = await until(() => newModelEditor.querySelector('.builtin-diff-row[data-field="contextWindow"]'));
 		newModelEditor.querySelector<HTMLButtonElement>(".builtin-apply")!.click();
+		await until(() => newModelEditor.querySelector<HTMLInputElement>(".vision-check input")?.checked === true);
 		const appliedVision = newModelEditor.querySelector<HTMLInputElement>(".vision-check input")?.checked === true;
 		const appliedCtx = Number(newModelEditor.querySelectorAll<HTMLInputElement>('input[type="number"]')[0]?.value);
 		step("Use built-in data previews diffs and applies capabilities without changing model ID",
@@ -87,7 +96,9 @@ export async function testModelManagement(source: Source, origin: string): Promi
 
 		click("#new-chat");
 		click("#model");
+		await until(() => control("#model-menu input"));
 		input("#model-menu input", "local-reasoning");
+		await until(() => control('#model-menu .menu-item[data-model="local-reasoning"]'));
 		click('#model-menu .menu-item[data-model="local-reasoning"]');
 		await until(() => !document.querySelector("#model-menu"));
 		// The button follows the chosen model a moment after the model menu closes: click until its menu is there.
@@ -114,6 +125,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		step("model and thinking selections target the custom provider", true,
 			`${JSON.stringify(source.defaultModel.value)}; ${document.querySelector("#model")?.textContent}; ${document.querySelector("#thinking")?.textContent}`);
 		input("#prompt", "local protocol check");
+		await until(() => document.querySelector<HTMLButtonElement>("#send")?.disabled === false);
 		click("#send");
 		phase = "sending a high-thinking request to the custom provider";
 		const answer = await until(() => {
@@ -124,19 +136,26 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		step("custom OpenAI-compatible chat receives the selected thinking level", answer?.includes("model=local-reasoning") === true, answer?.slice(-160));
 
 		click("#model");
+		await until(() => control("#model-menu input"));
 		input("#model-menu input", "demo");
+		await until(() => control('#model-menu .menu-item[data-provider="demo"]'));
 		click('#model-menu .menu-item[data-provider="demo"]');
 		await until(() => source.defaultModel.value?.provider === "demo");
 		click("#settings-toggle");
+		await until(() => control(`.provider[data-provider="${customId}"] .provider-head`));
 		click(`.provider[data-provider="${customId}"] .provider-head`);
+		await until(() => control("#provider-delete"));
 		click("#provider-delete");
 		click("#provider-delete");
 		await until(() => !source.providers.value.some((provider) => provider.id === customId));
 		step("provider deletion removes its runtime entry after chats switch models", !source.providers.value.some((provider) => provider.id === customId));
 		customId = undefined;
 
+		await until(() => control("#add-provider"));
 		click("#add-provider");
+		await until(() => control("#provider-kind-custom"));
 		click("#provider-kind-custom");
+		await until(() => control("#provider-name"));
 		input("#provider-name", "Denied draft");
 		input("#provider-base-url", "https://denied.example/v1");
 		input("#provider-key", "denied-secret");
@@ -151,6 +170,7 @@ export async function testModelManagement(source: Source, origin: string): Promi
 			ext.permissions.request = original;
 		}
 		click("#provider-back");
+		await until(() => control("#settings-back"));
 		click("#settings-back");
 	} catch (error) {
 		const diagnostic = phase === "saving the edited provider"

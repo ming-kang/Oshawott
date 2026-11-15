@@ -68,6 +68,7 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 		const prompt = document.querySelector<HTMLTextAreaElement>("#prompt")!;
 		prompt.value = "What is on this page?";
 		prompt.dispatchEvent(new Event("input"));
+		await until(() => document.querySelector<HTMLButtonElement>("#send")?.disabled === false);
 		click("#send");
 		const heading = await until(
 			() => (document.querySelector(".msg.assistant[data-live]") ? undefined : all(".msg.assistant .md :is(h2, h3)").at(-1)?.textContent),
@@ -82,6 +83,7 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 
 		prompt.value = `Download and measure ${origin}/items.json`;
 		prompt.dispatchEvent(new Event("input"));
+		await until(() => document.querySelector<HTMLButtonElement>("#send")?.disabled === false);
 		click("#send");
 		click("#files-toggle");
 		await until(() => document.body.dataset.busy === "false" && all('.tool[data-tool="fetch"][data-status="done"], .tool[data-tool="codemode"][data-status="done"]').length === 2, 30_000);
@@ -127,6 +129,7 @@ export async function selftest(origin: string, panelTests: (origin?: string) => 
 			click("#new-chat");
 			prompt.value = text;
 			prompt.dispatchEvent(new Event("input"));
+			await until(() => document.querySelector<HTMLButtonElement>("#send")?.disabled === false);
 			click("#send");
 			await until(() => { const button = document.querySelector<HTMLButtonElement>("#files-toggle"); return button && !button.hidden && !button.disabled; });
 		};

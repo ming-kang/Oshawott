@@ -14,10 +14,10 @@ export async function testAccountLogin(source: Source): Promise<Step[]> {
 	let phase = "opening the provider editor";
 	try {
 		click("#settings-toggle");
+		await until(() => control("#add-provider"));
 		click("#add-provider");
 		await pickBuiltin(PROVIDER);
-		step("a sign-in-only provider offers no API key field", control<HTMLElement>("#provider-key")?.closest<HTMLElement>(".provider-field")?.hidden === true
-			&& control<HTMLElement>("#provider-save")?.hidden === true);
+		step("a sign-in-only provider offers no API key field", !control("#provider-key") && !control("#provider-save"));
 
 		phase = "starting the sign-in";
 		click("#login-start");
@@ -47,6 +47,7 @@ export async function testAccountLogin(source: Source): Promise<Step[]> {
 		await until(() => source.logins.value.length === 0 && control("#login-start"));
 		step("sign-out removes the credential and a cancelled sign-in leaves none", account()?.configured === false);
 		click("#provider-back");
+		await until(() => control("#settings-back"));
 		click("#settings-back");
 	} catch (error) {
 		step("account sign-in browser flow", false, `${phase}: ${String(error)}; logins=${JSON.stringify(source.logins.value)}`);

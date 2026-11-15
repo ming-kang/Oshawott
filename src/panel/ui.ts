@@ -23,7 +23,7 @@ export function append(parent: Node, children: (Child | Child[])[]) {
 const SVG = "http://www.w3.org/2000/svg";
 
 /** 24×24 stroke icons: path data, or a circle / rect as `c:cx,cy,r` / `r:x,y,w,h,rx`. */
-const ICONS = {
+export const ICONS = {
 	plus: ["M12 5v14", "M5 12h14"],
 	paperclip: ["m8 12 6.5-6.5a3 3 0 0 1 4.2 4.2l-8.4 8.4a5 5 0 0 1-7.1-7.1l8.5-8.5", "m6 14.5 8.5-8.5"],
 	compose: ["M12 20h8", "M15.5 4.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"],
@@ -92,28 +92,6 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 	return svg;
 }
 
-function brandImage(source: string, size: number, className: "logo" | "mascot"): HTMLImageElement {
-	const image = document.createElement("img");
-	image.src = `icons/${source}`;
-	image.width = size;
-	image.height = size;
-	image.alt = "";
-	image.draggable = false;
-	image.setAttribute("aria-hidden", "true");
-	image.classList.add(className);
-	return image;
-}
-
-/** Product logo: use the optically simplified paw at toolbar-like sizes. */
-export function logo(size = 24): HTMLImageElement {
-	return brandImage(size <= 32 ? "icon-small.svg" : "icon.svg", size, "logo");
-}
-
-/** The character is a mascot, not a second product logo. */
-export function mascot(size = 56): HTMLImageElement {
-	return brandImage("mascot.svg", size, "mascot");
-}
-
 export function toast(text: string, tone: "info" | "error" = "info") {
 	const node = h("div", { class: "toast", "data-tone": tone, role: tone === "error" ? "alert" : "status" }, text);
 	document.body.appendChild(node);
@@ -157,45 +135,4 @@ export function copyButton(text: () => string, label: string): HTMLButtonElement
 		setTimeout(() => button.replaceChildren(icon("copy", 14)), 1200);
 	});
 	return button;
-}
-
-export interface ConfirmControl {
-	readonly armed: boolean;
-	arm(): void;
-	reset(): void;
-}
-
-/** Two-step inline confirmation on a button: first click arms for 3s, second runs the action. */
-export function confirmControl(
-	button: HTMLButtonElement,
-	options: { confirm: () => string | Node[]; idle: () => (Node | string)[]; timeoutMs?: number },
-): ConfirmControl {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let armed = false;
-	const reset = () => {
-		clearTimeout(timer);
-		timer = undefined;
-		if (!armed) return;
-		armed = false;
-		delete button.dataset.confirm;
-		button.replaceChildren(...options.idle());
-	};
-	const arm = () => {
-		if (armed) return;
-		armed = true;
-		button.dataset.confirm = "";
-		const content = options.confirm();
-		button.replaceChildren(...(typeof content === "string" ? [content] : content));
-		timer = setTimeout(() => {
-			if (button.isConnected && !button.disabled) reset();
-			else armed = false;
-		}, options.timeoutMs ?? 3000);
-	};
-	return {
-		get armed() {
-			return armed;
-		},
-		arm,
-		reset,
-	};
 }
