@@ -1,91 +1,16 @@
 import type { ToolDiagnostic } from "@earendil-works/pi-durable";
 import { NO_ACCESS_CODE } from "../contracts/browser.ts";
-import { formatBytes } from "../lib/bytes.ts";
-import { hostOf, sitePattern } from "../platform/patterns.ts";
+import { sitePattern } from "../platform/patterns.ts";
 import { ext } from "../platform/webext.ts";
 import { t } from "./i18n/index.ts";
-import { h, type IconName, icon, toast, toastError } from "./ui.ts";
+import { record, resolveToolLook, type ToolLook, toolViewFor } from "./tool-views.ts";
+import { h, icon, toast, toastError } from "./ui.ts";
 
 export type ToolStatus = "pending" | "running" | "done" | "error" | "stopped" | "streaming";
 
-type Look = { icon: IconName; label: string; meta?: string };
-
-const clip = (text: string, max: number) => ([...text].length > max ? `${[...text].slice(0, max - 1).join("")}…` : text);
-
-export function toolLook(name: string, args: Record<string, unknown>): Look {
-	switch (name) {
-		case "page_snapshot":
-			return { icon: "eye", label: t("tool.snapshot"), meta: String(args.ref ?? args.selector ?? "") };
-		case "page_inspect":
-			return { icon: "code", label: t("tool.inspect"), meta: String(args.ref ?? args.selector ?? "") };
-		case "page_click":
-			return { icon: "pointer", label: t("tool.click"), meta: String(args.ref ?? "") };
-		case "page_type":
-			return { icon: "keyboard", label: t("tool.type"), meta: `“${clip(String(args.text ?? ""), 40)}”` };
-		case "page_select":
-			return { icon: "list", label: t("tool.select"), meta: String(args.option ?? "") };
-		case "page_press":
-			return { icon: "keyboard", label: t("tool.press"), meta: [...(Array.isArray(args.modifiers) ? args.modifiers : []), args.key ?? ""].join("+") };
-		case "page_hover":
-			return { icon: "pointer", label: t("tool.hover"), meta: String(args.ref ?? "") };
-		case "page_wait":
-			return { icon: "refresh", label: t("tool.wait"), meta: String(args.selector ?? args.text ?? (args.timeoutMs ? `${args.timeoutMs} ms` : "")) };
-		case "page_scroll":
-			return { icon: "scroll", label: t("tool.scroll"), meta: args.ref ? String(args.ref) : args.pixels ? `${args.pixels}px` : "" };
-		case "tabs_list":
-			return { icon: "tabs", label: t("tool.tabs") };
-		case "tab_open":
-			return { icon: "external", label: t("tool.open"), meta: hostOf(args.url) };
-		case "tab_navigate":
-			return { icon: args.back ? "back" : "globe", label: t(args.back ? "tool.back" : "tool.navigate"), meta: args.back ? "" : hostOf(args.url) };
-		case "tab_activate":
-			return { icon: "tabs", label: t("tool.activate"), meta: String(args.tabId ?? "") };
-		case "tab_close":
-			return { icon: "x", label: t("tool.close"), meta: String(args.tabId ?? "") };
-		case "codemode":
-			return { icon: "code", label: t("tool.code") };
-		case "read":
-		case "read_text":
-			return { icon: "file", label: t("tool.read"), meta: String(args.path ?? "") };
-		case "write":
-			return { icon: "file", label: t("tool.write"), meta: String(args.path ?? "") };
-		case "edit":
-			return { icon: "compose", label: t("tool.edit"), meta: String(args.path ?? "") };
-		case "ls":
-			return { icon: "folder", label: t("tool.ls"), meta: String(args.path ?? "/workspace") };
-		case "fetch":
-			return { icon: "download", label: t("tool.fetch"), meta: hostOf(args.url) };
-		default:
-			return { icon: "tool", label: name };
-	}
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-	return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-}
-
-const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-
-function resultMeta(name: string, details: unknown): string | undefined {
-	const data = record(details);
-	if (name === "fetch") {
-		const http = record(data?.http);
-		return http && count(http.status) && http.status >= 100 && http.status <= 599 && count(http.bytes)
-			? `HTTP ${http.status} · ${formatBytes(http.bytes)}` : undefined;
-	}
-	if (name === "page_snapshot") {
-		const snapshot = record(data?.snapshot);
-		if (snapshot && typeof snapshot.title === "string" && count(snapshot.elementCount)) {
-			return [snapshot.title, t("tool.elements", snapshot.elementCount)].filter(Boolean).join(" · ");
-		}
-	}
-	if (name === "page_inspect") {
-		const inspect = record(data?.inspect);
-		if (inspect && count(inspect.matched) && count(inspect.shown)) {
-			return inspect.shown < inspect.matched ? t("tool.inspected", inspect.shown, inspect.matched) : t("tool.elements", inspect.matched);
-		}
-	}
-	return undefined;
+/** The registered presentation for a tool call's header; unknown tools fall back to their name. */
+export function toolLook(name: string, args: Record<string, unknown>): ToolLook {
+	return resolveToolLook(name, args);
 }
 
 function pretty(value: unknown): string {
@@ -197,10 +122,15 @@ export class ToolCard {
 		this.#output?.parentElement?.remove();
 		this.#output = undefined;
 		this.#result?.remove();
+		const view = toolViewFor(this.#name);
+		// A view may render a successful result richly from its structured details; otherwise the
+		// model's text is shown verbatim in a <pre>, and errors are always shown as text.
+		const rich = isError ? undefined : view?.body?.({ text, isError, details });
 		const shown = pretty(text);
-		this.#result = section(t("tool.result"), h("pre", { class: isError ? "error" : null }, shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown));
+		const content = rich ?? h("pre", { class: isError ? "error" : null }, shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown);
+		this.#result = section(t("tool.result"), content);
 		this.#body.append(this.#result);
-		const meta = isError ? undefined : resultMeta(this.#name, details);
+		const meta = isError ? undefined : view?.resultMeta?.(details);
 		this.#meta.textContent = meta ?? this.#initialMeta;
 		this.setStatus(isError ? "error" : "done");
 		this.#grant?.remove();
@@ -242,6 +172,6 @@ export class ToolCard {
 	}
 }
 
-function section(title: string, content: HTMLElement) {
+function section(title: string, content: Node) {
 	return h("div", { class: "tool-section" }, h("h4", null, title), content);
 }

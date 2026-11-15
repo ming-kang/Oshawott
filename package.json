@@ -31,7 +31,9 @@
     "@earendil-works/pi-schema": "1.5.0",
     "highlight.js": "11.12.0",
     "katex": "0.19.1",
-    "stream-markdown-parser": "1.2.26"
+    "mermaid": "12.3.0",
+    "stream-markdown-parser": "1.2.26",
+    "vue": "3.5.45"
   },
   "devDependencies": {
     "@types/node": "26.6.6",

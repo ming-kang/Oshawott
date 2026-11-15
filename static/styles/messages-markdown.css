@@ -1,3 +1,8 @@
+/* Vue owns the item list; imperative Markdown/tool islands do not add a flex box. */
+.native-view {
+	display: contents;
+}
+
 .msg {
 	min-width: 0;
 	animation: rise var(--duration-slow) var(--ease);
@@ -387,6 +392,21 @@
 	transition: var(--transition-fade);
 }
 .math-block:hover .math-actions, .math-actions:focus-within { opacity: 1; }
+
+/* Enriched fences (e.g. Mermaid) reveal rendered output in place of the source, which stays the fallback. */
+.codeblock-view { max-width: 100%; padding: var(--space-3); overflow: auto; }
+.codeblock-view[hidden] { display: none; }
+.codeblock pre[hidden] { display: none; }
+.codeblock-view svg { display: block; max-width: 100%; height: auto; }
+.codeblock[data-error] .codeblock-language { color: var(--danger); }
+.mermaid-pending {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	min-height: 48px;
+	color: var(--text-3);
+	font: var(--font-mono-sm);
+}
 
 .caret {
 	display: inline-block;
