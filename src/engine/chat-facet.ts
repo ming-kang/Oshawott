@@ -219,6 +219,10 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 					}, ctx);
 					return null;
 				})),
+				entries: async ({ query, limit, cursor }, ctx) => {
+					const target = await conversation(ctx);
+					return target.entries(query, limit, cursor, ctx);
+				},
 				files: async (ctx) => {
 					await conversation(ctx);
 					return [...getOrThrow(await files.workspaceFiles(ctx))];

@@ -4,7 +4,7 @@ import {
 	createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import {
-	AgentDoc, defineExtension, defineTool, type Extension, type InboxState, LiveDoc, type LiveState, type Storage,
+	AgentDoc, ConversationTranscript, defineExtension, defineTool, type Extension, type InboxState, LiveDoc, type LiveState, type Storage,
 } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { chatStatus } from "../src/engine/activity.ts";
@@ -70,6 +70,27 @@ test("list status distinguishes queued waits and ignores intentional aborts", ()
 	assert.equal(chatStatus({ live: aborted }, []), "idle");
 	const failed = { runFailure: { reason: "model_error", taskId: 1, inputs: [] } } as unknown as LiveState;
 	assert.equal(chatStatus({ live: failed, inbox }, []), "failed", "a real failure remains visible even with queued follow-ups");
+});
+
+test("panel transcript pages load every earlier entry beyond the watched window", async () => {
+	const f = await fixture([]);
+	try {
+		const id = await f.workspace.createChat({}, context);
+		await f.engine.harness.commit(async (tx) => {
+			for (let index = 0; index < 65; index++) await tx.appendEntry(id as never, { kind: "test.page", data: { index } });
+		}, context);
+		const chat = await f.chat(id);
+		await until(() => chat.view.value?.entries.length === 50);
+		const transcript = new ConversationTranscript((query, limit, ctx) => chat.entries({ query, limit }, ctx));
+		let merged = transcript.merge(chat.view.value!);
+		assert.equal(merged.items[0]?.kind, "earlier");
+		while (merged.items[0]?.kind === "earlier") merged = await transcript.loadEarlier(context);
+		const entries = merged.items.flatMap((item) => item.kind === "entry" ? [item.entry] : []);
+		assert.equal(entries.length, 65);
+		assert.deepEqual(entries.map((entry) => (entry.data as { index?: unknown } | undefined)?.index), Array.from({ length: 65 }, (_, index) => index));
+	} finally {
+		await f.close();
+	}
 });
 
 test("conversation preferences and global instructions survive an Engine restart", async () => {

@@ -1,4 +1,4 @@
-import type { ConversationView, ModelRef as DurableModelRef } from "@earendil-works/pi-durable";
+import type { ConversationView, Cursor, EntryId, EntryRecord, ModelRef as DurableModelRef, Page } from "@earendil-works/pi-durable";
 import { arr, bool, bytes, int, method, nul, num, obj, oneOf, opt, remote, type Static, str, typed, union, unknown } from "../lib/chord.ts";
 import { MAX_ATTACHMENTS, MAX_TEXT_ATTACHMENT_BYTES } from "../lib/attachments.ts";
 import { EngineHost } from "./hosts.ts";
@@ -192,8 +192,13 @@ export const Workspace = remote("oshawott.workspace", {
 	},
 });
 
+export const PanelEntryQuery = obj({
+	minEntryId: opt(typed<EntryId>(int())), maxEntryId: opt(typed<EntryId>(int())), order: opt(oneOf("ascending", "descending")),
+});
+export type PanelEntryQuery = Static<typeof PanelEntryQuery>;
+
 export const Chat = remote("oshawott.chat", {
-	version: 6,
+	version: 7,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -240,6 +245,11 @@ export const Chat = remote("oshawott.chat", {
 				reset: method(),
 				/** Updates both in one transaction; an omitted thinking level is clamped from this chat's current level. */
 				configure: method(ChatConfiguration),
+				/** Raw immutable transcript pages; ConversationTranscript merges them with the watched window. */
+				entries: method(
+					obj({ query: PanelEntryQuery, limit: int({ min: 1, max: 200 }), cursor: opt(typed<Cursor>(unknown())) }),
+					typed<Page<EntryRecord, Cursor>>(unknown()),
+				),
 				/** The chat's files below `/workspace` (what the model wrote or downloaded), by path relative to it. */
 				files: method(undefined, arr(ChatFile)),
 				readFile: method(obj({ path: str() }), bytes({ max: MAX_FILE_BYTES })),
