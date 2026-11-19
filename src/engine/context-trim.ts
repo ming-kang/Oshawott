@@ -2,7 +2,7 @@
 // Superseded page reads shrink to a stub and old screenshots leave a note, so each request carries the reads
 // that still matter — the model no longer sees a snapshot the same-scope later read replaced.
 
-import type { Message, ToolCall } from "@earendil-works/pi-ai";
+import type { Message, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import { readToolDetails } from "../tools/details.ts";
 
 const KEEP_SCREENSHOTS = 3;
@@ -14,6 +14,17 @@ const canonical = (value: unknown): string =>
 		each !== null && typeof each === "object" && !Array.isArray(each)
 			? Object.fromEntries(Object.keys(each as Record<string, unknown>).sort().map((key) => [key, (each as Record<string, unknown>)[key]]))
 			: each);
+
+/** Pre-discriminator results persisted the URL only in the tool's header. Never scan the page body. */
+function legacyReadHeader(message: ToolResultMessage, snapshot: boolean) {
+	const lines = message.content.find((part) => part.type === "text")?.text.split("\n", 3) ?? [];
+	const start = lines[0]?.startsWith("Note: the target tab is now on ") ? 1 : 0;
+	const title = snapshot ? lines[start] : undefined;
+	if (snapshot && !title?.startsWith("Title: ")) return undefined;
+	const url = lines[start + Number(snapshot)];
+	if (!url?.startsWith("URL: ") || url.length === 5) return undefined;
+	return { url: url.slice(5), title: title?.slice(7) };
+}
 
 /**
  * A copy of `messages` — never a mutation of it — where every page read a later same-scope read replaced is
@@ -32,11 +43,13 @@ export function trimPageReads(messages: readonly Message[]): readonly Message[] 
 		if (message.role !== "toolResult" || message.isError) continue;
 		if (message.toolName === "page_snapshot" || message.toolName === "page_inspect") {
 			const details = readToolDetails(message.details, message.toolName);
-			if (!details) continue;
+			const header = details ? { url: details.url, title: details.kind === "page_snapshot" ? details.title : undefined }
+				: legacyReadHeader(message, message.toolName === "page_snapshot");
+			if (!header) continue;
 			const { tabId: _tabId, maxChars: _maxChars, ...scope } = calls.get(message.toolCallId)?.arguments ?? {};
-			const head = details.kind === "page_snapshot" ? [`Title: ${details.title}`] : [];
-			head.push(`URL: ${details.url}`);
-			reads.push({ index, key: `${message.toolName} ${details.url} ${canonical(scope)}`, head });
+			const head = header.title === undefined ? [] : [`Title: ${header.title}`];
+			head.push(`URL: ${header.url}`);
+			reads.push({ index, key: `${message.toolName} ${header.url} ${canonical(scope)}`, head });
 		} else if (message.toolName === "page_screenshot") {
 			for (const [part, content] of message.content.entries()) if (content.type === "image") screenshots.push({ index, part });
 		}

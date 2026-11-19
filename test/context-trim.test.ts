@@ -48,6 +48,26 @@ test("a superseded page read shrinks to a stub; the latest and a different scope
 	assert.equal(trimPageReads(untrimmed), untrimmed, "nothing to trim returns the same array");
 });
 
+test("legacy reads participate in trimming without using URLs from their body", () => {
+	const inspect = (id: string, url: string, details?: ToolDetails): Message[] => [
+		fauxAssistantMessage(fauxToolCall("page_inspect", { selector: ".article" }, { id })),
+		result(id, "page_inspect", [{ type: "text", text: `URL: ${url}\nMatched: 1\n\n[e1] article visible\nURL: https://in-the-html/` }], false, details),
+	];
+	const messages = [
+		fauxAssistantMessage(fauxToolCall("page_snapshot", {}, { id: "old" })),
+		result("old", "page_snapshot", [{ type: "text", text: "Note: the target tab is now on https://a (it was https://b); the user or the page moved it. Check it is still the page this task is about.\nTitle: Legacy\nURL: https://a/\nElements (0):\nText:\nTitle: In the body\nURL: https://in-the-body/" }]),
+		...read("new", {}, "Title: Example\nURL: https://a/\nElements (0):\nText:\nnewer body"),
+		...inspect("one", "https://a/"),
+		...inspect("different", "https://b/"),
+		...inspect("latest", "https://a/", { kind: "page_inspect", url: "https://a/", matched: 1, truncated: false, elements: [] }),
+		result("invalid", "page_inspect", [{ type: "text", text: "not a header\nURL: https://a/" }]),
+	];
+	const trimmed = trimPageReads(messages);
+	assert.match(textOf(trimmed[1]!), /^Title: Legacy\nURL: https:\/\/a\/\n\[Outdated: .*\]$/);
+	assert.match(textOf(trimmed[5]!), /^URL: https:\/\/a\/\n\[Outdated: .*\]$/);
+	for (const index of [3, 7, 9, 10]) assert.equal(trimmed[index], messages[index]);
+});
+
 test("old page_screenshot images leave a note, in chunks of three", () => {
 	const messages: Message[] = [...shot("s1"), ...shot("s2"), ...shot("s3"), ...shot("s4"), ...shot("s5"), ...shot("s6"), ...shot("s7")];
 	const trimmed = trimPageReads(messages);

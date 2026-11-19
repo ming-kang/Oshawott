@@ -52,6 +52,41 @@ const RECEIPTS = new Set<string>(["page_click", "page_type", "page_select", "pag
 
 type Described = { role: string; name: string };
 
+function inspectDetails({ url, matched, truncated, elements }: Static<typeof InspectResult>): Extract<ToolDetails, { kind: "page_inspect" }> {
+	// Share the preview budget across rows and across HTML, attributes and styles. The raw tool text has its own limit.
+	const sectionLimit = Math.floor(TOOL_PREVIEW_CHARS / (3 * Math.max(1, elements.length)));
+	let previewTruncated = false;
+	const previewMap = (fields: Record<string, string> | undefined) => {
+		const kept: [string, string][] = [];
+		let remaining = sectionLimit;
+		for (const [key, value] of Object.entries(fields ?? {})) {
+			const size = key.length + value.length;
+			if (size > remaining) {
+				previewTruncated = true;
+				continue;
+			}
+			remaining -= size;
+			kept.push([key, value]);
+		}
+		return kept.length ? Object.fromEntries(kept) : undefined;
+	};
+	const previews = elements.map(({ html, styles, attributes, ...element }) => {
+		const keptStyles = previewMap(styles);
+		const keptAttributes = previewMap(attributes);
+		if (html !== undefined && html.length > sectionLimit) {
+			previewTruncated = true;
+			html = `${html.slice(0, sectionLimit - 1)}…`;
+		}
+		return {
+			...element,
+			...(keptStyles ? { styles: keptStyles } : {}),
+			...(keptAttributes ? { attributes: keptAttributes } : {}),
+			...(html === undefined ? {} : { html }),
+		};
+	});
+	return { kind: "page_inspect", url, matched, truncated, elements: previews, ...(previewTruncated ? { previewTruncated: true } : {}) };
+}
+
 function detailsOf(name: string, result: unknown, element: Described | undefined): ToolDetails | { element: Described } | undefined {
 	if (name === "page_snapshot") {
 		const snapshot = result as Static<typeof SnapshotResult>;
@@ -61,7 +96,7 @@ function detailsOf(name: string, result: unknown, element: Described | undefined
 			...(firstButtonRef === undefined ? {} : { firstButtonRef }) };
 	}
 	if (name === "page_inspect") {
-		return { ...(result as Static<typeof InspectResult>), kind: name };
+		return inspectDetails(result as Static<typeof InspectResult>);
 	}
 	if (name === "page_wait") {
 		const { ok, detail } = result as Static<typeof Done>;

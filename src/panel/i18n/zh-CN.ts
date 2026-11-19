@@ -274,6 +274,7 @@ export const zh: Record<Key, string> = {
 	"tool.yes": "是",
 	"tool.raw": "原始",
 	"tool.more": "还有 {0} 个",
+	"tool.inspectPreview": "预览已缩短。切换到原始视图可查看工具输出。",
 	"tool.wallTime": "耗时 {0} 秒",
 	"run.actions": "执行了 {0} 个操作",
 	"run.failed": "{0} 个失败",

@@ -25,6 +25,16 @@ export async function testToolCards() {
 	const inspectArgs = metaOf(inspect);
 	inspect.setResult("{}", false, { inspect: { matched: 30, shown: 5 } });
 	const inspectMeta = metaOf(inspect);
+	const inspectText = "URL: https://example.com/\nMatched: 3\n\n[e1] div visible\n<div>Full HTML</div>";
+	inspect.setResult(inspectText, false, {
+		kind: "page_inspect", url: "https://example.com/", matched: 3, truncated: true, previewTruncated: true,
+		elements: [{ ref: "e1", tag: "div", visible: true, truncated: false, html: "<div>Full…" }],
+	});
+	const inspectPreview = metaOf(inspect) === `.item · ${t("tool.inspected", 1, 3)}`
+		&& inspect.element.querySelector(".tv-inspect-item")?.textContent?.includes("<div>Full…")
+		&& inspect.element.querySelector(".tv-note")?.textContent === t("tool.inspectPreview");
+	inspect.element.querySelector<HTMLButtonElement>(".tool-toggle")?.click();
+	const inspectRaw = inspect.element.querySelector(".tool-raw-pre")?.textContent === inspectText;
 
 	const edit = new ToolCard("edit", { path: "app.ts", edits: [{ oldText: "const a = 1;", newText: "const a = 2;" }] });
 	edit.setResult("Successfully replaced 1 block(s) in app.ts.", false, { diff: "-1 const a = 1;\n+1 const a = 2;" });
@@ -127,6 +137,7 @@ export async function testToolCards() {
 	return [
 		{ name: "fetch metadata combines target and details, ignoring legacy prose or malformed details", ok: httpMeta === "args.example/items.json · HTTP 201 · 1.5 KiB" && legacyHttpIgnored && malformedHttpIgnored, detail: httpMeta },
 		{ name: "inspect cards keep the target and how many elements were shown", ok: inspectArgs === ".item" && inspectMeta === `.item · ${t("tool.inspected", 5, 30)}`, detail: inspectMeta },
+		{ name: "shortened inspect cards explain the preview and can switch to the original tool output", ok: Boolean(inspectPreview && inspectRaw) },
 		{ name: "snapshot metadata uses details, not model-facing JSON", ok: snapshotMeta === `UI title · ${t("tool.elements", 3)}` && legacySnapshotIgnored, detail: snapshotMeta },
 		{ name: "edit and write cards render diff and file content cleanly with raw fallback toggle", ok: hasDiff && rawToggleWorks && writeOmitsJson && pressHeadlessKeycaps },
 		{ name: "Transcript forwards result details to running and orphaned cards", ok: forwarded },
