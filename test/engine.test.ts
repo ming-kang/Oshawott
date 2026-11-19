@@ -39,8 +39,9 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 		page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
 		page_click: done, page_type: done, page_scroll: done, page_select: done, page_press: done, page_hover: done, page_wait: done,
 		describe: async () => ({ role: "link", name: "More information" }),
-		settled: async () => ({ url: "https://example.com/", title: "Example Domain", opened: [] }),
+		settled: async () => ({ url: "https://example.com/", title: "Example Domain", opened: [], appeared: [], appearedMore: false }),
 		viewport: async () => ({ width: 1280, height: 800, dpr: 1 }),
+		upload: async () => ({ ok: true }),
 	}, onError);
 
 	const tabResolves: number[] = [];

@@ -13,7 +13,7 @@ export const MAX_READ_CHARS = 1_000_000;
 
 const text = (value: string) => [{ type: "text" as const, text: value }];
 
-function envOf(api: ToolExecutionApi): ChatFiles {
+export function envOf(api: ToolExecutionApi): ChatFiles {
 	if (!(api.env instanceof ChatFiles)) throw new Error("This chat has no files.");
 	return api.env;
 }

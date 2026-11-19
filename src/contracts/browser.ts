@@ -1,4 +1,4 @@
-import { arr, bool, int, method, nul, num, obj, opt, remote, type Static, str, union } from "../lib/chord.ts";
+import { arr, bool, int, method, nul, num, obj, oneOf, opt, remote, type Static, str, union } from "../lib/chord.ts";
 import { BrokerHost } from "./hosts.ts";
 
 export const TabSchema = obj({
@@ -13,7 +13,7 @@ export const TabSchema = obj({
 export type Tab = Static<typeof TabSchema>;
 
 export const Browser = remote("oshawott.browser", {
-	version: 4,
+	version: 5,
 	params: {},
 	hostAddress: () => BrokerHost(),
 	variants: {
@@ -24,8 +24,8 @@ export const Browser = remote("oshawott.browser", {
 				getTab: method(obj({ tabId: int() }), union([TabSchema, nul()])),
 				/** `group`: put the new tab in that tab group when it still exists, else in this extension's own group. */
 				openTab: method(obj({ url: str(), active: opt(bool()), group: opt(union([int(), nul()])) }), TabSchema),
-				/** Loads `url` in the tab, or goes one step `back` in its history; returns once the page has loaded. */
-				navigateTab: method(obj({ tabId: int(), url: opt(str()), back: opt(bool()) }), TabSchema),
+				/** Loads `url` in the tab, or moves in its history (`back`, `forward`, `reload`); returns once the page has loaded. */
+				navigateTab: method(obj({ tabId: int(), url: opt(str()), history: opt(oneOf("back", "forward", "reload")) }), TabSchema),
 				activateTab: method(obj({ tabId: int() }), TabSchema),
 				closeTab: method(obj({ tabId: int() })),
 				/**

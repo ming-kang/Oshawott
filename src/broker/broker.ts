@@ -169,8 +169,11 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 									});
 									return { ...opened, ...(groupId === undefined ? {} : { groupId }) };
 								},
-								navigateTab: ({ tabId, url, back }) =>
-									loaded(tabId, () => back || url === undefined ? ext.tabs.goBack(tabId) : ext.tabs.update(tabId, { url })),
+								navigateTab: ({ tabId, url, history }) =>
+									loaded(tabId, () => history === "back" ? ext.tabs.goBack(tabId)
+										: history === "forward" ? ext.tabs.goForward(tabId)
+											: history === "reload" ? ext.tabs.reload(tabId)
+												: ext.tabs.update(tabId, { url: url! })),
 								activateTab: async ({ tabId }) => tabOf(await ext.tabs.update(tabId, { active: true })),
 								closeTab: async ({ tabId }) => {
 									await ext.tabs.remove(tabId);

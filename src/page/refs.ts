@@ -57,6 +57,12 @@ export class RefTable<T extends object & Connected> {
 		return ref;
 	}
 
+	/** The ref's target without the checks `resolve` makes: for reporting what an action left behind. */
+	peek(ref: string, url: string): T | undefined {
+		this.observe(url);
+		return this.#byRef.get(ref)?.deref();
+	}
+
 	resolve(ref: string, url: string): T {
 		this.observe(url);
 		const match = REF.exec(ref);

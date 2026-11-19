@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { type Tab } from "../src/contracts/browser.ts";
 import { Approvals, DECLINED } from "../src/engine/approvals.ts";
+import { ChatFiles, type FileBackend } from "../src/engine/files.ts";
+import { openFiles } from "./support/files.ts";
 import { until } from "./support/wait.ts";
 import { type BrowserMembers, connectPanel, context, fakeBrowser, linkTo, openEngine, type PageMembers, serveBrowser, servePage, useModel } from "./support/world.ts";
 
 type ToolResult = { role: "toolResult"; toolName: string; isError: boolean; details?: unknown; content: { type: string; text?: string }[] };
 
 /** An Engine with a scripted model, a browser of `tabs` (the first is active) and one page that counts its clicks. */
-async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>; page?: Partial<PageMembers>; fetch?: typeof fetch } = {}) {
+async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>; page?: Partial<PageMembers>; fetch?: typeof fetch; files?: FileBackend } = {}) {
 	const opened: string[] = [];
 	const clicks: number[] = [];
 	const broker = await serveBrowser(fakeBrowser({
@@ -37,18 +40,20 @@ async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>
 		},
 		page_type: done, page_select: done, page_press: done, page_hover: done, page_scroll: done, page_wait: done,
 		describe: async () => ({ role: "button", name: "Buy now" }),
-		settled: async () => ({ url: "https://example.com/", title: "Example", opened: [] }),
+		settled: async () => ({ url: "https://example.com/", title: "Example", opened: [], appeared: [], appearedMore: false }),
 		viewport: async () => ({ width: 1280, height: 800, dpr: 1 }),
+		upload: done,
 		...options.page,
 	});
 	const faux = fauxProvider({ models: [{ id: "faux-1", name: "Faux" }] });
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
-	const engine = await openEngine(broker, { models, tab: async (tabId) => linkTo(await page(tabId)), ...(options.fetch ? { fetch: options.fetch } : {}) });
+	const engine = await openEngine(broker, { models, files: options.files, tab: async (tabId) => linkTo(await page(tabId)), ...(options.fetch ? { fetch: options.fetch } : {}) });
 	const panel = await connectPanel(engine);
 	const { workspace } = panel;
 	await useModel(workspace, faux);
-	const chat = await panel.chat(await workspace.createChat({}, context));
+	const chatId = await workspace.createChat({}, context);
+	const chat = await panel.chat(chatId);
 	let request = 0;
 	/** Sends a prompt the model answers with one tool call, and returns that call's result once the run has ended. */
 	const call = async (tool: string, args: Record<string, unknown>, tabId?: number, during?: () => Promise<void>) => {
@@ -71,7 +76,7 @@ async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>
 		await chat.decide({ id: asked!.id, decision }, context);
 	};
 	return {
-		workspace, chat, call, clicks, opened, decide,
+		workspace, chat, chatId, call, clicks, opened, decide,
 		close: async () => {
 			await panel.close();
 			await engine.close();
@@ -158,6 +163,68 @@ test("an action reports a navigation it caused and a receipt failure never fails
 		assert.deepEqual(broken.clicks, [7]);
 	} finally {
 		await broken.close();
+	}
+});
+
+test("a receipt names elements that appeared, the target's new state and tabs the action opened", async () => {
+	const foreign = tab(7, "example.com");
+	const spawned = tab(50, "new.example");
+	let showSpawned = false;
+	const f = await fixture([foreign], {
+		browser: {
+			listTabs: async () => (showSpawned ? [foreign, spawned] : [foreign]),
+			getTab: async ({ tabId }) => [foreign, spawned].find((each) => each.tabId === tabId) ?? null,
+		},
+		page: {
+			page_click: async () => {
+				showSpawned = true;
+				return { ok: true };
+			},
+			settled: async () => ({
+				url: "https://example.com/", title: "Example", opened: [],
+				appeared: [{ ref: "abcd.e9", role: "menuitem", name: "Item A" }],
+				appearedMore: false,
+				target: { ref: "abcd.e1", role: "button", name: "Menu", expanded: true },
+			}),
+		},
+	});
+	try {
+		const result = await f.call("page_click", { ref: "abcd.e1" }, 7);
+		assert.equal(result.isError, false);
+		const output = result.content.map((part) => part.text ?? "").join("\n");
+		assert.match(output, /Now: \[abcd\.e1\] button "Menu" expanded=true/);
+		assert.match(output, /Appeared:\n\[abcd\.e9\] menuitem "Item A"/);
+		assert.match(output, /Opened tab 50: "new\.example" https:\/\/new\.example\/ — not the target; tab_activate it to work there\./);
+		// A tab the action opened is this chat's now: closing it needs no approval while confirmation is off.
+		assert.equal((await f.call("tab_close", { tabId: 50 })).isError, false);
+		assert.equal(f.chat.approvals.value.length, 0);
+	} finally {
+		await f.close();
+	}
+});
+
+test("page_upload sends a chat file's name, type and bytes to the page; a missing path never reaches it", async () => {
+	const files = await openFiles();
+	const uploads: { ref: string; files: { name: string; type: string; data: Uint8Array }[] }[] = [];
+	const f = await fixture([tab(7, "example.com")], {
+		files,
+		page: { upload: async (args) => { uploads.push(args); return { ok: true }; } },
+	});
+	try {
+		getOrThrow(await new ChatFiles(files, f.chatId).writeFile("docs/a.pdf", new Uint8Array([37, 80, 68, 70]), context));
+		const result = await f.call("page_upload", { ref: "e1", paths: ["docs/a.pdf"] }, 7);
+		assert.equal(result.isError, false);
+		assert.equal(uploads.length, 1);
+		assert.equal(uploads[0]!.ref, "e1");
+		assert.deepEqual(
+			uploads[0]!.files.map(({ name, type, data }) => ({ name, type, data: [...data] })),
+			[{ name: "a.pdf", type: "application/pdf", data: [37, 80, 68, 70] }],
+		);
+		const missing = await f.call("page_upload", { ref: "e1", paths: ["nope.pdf"] }, 7);
+		assert.equal(missing.isError, true);
+		assert.equal(uploads.length, 1, "the page is never called for a missing file");
+	} finally {
+		await f.close();
 	}
 });
 

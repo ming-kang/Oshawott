@@ -480,9 +480,12 @@ const BUILTIN_VIEWS: readonly ToolView[] = [
 	}),
 	defineToolView({
 		name: "page_click", icon: "pointer", label: t("tool.click"),
-		argsMeta: refMeta, resultMeta: elementLabel,
+		argsMeta: (args) => args.ref !== undefined ? String(args.ref)
+			: args.x !== undefined && args.y !== undefined ? `${args.x}, ${args.y}` : "",
+		resultMeta: elementLabel,
 		body: kvBody((args, result) => [
 			[t("tool.kv.element"), elementLabel(result?.details)],
+			[t("tool.kv.point"), args.x !== undefined && args.y !== undefined ? `${args.x}, ${args.y}` : undefined, true],
 			[t("tool.kv.ref"), typeof args.ref === "string" ? args.ref : undefined, true],
 			[t("tool.kv.tab"), typeof args.tabId === "number" ? `#${args.tabId}` : undefined, true],
 		]),
@@ -524,6 +527,17 @@ const BUILTIN_VIEWS: readonly ToolView[] = [
 		argsMeta: refMeta, resultMeta: elementLabel,
 		body: kvBody((args, result) => [
 			[t("tool.kv.element"), elementLabel(result?.details)],
+			[t("tool.kv.ref"), typeof args.ref === "string" ? args.ref : undefined, true],
+			[t("tool.kv.tab"), typeof args.tabId === "number" ? `#${args.tabId}` : undefined, true],
+		]),
+	}),
+	defineToolView({
+		name: "page_upload", icon: "paperclip", label: t("tool.upload"),
+		argsMeta: (args) => Array.isArray(args.paths) ? args.paths.join(", ") : "",
+		resultMeta: elementLabel,
+		body: kvBody((args, result) => [
+			[t("tool.kv.element"), elementLabel(result?.details)],
+			[t("tool.kv.files"), Array.isArray(args.paths) ? args.paths.join(", ") : undefined],
 			[t("tool.kv.ref"), typeof args.ref === "string" ? args.ref : undefined, true],
 			[t("tool.kv.tab"), typeof args.tabId === "number" ? `#${args.tabId}` : undefined, true],
 		]),
@@ -587,9 +601,11 @@ const BUILTIN_VIEWS: readonly ToolView[] = [
 	}),
 	defineToolView({
 		name: "tab_navigate",
-		icon: (args) => (args.back ? "back" : "globe"),
-		label: (args) => t(args.back ? "tool.back" : "tool.navigate"),
-		argsMeta: (args) => (args.back ? "" : hostPathOf(args.url)),
+		icon: (args) => (args.back === true || args.history === "back" ? "back"
+			: args.history === "forward" ? "forward" : args.history === "reload" ? "refresh" : "globe"),
+		label: (args) => t(args.back === true || args.history === "back" ? "tool.back"
+			: args.history === "forward" ? "tool.forward" : args.history === "reload" ? "tool.reload" : "tool.navigate"),
+		argsMeta: (args) => (args.back === true || args.history !== undefined ? "" : hostPathOf(args.url)),
 		resultMeta: (_details, _argsMeta, result) => {
 			if (!result || result.isError) return undefined;
 			const tab = parseJsonRecord(result.text);

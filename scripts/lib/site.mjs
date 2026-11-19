@@ -41,6 +41,35 @@ ${Array.from({ length: 30 }, (_, i) => `<i class="many">${i}</i>`).join("")}
 <button id="bounce" onclick="const back=location.pathname+location.search;history.pushState({},'','/inspect?away=1');history.pushState({},'',back)">Bounce</button>
 <button id="hash" onclick="location.hash='part'">Hash</button>`;
 
+/** Nested-DOM fixture: open and closed shadow roots and a same-origin frame, for deep page-tool reads. */
+export const NESTED_PAGE = `<!doctype html><title>Nested fixture</title>
+<div id="open-host"></div><div id="closed-host"></div>
+<iframe src="/nested-frame" style="display:block;width:420px;height:180px;border:6px solid #888"></iframe>
+<button id="reveal" aria-expanded="false">Reveal</button>
+<input id="fu" type="file" multiple aria-label="Attach" onchange="log('files:'+[...this.files].map(f=>f.name+':'+f.size).join(','))">
+<div id="ctx" role="button" tabindex="0" onclick="log('ctx:click')" oncontextmenu="event.preventDefault();log('ctx:menu')">Context</div>
+<div id="dbl" role="button" tabindex="0" onclick="log('dbl:click')" ondblclick="log('dbl:dblclick')">Dbl</div>
+<pre id="log"></pre><script>
+function log(t){document.getElementById('log').textContent+=t+' '}
+const open=document.getElementById('open-host').attachShadow({mode:'open'});
+open.innerHTML='<p>Shadowed words</p><button id="sh-open">Shadow Open</button>';
+open.querySelector('#sh-open').addEventListener('click',()=>log('shadow:open'));
+const closed=document.getElementById('closed-host').attachShadow({mode:'closed'});
+closed.innerHTML='<p>Sealed words</p><button id="sh-closed">Shadow Closed</button>';
+closed.querySelector('#sh-closed').addEventListener('click',()=>log('shadow:closed'));
+document.getElementById('reveal').addEventListener('click',function(){
+this.setAttribute('aria-expanded','true');log('reveal');
+const m=document.createElement('div');m.setAttribute('role','menu');
+m.innerHTML='<button role="menuitem">Item A</button><button role="menuitem">Item B</button>';
+document.body.append(m)});
+</script>`;
+
+export const NESTED_FRAME = `<!doctype html><title>Inner frame</title>
+<p>Frame words</p>
+<input id="ff" aria-label="Frame field">
+<button id="fb" onclick="document.getElementById('flog').textContent='frame-clicked'">Frame button</button>
+<p id="flog"></p>`;
+
 export const TEST_DOWNLOAD = `${JSON.stringify({ items: [1, 2, 3], note: "Oshawott 文件" })}\n`;
 export const TEST_LARGE_DOWNLOAD = JSON.stringify({ padding: "x".repeat(1_100_000), ending: "complete" });
 
@@ -97,6 +126,8 @@ export async function testSite({ page = TEST_PAGE, routes = {} } = {}) {
 		}
 		if (req.url === "/markdown-image-hits") return res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*", "cache-control": "no-store" }).end(JSON.stringify(markdownImage));
 		if (req.url === "/actions") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(ACTIONS_PAGE);
+		if (req.url === "/nested") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(NESTED_PAGE);
+		if (req.url === "/nested-frame") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(NESTED_FRAME);
 		if (req.url?.startsWith("/inspect")) {
 			const strict = req.url === "/inspect-csp" ? { "content-security-policy": "default-src 'none'; script-src 'none'" } : {};
 			return res.writeHead(200, { "content-type": "text/html; charset=utf-8", ...strict }).end(INSPECT_PAGE);

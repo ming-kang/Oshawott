@@ -1,6 +1,6 @@
 // Durable records intent before execute(): after an interruption, only `safe` calls replay.
 import type { Properties, StaticObject } from "@earendil-works/pi-schema";
-import { arr, bool, int, map, num, obj, oneOf, opt, type Schema, str } from "../lib/chord.ts";
+import { arr, bool, int, map, num, obj, oneOf, opt, type Schema, type Static, str } from "../lib/chord.ts";
 import { LIMITS } from "./page-limits.ts";
 
 export interface PageToolSpec<A extends Properties = Properties, R extends Schema = Schema> {
@@ -14,7 +14,7 @@ function spec<const A extends Properties, R extends Schema>(tool: PageToolSpec<A
 	return tool;
 }
 
-const Element = obj({
+export const Element = obj({
 	ref: str(),
 	role: str(),
 	name: str(),
@@ -24,7 +24,11 @@ const Element = obj({
 	disabled: opt(bool()),
 	expanded: opt(bool()),
 	href: opt(str()),
+	/** A visible element entirely outside the viewport: scroll to it before acting on it. */
+	offscreen: opt(bool()),
 });
+
+export type SnapshotElement = Static<typeof Element>;
 
 const Table = obj({
 	ref: str(),
@@ -55,6 +59,8 @@ export const SnapshotResult = obj({
 	/** True when `elements` reached the cap and more interactive elements exist. */
 	elementsTruncated: bool(),
 	structure: opt(Structure),
+	/** The top viewport's height and scroll position, the `offscreen` marks' frame of reference. */
+	viewport: opt(obj({ height: int(), scrollY: int(), scrollHeight: int() })),
 });
 
 export const INSPECT_PARTS = ["html", "attributes", "styles", "box"] as const;
@@ -80,23 +86,38 @@ export const InspectResult = obj({
 export const MODIFIERS = ["Alt", "Control", "Meta", "Shift"] as const;
 export const WAIT = { default: 5_000, max: 30_000 } as const;
 
-const Done = obj({
+export const Done = obj({
 	ok: bool(),
 	detail: opt(str()),
 	/** The field's actual value after page_type or page_select, which may differ from what was given. */
 	value: opt(str()),
 	/** The page state the action's receipt observed, when the Engine could read it. */
-	page: opt(obj({ url: str(), title: str(), navigated: bool(), opened: arr(str()) })),
+	page: opt(obj({
+		url: str(),
+		title: str(),
+		navigated: bool(),
+		opened: arr(str()),
+		/** Interactive elements that appeared during the action, and whether more than `appeared` exist. */
+		appeared: opt(arr(Element)),
+		appearedMore: opt(bool()),
+		/** The acted element's current line, or `targetGone` when it left the page. */
+		target: opt(Element),
+		targetGone: opt(bool()),
+		/** Tabs the action opened. */
+		newTabs: opt(arr(obj({ tabId: int(), url: str(), title: str() }))),
+	})),
 });
 
 export const pageTools = {
 	page_snapshot: spec({
 		description:
-			"Read the page: its URL, title, visible text, and the interactive elements with a `ref` each. " +
-			"Refs stay valid for the whole page until it navigates, and a scoped snapshot never invalidates them. `ref` " +
-			"or `selector` (its first match) limits the snapshot to that element's subtree; `structure` adds the visible " +
-			"tables and lists as data; `textOffset` continues a cut page text from that character offset. A selector " +
-			"that matches nothing is an error.",
+			"Read the page: its URL, title, visible text, and the interactive elements with a `ref` each — " +
+			"reaching into page components and same-origin frames. Refs stay valid for the whole page until it " +
+			"navigates, and a scoped snapshot never invalidates them. `ref` or `selector` (its first match, top " +
+			"document only — selectors never reach into page components or frames, refs do) limits the snapshot to " +
+			"that element's subtree; `structure` adds the visible tables and lists as data; `textOffset` continues a " +
+			"cut page text from that character offset. `offscreen` marks elements outside the viewport: scroll to " +
+			"them before acting. A selector that matches nothing is an error.",
 		args: {
 			maxChars: opt(int({ min: 200, max: 200_000 })),
 			ref: opt(str()),
@@ -110,8 +131,10 @@ export const pageTools = {
 	page_inspect: spec({
 		description:
 			"Inspect elements by a `ref` from a snapshot or by a CSS `selector`: their outer HTML, attributes, " +
-			"computed styles and bounding box. `include` picks parts (default all); `styles` names CSS properties (default " +
-			"common layout and visibility ones). Each element gets a `ref` usable by the other page tools. A selector that " +
+			"computed styles and bounding box in viewport CSS pixels (the space page_screenshot regions and " +
+			"page_click coordinates use). `include` picks parts (default all); `styles` names CSS properties (default " +
+			"common layout and visibility ones). Each element gets a `ref` usable by the other page tools. A selector " +
+			"matches only the top document — page components and frames are reached through refs — and one that " +
 			"matches nothing is an error.",
 		args: {
 			ref: opt(str()),
@@ -126,17 +149,29 @@ export const pageTools = {
 	}),
 	page_click: spec({
 		description:
-			"Click the element with this `ref`, as a pointer would: it is scrolled into view, pressed and released. " +
-			"Use it for buttons, links, checkboxes, radios, tabs and menu items. The result reports a navigation or an " +
-			"opened dialog when the click caused one; take a new snapshot when refs went stale or you need the new page.",
-		args: { ref: str() },
+			"Click the element with this `ref`, or at viewport coordinates `x`/`y` (the space of page_screenshot " +
+			"and page_inspect's `box`, for things no snapshot names like canvas controls): pass a ref, or x and y " +
+			"together. The target is scrolled into view, pressed and released as a pointer would. `button` makes " +
+			"it a right or middle click, `count` a double or triple click, `modifiers` holds keys during it. Use it " +
+			"for buttons, links, checkboxes, radios, tabs and menu items. The result reports what changed — a " +
+			"navigation, an opened dialog, elements that appeared, a tab the click opened — so a new snapshot is " +
+			"often unnecessary; take one when refs went stale or you need to see more.",
+		args: {
+			ref: opt(str()),
+			x: opt(num()),
+			y: opt(num()),
+			button: opt(oneOf("left", "right", "middle")),
+			count: opt(int({ min: 1, max: 3 })),
+			modifiers: opt(arr(oneOf(...MODIFIERS), { max: MODIFIERS.length })),
+		},
 		result: Done,
 		replay: "unsafe",
 	}),
 	page_type: spec({
 		description:
 			"Type text into the text field or editable element with this `ref`, replacing its content; `submit` presses " +
-			"Enter after it. Not for dropdowns (page_select) or checkboxes (page_click). The result reports the value " +
+			"Enter after it. A ref naming a page component types into the field it hosts inside. Not for dropdowns " +
+			"(page_select) or checkboxes (page_click). The result reports the value " +
 			"the field actually holds, which the page may have reformatted or rejected.",
 		args: { ref: str(), text: str(), submit: opt(bool()) },
 		result: Done,
@@ -175,7 +210,8 @@ export const pageTools = {
 		description:
 			"Wait until a visible element matches `selector` or the page shows `text` (`gone`: until it no longer does), " +
 			`at most \`timeoutMs\` (default ${WAIT.default}, max ${WAIT.max}). With neither, just waits that long. ` +
-			"`ok` is false when the time ran out. Use it after an action whose result loads later.",
+			"`ok` is false when the time ran out. `selector` matches the top document only: it does not reach " +
+			"into page components or frames. Use it after an action whose result loads later.",
 		args: {
 			selector: opt(str()),
 			text: opt(str({ min: 1 })),

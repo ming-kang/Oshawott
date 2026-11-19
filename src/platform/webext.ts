@@ -54,6 +54,8 @@ export interface WebExt {
 		get(tabId: number): Promise<TabInfo>;
 		create(properties: { url: string; active?: boolean }): Promise<TabInfo>;
 		goBack(tabId: number): Promise<void>;
+		goForward(tabId: number): Promise<void>;
+		reload(tabId: number, properties?: { bypassCache?: boolean }): Promise<void>;
 		update(tabId: number, properties: { url?: string; active?: boolean }): Promise<TabInfo>;
 		remove(tabId: number): Promise<void>;
 		captureVisibleTab?(windowId: number, options: { format?: string; quality?: number }): Promise<string>;

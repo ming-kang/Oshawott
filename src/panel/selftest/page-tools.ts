@@ -143,6 +143,46 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 		const badSelector = await rejection("page_wait", { selector: "[" });
 		step("page_wait returns when the content arrives and reports a timeout", arrived.ok === true && never.ok === false && badSelector.includes("Invalid CSS selector"), `${arrived.detail} / ${never.detail}`);
 
+		await visit("/nested");
+		const nlog = async () => (await page("page_inspect", { selector: "#log", include: ["html"] })).elements[0].html as string;
+		const nested = await page("page_snapshot", {});
+		const deepRef = (name: string) => control(nested.elements as Seen[], name).ref;
+		step("a snapshot reaches shadow roots and same-origin frames",
+			control(nested.elements, "Shadow Open") && control(nested.elements, "Shadow Closed")
+			&& control(nested.elements, "Frame field") && control(nested.elements, "Frame button")
+			&& nested.text.includes("[Inside page components]") && nested.text.includes("Shadowed words") && nested.text.includes("Sealed words")
+			&& nested.text.includes('[Frame "Inner frame"]') && nested.text.includes("Frame words"),
+			nested.elements.map((each: Seen) => each.name).join("|"));
+
+		await page("page_click", { ref: deepRef("Shadow Open") });
+		await page("page_click", { ref: deepRef("Shadow Closed") });
+		const shadowLog = await nlog();
+		step("page_click reaches into shadow roots", shadowLog.includes("shadow:open") && shadowLog.includes("shadow:closed"), shadowLog);
+		const typedFrame = await page("page_type", { ref: deepRef("Frame field"), text: "otter" });
+		step("page_type reaches a field inside a frame", typedFrame.value === "otter", JSON.stringify(typedFrame));
+
+		const frameBox = (await page("page_inspect", { ref: deepRef("Frame button"), include: ["box"] })).elements[0].box;
+		await page("page_click", { x: frameBox.x + frameBox.width / 2, y: frameBox.y + frameBox.height / 2 });
+		const frameText = (await page("page_snapshot", {})).text;
+		step("a frame element's box is in viewport coordinates and a coordinate click lands",
+			frameBox.inViewport === true && frameText.includes("frame-clicked"), JSON.stringify(frameBox));
+
+		await page("page_click", { ref: deepRef("Context"), button: "right" });
+		const ctxLog = await nlog();
+		step("a right click fires contextmenu, not click", ctxLog.includes("ctx:menu") && !ctxLog.includes("ctx:click"), ctxLog);
+		await page("page_click", { ref: deepRef("Dbl"), count: 2 });
+		step("a double click fires dblclick", (await nlog()).includes("dbl:dblclick"), await nlog());
+
+		const reveal = deepRef("Reveal");
+		await page("page_click", { ref: reveal });
+		const state = await page("settled", { ref: reveal });
+		step("settled reports what an action revealed and the target's new state",
+			state.appeared.some((each: Seen) => each.name === "Item A") && state.target?.expanded === true, JSON.stringify(state));
+
+		const attached = await page("upload", { ref: deepRef("Attach"), files: [{ name: "otter.txt", type: "text/plain", data: new TextEncoder().encode("otter") }] });
+		const uploadLog = await nlog();
+		step("upload attaches files to a file input", attached.ok === true && uploadLog.includes("files:otter.txt:5"), uploadLog);
+
 		await visit("/inspect-csp");
 		const strict = await page("page_snapshot", { selector: "#scope", structure: true });
 		const strictInspect = await page("page_inspect", { selector: "#inside" });

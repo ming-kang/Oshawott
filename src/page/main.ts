@@ -1,9 +1,9 @@
-import { Page } from "../contracts/page.ts";
+import { Page, PAGE_LINK_LIMITS } from "../contracts/page.ts";
 import { PORTS, type Principal, TabHost } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../lib/chord.ts";
 import { type PortLink, portLink } from "../link/port-link.ts";
 import { ext } from "../platform/webext.ts";
-import { click, describe, hover, inspect, press, scroll, select, settled, snapshot, type, viewport, wait } from "./dom.ts";
+import { click, describe, hover, inspect, press, scroll, select, settled, snapshot, type, upload, viewport, wait } from "./dom.ts";
 
 declare global {
 	// Set by the Broker's first injection step, read here: a content script cannot learn its tab id by itself.
@@ -39,8 +39,9 @@ async function start(tabId: number) {
 								page_scroll: async (args) => scroll(args),
 								page_wait: (args) => wait(args),
 								describe: async (args) => describe(args),
-								settled: async () => settled(),
+								settled: async (args) => settled(args),
 								viewport: async () => viewport(),
+								upload: async (args) => upload(args),
 							},
 						};
 					});
@@ -54,7 +55,7 @@ async function start(tabId: number) {
 		link?.close();
 		const port = ext.runtime.connect({ name: PORTS.tab });
 		link = portLink(port, () => ext.runtime.lastError?.message);
-		host.accept(link, { principal: { kind: "engine" } }, context);
+		host.accept(link, { principal: { kind: "engine" }, limits: PAGE_LINK_LIMITS }, context);
 	};
 	// A document entering the back-forward cache is frozen but, in Firefox, keeps its port: the Engine would keep calling
 	// it until the link times out. Closing it routes the next call to the tab's current document; if this one comes

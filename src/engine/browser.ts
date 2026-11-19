@@ -102,7 +102,13 @@ export async function runEngine(options: BrowserEngineOptions): Promise<Engine> 
 		engine: started,
 		codemode: (code: string) => sandbox.execute(code),
 		files: (chat: number) => new ChatFiles(files, chat),
-		page: (tabId: number, tool: PageToolName, args: Record<string, unknown>) => callPage(started.host, tabId, tool, args, context),
+		page: (tabId: number, tool: PageToolName | "upload", args: Record<string, unknown>) => {
+			// A dev caller's args cross contexts as JSON: upload's bytes arrive as plain data the link can't pack.
+			if (tool === "upload")
+				for (const file of (args as { files: { data: unknown }[] }).files)
+					file.data = file.data instanceof Uint8Array ? file.data : new Uint8Array(Array.isArray(file.data) ? file.data : Object.values(file.data as object));
+			return callPage(started.host, tabId, tool, args, context);
+		},
 	};
 	return engine;
 }

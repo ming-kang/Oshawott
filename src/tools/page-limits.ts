@@ -1,6 +1,7 @@
 /** Output bounds shared by the page tool contract and its DOM implementation. */
 export const LIMITS = {
 	snapshotElements: 500,
+	appeared: 15,
 	name: 120,
 	url: 2_000,
 	href: 300,

@@ -37,6 +37,26 @@ const TEXT_MIME_TYPES = new Set([
 ]);
 const IMAGE_EXTENSIONS: Record<string, ImageMimeType> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 
+/** Common upload types beyond the attachment formats: a file input may take anything. */
+const COMMON_MIME: Record<string, string> = {
+	...IMAGE_EXTENSIONS,
+	avif: "image/avif", bmp: "image/bmp", svg: "image/svg+xml", ico: "image/x-icon",
+	pdf: "application/pdf", zip: "application/zip", gz: "application/gzip", tar: "application/x-tar",
+	"7z": "application/x-7z-compressed", rar: "application/vnd.rar", epub: "application/epub+zip", wasm: "application/wasm",
+	doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	json: "application/json", csv: "text/csv", xml: "application/xml", html: "text/html", htm: "text/html", ics: "text/calendar",
+	mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac",
+	mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska",
+};
+
+/** A name's MIME type by extension: known formats, `text/plain` for text, `application/octet-stream` for the rest. */
+export function mimeForPath(name: string): string {
+	const extension = extensionOf(name);
+	return COMMON_MIME[extension] ?? (TEXT_EXTENSIONS.has(extension) ? "text/plain" : "application/octet-stream");
+}
+
 export function cleanFileName(name: string): string {
 	const cleaned = name.normalize("NFKC").replace(/[\\/<>:"\u0000-\u001f\u007f]/g, "-").replace(/^\.+/, "").trim();
 	return (cleaned || "attachment").slice(0, 160);

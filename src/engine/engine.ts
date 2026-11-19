@@ -4,6 +4,7 @@ import { createRegistry, type Extension, Harness, type Storage, type Wake } from
 import { Browser } from "../contracts/browser.ts";
 import { PANEL_LINK_LIMITS } from "../contracts/chat.ts";
 import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/hosts.ts";
+import { PAGE_LINK_LIMITS } from "../contracts/page.ts";
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
 import { completeAttachmentDeletes } from "./attachments.ts";
 import { ConversationActivity } from "./activity.ts";
@@ -72,6 +73,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 			resolve: async ({ params: { tabId } }, ctx) => ({
 				link: await options.tab(tabId, ctx),
 				principal: { kind: "tab", tabId },
+				limits: PAGE_LINK_LIMITS,
 			}),
 		},
 		context,
