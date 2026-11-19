@@ -7,7 +7,7 @@ import { compactTokens } from "./models.ts";
 import { modelCapabilitiesText } from "./provider-utils.ts";
 import { toast } from "./ui.ts";
 
-const Field = defineComponent({
+export const Field = defineComponent({
 	props: { label: { type: String, required: true } },
 	setup(props, { slots }) {
 		return () => <label class="provider-field"><span>{props.label}</span>{slots.default?.()}</label>;

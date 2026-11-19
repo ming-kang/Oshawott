@@ -3,13 +3,15 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { trimPageReads } from "../src/engine/context-trim.ts";
+import type { ToolDetails } from "../src/tools/details.ts";
 
-const result = (id: string, toolName: string, content: ToolResultMessage["content"], isError = false): ToolResultMessage =>
-	({ role: "toolResult", toolCallId: id, toolName, content, isError, timestamp: 0 });
+const result = (id: string, toolName: string, content: ToolResultMessage["content"], isError = false, details?: ToolDetails): ToolResultMessage =>
+	({ role: "toolResult", toolCallId: id, toolName, content, isError, details, timestamp: 0 });
 
 const read = (id: string, args: Record<string, unknown>, text: string): Message[] => [
 	fauxAssistantMessage(fauxToolCall("page_snapshot", args as never, { id })),
-	result(id, "page_snapshot", [{ type: "text", text }]),
+	result(id, "page_snapshot", [{ type: "text", text }], false,
+		{ kind: "page_snapshot", title: "Example", url: "https://a/", text: "", elements: [], elementCount: 0 }),
 ];
 
 const shot = (id: string): Message[] => [
@@ -24,7 +26,7 @@ const textOf = (message: Message) =>
 	(message as ToolResultMessage).content.map((part) => (part.type === "text" ? part.text : "<image>")).join("\n");
 
 test("a superseded page read shrinks to a stub; the latest and a different scope stay intact", () => {
-	const first = "Title: Example\nURL: https://a/\nElements (1):\n[e1] button \"Go\"\n\nfirst body";
+	const first = "The target changed sites.\nTitle: Example\nURL: https://a/\nElements (1):\n[e1] button \"Go\"\n\nfirst body\nURL: https://quoted-page-text/";
 	const messages: Message[] = [
 		...read("c1", {}, first),
 		...read("c2", { textOffset: 500 }, "Title: Example\nURL: https://a/\nElements (0):\n\ncontinued"),

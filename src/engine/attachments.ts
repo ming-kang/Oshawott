@@ -1,4 +1,4 @@
-import { type Harness, type InputEntry, type Tx, type UserInput } from "@earendil-works/pi-durable";
+import type { InputEntry, UserInput } from "@earendil-works/pi-durable";
 import type { ImageContent, MutableModels } from "@earendil-works/pi-ai";
 import type { AttachmentInput, ModelRef } from "../contracts/chat.ts";
 import {
@@ -6,8 +6,7 @@ import {
 	MAX_MESSAGE_ATTACHMENT_BYTES, type StoredAttachment, userEntry, userInput, validateAttachmentBatch,
 } from "../lib/attachments.ts";
 import { toBase64 } from "../lib/base64.ts";
-import { ChordError, type Context } from "../lib/chord.ts";
-import { AttachmentDeletesDoc } from "./docs.ts";
+import { ChordError } from "../lib/chord.ts";
 import type { FileBackend } from "./files.ts";
 import { resolvePath, WORKSPACE } from "./files.ts";
 
@@ -92,30 +91,7 @@ export async function discardAttachments(files: FileBackend, chat: number, paths
 export const rollbackAttachments = (files: FileBackend, chat: number, prepared: readonly PreparedAttachment[]) =>
 	discardAttachments(files, chat, prepared.filter((item) => item.created).map((item) => item.path)).catch(() => undefined);
 
-/**
- * Record, inside the commit that drops their last reference, attachment files to delete once it has committed. Callers
- * run `completeAttachmentDeletes` after the commit; an intent a crash interrupts is completed by the next Engine.
- */
-export async function intendAttachmentDeletes(tx: Tx, chat: number, paths: readonly string[]): Promise<void> {
-	const unique = [...new Set(paths)].map(safeAttachmentPath);
-	if (!unique.length) return;
-	(await tx.doc(AttachmentDeletesDoc)).pending.push({ id: crypto.randomUUID(), chat, paths: unique });
-}
 
-/** Idempotent and retryable. */
-export async function completeAttachmentDeletes(harness: Harness, files: FileBackend, context: Context, onError: (error: unknown) => void) {
-	for (const intent of (await harness.snapshot(AttachmentDeletesDoc, context))?.pending ?? []) {
-		try {
-			await discardAttachments(files, intent.chat, intent.paths);
-			await harness.commit(async (tx) => {
-				const doc = await tx.doc(AttachmentDeletesDoc);
-				doc.pending = doc.pending.filter((item) => item.id !== intent.id);
-			}, context);
-		} catch (error) {
-			onError(error);
-		}
-	}
-}
 
 const imageOf = (item: StoredAttachment): ImageContent => ({ type: "image", data: toBase64(item.data), mimeType: item.mimeType });
 

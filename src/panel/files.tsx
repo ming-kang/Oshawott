@@ -5,12 +5,12 @@ import { Icon, NativeView, useConfirmation } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
 import { previewKind } from "./file-preview.ts";
 import type { ChatRef } from "./session.ts";
-import { LANG, t } from "./i18n/index.ts";
+import { language, t } from "./i18n/index.ts";
 import { codeBlock } from "./tool-highlight.ts";
 import { download, errorMessage, toast, toastError } from "./ui.ts";
 
 const context = BACKGROUND_CONTEXT;
-const dateFormat = new Intl.DateTimeFormat(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+let dateFormat: Intl.DateTimeFormat | undefined;
 type FileInfo = Awaited<ReturnType<ChatRef["files"]>>[number];
 const MAX_PREVIEW_BYTES = 256 * 1024;
 
@@ -87,6 +87,7 @@ const FileRow = defineComponent({
 		const downloading = shallowRef(false);
 		const removing = shallowRef(false);
 		const confirmation = useConfirmation();
+		const formatDate = dateFormat ??= new Intl.DateTimeFormat(language(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 		const save = async () => {
 			if (downloading.value) return;
 			downloading.value = true;
@@ -118,7 +119,7 @@ const FileRow = defineComponent({
 					<button class="file-info" type="button" title={t("files.preview")} aria-label={`${t("files.preview")}: ${props.file.path}`}
 						aria-expanded={props.expanded} onClick={() => props.onToggle()}>
 						<span class="file-path" title={props.file.path}>{props.file.path}</span>
-						<span class="file-meta"><span>{formatBytes(props.file.size)}</span><time datetime={new Date(props.file.mtimeMs).toISOString()}>{dateFormat.format(props.file.mtimeMs)}</time></span>
+						<span class="file-meta"><span>{formatBytes(props.file.size)}</span><time datetime={new Date(props.file.mtimeMs).toISOString()}>{formatDate.format(props.file.mtimeMs)}</time></span>
 					</button>
 					<div class="file-actions">
 						<button class="icon-btn small file-insert" type="button" title={t("files.insert")} aria-label={`${t("files.insert")}: ${props.file.path}`}

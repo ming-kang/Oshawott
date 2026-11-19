@@ -2,25 +2,39 @@ import { defineComponent, onBeforeUnmount, ref, shallowRef, watch, type PropType
 import { formatBytes } from "../lib/bytes.ts";
 import { ATTACHMENT_ACCEPT, type AttachmentPicker } from "./attachments.ts";
 import { t } from "./i18n/index.ts";
-import { ICONS, type IconName } from "./ui.ts";
+import { copyText, iconShapes, type IconName, toast } from "./ui.ts";
 
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
 	return (
 		<svg class="icon" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-			{ICONS[name].map((shape) => {
-				if (shape.startsWith("c:")) {
-					const [cx, cy, r] = shape.slice(2).split(",");
-					return <circle cx={cx} cy={cy} r={r} />;
-				}
-				if (shape.startsWith("r:")) {
-					const [x, y, width, height, rx] = shape.slice(2).split(",");
-					return <rect x={x} y={y} width={width} height={height} rx={rx} />;
-				}
-				return <path d={shape} />;
-			})}
+			{iconShapes(name).map((shape) => shape.tag === "circle" ? <circle {...shape.attrs} />
+				: shape.tag === "rect" ? <rect {...shape.attrs} /> : <path {...shape.attrs} />)}
 		</svg>
 	);
 }
+
+export const CopyButton = defineComponent({
+	props: { text: { type: String, required: true } },
+	setup(props) {
+		const copied = shallowRef(false);
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let mounted = true;
+		onBeforeUnmount(() => { mounted = false; clearTimeout(timer); });
+		const copy = async () => {
+			if (!(await copyText(props.text))) return toast(t("copyFailed"), "error");
+			if (!mounted) return;
+			copied.value = true;
+			clearTimeout(timer);
+			timer = setTimeout(() => { copied.value = false; }, 1200);
+		};
+		return () => {
+			const label = t(copied.value ? "copied" : "copy");
+			return <button class="icon-btn small" type="button" title={label} aria-label={label} onClick={copy}>
+				<Icon name={copied.value ? "check" : "copy"} size={14} />
+			</button>;
+		};
+	},
+});
 
 export const Logo = ({ size = 24 }: { size?: number }) => (
 	<img class="logo" src={`icons/${size <= 32 ? "icon-small.svg" : "icon.svg"}`} width={size} height={size} alt="" draggable={false} aria-hidden="true" />

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseCodemodeResult, parseSnapshotResult, resolveToolLook, toolViewFor } from "../src/panel/tool-views.ts";
+import { parseCodemodeResult, resolveToolLook, toolViewFor } from "../src/panel/tool-views.ts";
 
 test("an unknown tool falls back to its raw name and the generic icon", () => {
 	const look = resolveToolLook("some_future_tool", { anything: 1 });
@@ -25,6 +25,13 @@ test("an action names the element it touched and keeps its input", () => {
 	assert.equal(toolViewFor("page_scroll")?.resultMeta?.(undefined, "300px"), undefined, "without an element the card keeps the argument summary");
 });
 
+test("the wait result stays readable after the target tab changes sites", () => {
+	const details = { kind: "page_wait", ok: true };
+	const result = { text: 'The target tab changed sites.\n{"ok":true}', isError: false, details };
+	const view = toolViewFor("page_wait");
+	assert.notEqual(view?.resultMeta?.(details, "#ready", result), undefined);
+});
+
 test("the codemode result header parses into status, wall time and output", () => {
 	const done = parseCodemodeResult('Script completed\nWall time 1.5 seconds\nOutput:\n{"a":1}');
 	assert.deepEqual(done, { ok: true, seconds: "1.5", output: '{"a":1}' });
@@ -32,24 +39,4 @@ test("the codemode result header parses into status, wall time and output", () =
 	assert.equal(failed?.ok, false);
 	assert.equal(failed?.output, "Error: boom\n    at run");
 	assert.equal(parseCodemodeResult("Script sandbox failed: QuickJS died"), undefined);
-});
-
-test("the snapshot result needs its url, title and element lines", () => {
-	const parsed = parseSnapshotResult([
-		"Title: T",
-		"URL: https://ex.com/",
-		"Elements (2):",
-		`[e1] button "Go" disabled`,
-		`[e2] link "" → https://ex.com/#`,
-		"Text:",
-		"body",
-	].join("\n"));
-	assert.equal(parsed?.title, "T");
-	assert.equal(parsed?.url, "https://ex.com/");
-	assert.equal(parsed?.text, "body");
-	assert.deepEqual(parsed?.elements, [
-		{ ref: "e1", role: "button", name: "Go" },
-		{ ref: "e2", role: "link", name: "" },
-	]);
-	assert.equal(parseSnapshotResult('{"title":"T","elements":[]}'), undefined);
 });

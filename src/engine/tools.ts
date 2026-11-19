@@ -10,6 +10,7 @@ import { toBase64 } from "../lib/base64.ts";
 import { arr, bool, type Context, type Contract, type Host, int, num, obj, oneOf, opt, type ParamsOf, type Reference, str } from "../lib/chord.ts";
 import { pageUrl } from "../page/refs.ts";
 import { hostOf, isHttpUrl } from "../platform/patterns.ts";
+import { SNAPSHOT_PREVIEW_ELEMENTS, TOOL_PREVIEW_CHARS, type ToolDetails } from "../tools/details.ts";
 import { Done, InspectResult, type PageToolName, pageTools, type SnapshotElement, SnapshotResult } from "../tools/page-tools.ts";
 import { renderElement, renderInspect, renderSnapshot } from "../tools/render.ts";
 import type { Approvals } from "./approvals.ts";
@@ -51,18 +52,20 @@ const RECEIPTS = new Set<string>(["page_click", "page_type", "page_select", "pag
 
 type Described = { role: string; name: string };
 
-/** A short summary for the tool card; the model reads the full result. */
-function detailsOf(name: string, result: unknown, element: Described | undefined): { details: Record<string, Record<string, string | number>> } | undefined {
-	if (element) return { details: { element: { role: element.role, name: element.name } } };
+function detailsOf(name: string, result: unknown, element: Described | undefined): ToolDetails | { element: Described } | undefined {
 	if (name === "page_snapshot") {
 		const snapshot = result as Static<typeof SnapshotResult>;
-		return { details: { snapshot: { title: snapshot.title, elementCount: snapshot.elements.length } } };
+		return { kind: name, url: snapshot.url, title: snapshot.title, text: snapshot.text.slice(0, TOOL_PREVIEW_CHARS),
+			elements: snapshot.elements.slice(0, SNAPSHOT_PREVIEW_ELEMENTS), elementCount: snapshot.elements.length };
 	}
 	if (name === "page_inspect") {
-		const inspected = result as Static<typeof InspectResult>;
-		return { details: { inspect: { matched: inspected.matched, shown: inspected.elements.length } } };
+		return { ...(result as Static<typeof InspectResult>), kind: name };
 	}
-	return undefined;
+	if (name === "page_wait") {
+		const { ok, detail } = result as Static<typeof Done>;
+		return { kind: name, ok, ...(detail === undefined ? {} : { detail }) };
+	}
+	return element && { element: { role: element.role, name: element.name } };
 }
 
 /** What a confirmation quotes of an action's input after the element it acts on. */
@@ -130,7 +133,7 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 	 * A failure here must never fail an action that succeeded, so this reports nothing when the tab or the page
 	 * cannot be read.
 	 */
-	const receiptOf = async (tab: Tab, target: boolean, api: ToolExecutionApi, context: Context, ref?: string, tabsBefore?: Tab[]) => {
+	const receiptOf = async (tab: Tab, target: boolean, api: ToolExecutionApi, context: Context, receiptId: string, ref?: string, tabsBefore?: Tab[]) => {
 		try {
 			const after = await browser(context, (browser) => browser.settle({ tabId: tab.tabId }, context));
 			const tabs = tabsBefore === undefined ? [] : await browser(context, (browser) => browser.listTabs(context));
@@ -154,11 +157,17 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 					lines: [`Navigated to ${after.url} (${after.title}). Earlier refs are stale: take a new snapshot.`, ...openedTabs],
 				};
 			}
-			const state = await callPage(host, tab.tabId, "settled", { ref }, context) as {
+			const state = await callPage(host, tab.tabId, "settled", { receiptId, ref }, context) as {
 				url: string; title: string; opened: string[];
 				appeared: SnapshotElement[]; appearedMore: boolean;
 				target?: SnapshotElement; targetGone?: boolean;
-			};
+			} | null;
+			if (!state) {
+				return {
+					page: { url: after.url, title: after.title, navigated: false, opened: [] as string[], ...spawn },
+					lines: openedTabs,
+				};
+			}
 			const lines: string[] = [];
 			if (state.title !== tab.title) lines.push(`The page is now titled "${state.title}".`);
 			if (state.opened.length) lines.push(`Opened: ${state.opened.map((name) => `dialog "${name}"`).join(", ")}.`);
@@ -221,8 +230,10 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 		// Tabs the action opens are found by comparing the list before it to the one after it settles.
 		const receipts = RECEIPTS.has(name);
 		const tabsBefore = receipts ? await browser(context, (browser) => browser.listTabs(context)).catch(() => undefined) : undefined;
-		const result = await (options.call?.(tab, rest) ?? callPage(host, tab.tabId, name as PageToolName, rest, context)) as Record<string, unknown>;
-		const receipt = receipts ? await receiptOf(tab, onTarget, api, context, rest.ref, tabsBefore) : undefined;
+		const receiptId = receipts ? crypto.randomUUID() : undefined;
+		const pageArgs = receiptId === undefined ? rest : { ...rest, receiptId };
+		const result = await (options.call?.(tab, pageArgs) ?? callPage(host, tab.tabId, name as PageToolName, pageArgs, context)) as Record<string, unknown>;
+		const receipt = receiptId === undefined ? undefined : await receiptOf(tab, onTarget, api, context, receiptId, rest.ref, tabsBefore);
 		const merged = receipt === undefined ? result : { ...result, page: receipt.page };
 		const body = name === "page_snapshot"
 			? renderSnapshot(result as unknown as Static<typeof SnapshotResult>)
@@ -231,7 +242,7 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 				: receipts
 					? [typeof result.detail === "string" ? result.detail : "", ...(receipt?.lines ?? [])].filter(Boolean).join("\n") || JSON.stringify(merged)
 					: JSON.stringify(merged);
-		return { output: text(note === undefined ? body : `${note}\n${body}`), structuredOutput: merged as never, ...detailsOf(name, merged, element) };
+		return { output: text(note === undefined ? body : `${note}\n${body}`), structuredOutput: merged as never, details: detailsOf(name, merged, element) };
 	};
 
 	const pageTool = <N extends PageToolName>(name: N) => {
@@ -270,7 +281,7 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 			}
 			return runPageAction("page_upload", args as never, {
 				unsafe: true,
-				call: (tab, rest) => callPage(host, tab.tabId, "upload", { ref: rest.ref, files }, context) as Promise<Record<string, unknown>>,
+				call: (tab, rest) => callPage(host, tab.tabId, "upload", { ref: rest.ref, receiptId: rest.receiptId, files }, context) as Promise<Record<string, unknown>>,
 				quote: () => `: ${files.map((file) => file.name).join(", ")}`,
 			}, api, context);
 		},
@@ -281,7 +292,10 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 		description: "List the open tabs: id, window, URL, title, and whether each is active.",
 		parameters: obj({}),
 		replay: "safe",
-		execute: async (_args, _api, context) => ({ output: text(await browser(context, (browser) => browser.listTabs(context))) }),
+		execute: async (_args, _api, context) => {
+			const tabs = await browser(context, (browser) => browser.listTabs(context));
+			return { output: text(tabs), details: { kind: "tabs_list", tabs } satisfies ToolDetails };
+		},
 	});
 
 	const openableUrl = async (api: ToolExecutionApi, tool: string, raw: string, context: Context) => {
@@ -316,7 +330,7 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 				doc.opened = [...(doc.opened ?? []), { tabId: tab.tabId, session }];
 				if (tab.groupId !== undefined) doc.groupId = tab.groupId;
 			}, context);
-			return { output: text(tab) };
+			return { output: text(tab), details: { kind: "tab", tab } satisfies ToolDetails };
 		},
 	});
 
@@ -336,7 +350,7 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 			if (url === undefined && confirmActions()) await approve(api, "tab_navigate", HISTORY_LABEL[args.history!]!, tab.url, context);
 			const next = await browser(context, (browser) => browser.navigateTab({ tabId: tab.tabId, ...(url === undefined ? { history: args.history } : { url }) }, context));
 			if (onTarget) await bindOrigin(api, originOf(next.url), context);
-			return { output: text(note === undefined ? next : `${note}\n${JSON.stringify(next)}`) };
+			return { output: text(note === undefined ? next : `${note}\n${JSON.stringify(next)}`), details: { kind: "tab", tab: next } satisfies ToolDetails };
 		},
 	});
 
@@ -347,7 +361,7 @@ export function browserExtension({ host, approvals, confirmActions, models }: Br
 		execute: async (args, api, context) => {
 			const tab = await browser(context, (browser) => browser.activateTab(args, context));
 			await retarget(api, tab.tabId, originOf(tab.url), context);
-			return { output: text(tab) };
+			return { output: text(tab), details: { kind: "tab", tab } satisfies ToolDetails };
 		},
 	});
 

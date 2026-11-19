@@ -3,7 +3,8 @@ import { PORTS, type Principal, TabHost } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../lib/chord.ts";
 import { type PortLink, portLink } from "../link/port-link.ts";
 import { ext } from "../platform/webext.ts";
-import { click, describe, hover, inspect, press, scroll, select, settled, snapshot, type, upload, viewport, wait } from "./dom.ts";
+import { actionReceipts, click, hover, press, scroll, select, type, upload, wait } from "./act.ts";
+import { describe, inspect, snapshot, viewport } from "./read.ts";
 
 declare global {
 	// Set by the Broker's first injection step, read here: a content script cannot learn its tab id by itself.
@@ -14,6 +15,7 @@ declare global {
 const context = BACKGROUND_CONTEXT;
 
 async function start(tabId: number) {
+	const receipts = actionReceipts();
 	const host = createHost<Principal>({
 		address: TabHost({ tabId }),
 		principal: { kind: "tab", tabId },
@@ -31,17 +33,17 @@ async function start(tabId: number) {
 							members: {
 								page_snapshot: async (args) => snapshot(args),
 								page_inspect: async (args) => inspect(args),
-								page_click: async (args) => click(args),
-								page_type: async (args) => type(args),
-								page_select: async (args) => select(args),
-								page_press: async (args) => press(args),
-								page_hover: async (args) => hover(args),
+								page_click: receipts.run(click),
+								page_type: receipts.run(type),
+								page_select: receipts.run(select),
+								page_press: receipts.run(press),
+								page_hover: receipts.run(hover),
 								page_scroll: async (args) => scroll(args),
 								page_wait: (args) => wait(args),
 								describe: async (args) => describe(args),
-								settled: async (args) => settled(args),
+								settled: async (args) => receipts.settled(args),
 								viewport: async () => viewport(),
-								upload: async (args) => upload(args),
+								upload: receipts.run(upload),
 							},
 						};
 					});

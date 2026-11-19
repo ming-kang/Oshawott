@@ -4,15 +4,15 @@ import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
 import { groupChats, type ChatGroupKey } from "./chat-groups.ts";
 import { Icon, Logo } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
-import { LANG, t } from "./i18n/index.ts";
+import { language, t } from "./i18n/index.ts";
 import { ChatActionsMenu } from "./menus.tsx";
 import { toastError } from "./ui.ts";
 
 const context = BACKGROUND_CONTEXT;
 /** Below this many chats the whole list is in view and a filter is only clutter. */
 const SEARCH_THRESHOLD = 6;
-const dayFormat = new Intl.DateTimeFormat(LANG, { month: "short", day: "numeric" });
-const timeFormat = new Intl.DateTimeFormat(LANG, { hour: "2-digit", minute: "2-digit" });
+let dayFormat: Intl.DateTimeFormat | undefined;
+let timeFormat: Intl.DateTimeFormat | undefined;
 const statusLabel = (status: ChatStatus) => status === "idle" ? "" : t(`chat.status.${status}`);
 
 const ChatRow = defineComponent({
@@ -80,7 +80,10 @@ const ChatRow = defineComponent({
 		return () => {
 			const status = statusLabel(props.summary.status);
 			const date = new Date(props.summary.updatedAt);
-			const when = (props.group === "today" ? timeFormat : dayFormat).format(date);
+			const format = props.group === "today"
+				? timeFormat ??= new Intl.DateTimeFormat(language(), { hour: "2-digit", minute: "2-digit" })
+				: dayFormat ??= new Intl.DateTimeFormat(language(), { month: "short", day: "numeric" });
+			const when = format.format(date);
 			const parts = marked.value;
 			return (
 				<div class="chat-entry" role="listitem">
@@ -114,7 +117,7 @@ const ChatRow = defineComponent({
 									<span class="chat-title">{parts.match ? <>{parts.head}<mark>{parts.match}</mark>{parts.tail}</> : parts.head}</span>
 								</button>
 								<span class="chat-trail">
-									<time datetime={date.toISOString()} title={`${t("chat.lastActive")}: ${date.toLocaleString(LANG)}`}>{when}</time>
+									<time datetime={date.toISOString()} title={`${t("chat.lastActive")}: ${date.toLocaleString(language())}`}>{when}</time>
 									<button class="icon-btn small chat-more" type="button" data-action="more" title={t("chat.more")} aria-label={`${t("chat.more")}: ${title.value}`}
 										aria-haspopup="menu" aria-expanded={menuOpen.value} ref={more} onClick={() => openMenu()}><Icon name="more" size={16} /></button>
 								</span>

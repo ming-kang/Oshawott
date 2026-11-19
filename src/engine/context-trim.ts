@@ -2,13 +2,11 @@
 // Superseded page reads shrink to a stub and old screenshots leave a note, so each request carries the reads
 // that still matter — the model no longer sees a snapshot the same-scope later read replaced.
 
-import type { ImageContent, Message, TextContent, ToolCall } from "@earendil-works/pi-ai";
+import type { Message, ToolCall } from "@earendil-works/pi-ai";
+import { readToolDetails } from "../tools/details.ts";
 
-const READS = new Set(["page_snapshot", "page_inspect"]);
 const KEEP_SCREENSHOTS = 3;
 const SCREENSHOT_CHUNK = 3;
-
-const isText = (part: TextContent | ImageContent): part is TextContent => part.type === "text";
 
 /** Sorted-key JSON: scope arguments compare by content, not by the order the model wrote them. */
 const canonical = (value: unknown): string =>
@@ -28,22 +26,23 @@ export function trimPageReads(messages: readonly Message[]): readonly Message[] 
 		if (message.role !== "assistant") continue;
 		for (const part of message.content) if (part.type === "toolCall") calls.set(part.id, part);
 	}
-	const reads: { index: number; key: string }[] = [];
+	const reads: { index: number; key: string; head: string[] }[] = [];
 	const screenshots: { index: number; part: number }[] = [];
 	for (const [index, message] of messages.entries()) {
 		if (message.role !== "toolResult" || message.isError) continue;
-		if (READS.has(message.toolName)) {
-			const text = message.content.find(isText)?.text ?? "";
-			const url = /^URL: (.+)$/m.exec(text)?.[1];
-			if (url === undefined) continue;
+		if (message.toolName === "page_snapshot" || message.toolName === "page_inspect") {
+			const details = readToolDetails(message.details, message.toolName);
+			if (!details) continue;
 			const { tabId: _tabId, maxChars: _maxChars, ...scope } = calls.get(message.toolCallId)?.arguments ?? {};
-			reads.push({ index, key: `${message.toolName} ${url} ${canonical(scope)}` });
+			const head = details.kind === "page_snapshot" ? [`Title: ${details.title}`] : [];
+			head.push(`URL: ${details.url}`);
+			reads.push({ index, key: `${message.toolName} ${details.url} ${canonical(scope)}`, head });
 		} else if (message.toolName === "page_screenshot") {
 			for (const [part, content] of message.content.entries()) if (content.type === "image") screenshots.push({ index, part });
 		}
 	}
 	const latest = new Map(reads.map((read) => [read.key, read.index]));
-	const stubs = new Set(reads.filter((read) => latest.get(read.key) !== read.index).map((read) => read.index));
+	const stubs = new Map(reads.filter((read) => latest.get(read.key) !== read.index).map((read) => [read.index, read.head]));
 	const dropShots = new Set(
 		screenshots.slice(0, Math.floor(Math.max(0, screenshots.length - KEEP_SCREENSHOTS) / SCREENSHOT_CHUNK) * SCREENSHOT_CHUNK)
 			.map((shot) => `${shot.index}:${shot.part}`),
@@ -51,9 +50,8 @@ export function trimPageReads(messages: readonly Message[]): readonly Message[] 
 	if (!stubs.size && !dropShots.size) return messages;
 	return messages.map((message, index) => {
 		if (message.role !== "toolResult") return message;
-		if (stubs.has(index)) {
-			const text = message.content.find(isText)?.text ?? "";
-			const head = text.match(/^(?:Title|URL): .+$/gm) ?? [];
+		const head = stubs.get(index);
+		if (head) {
 			const note = `[Outdated: a later ${message.toolName} with the same scope replaced this result; refs stay stable, so read the newer one.]`;
 			return { ...message, content: [{ type: "text" as const, text: [...head, note].join("\n") }] };
 		}

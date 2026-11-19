@@ -4,7 +4,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemor
 import { defineExtension, defineTool, type Extension } from "@earendil-works/pi-durable";
 import { type ExecutionEnv, getOrThrow } from "@earendil-works/pi-durable/env";
 import { obj } from "@earendil-works/pi-schema";
-import { WorkspaceDoc } from "../src/engine/docs.ts";
+import { FileDeletesDoc, WorkspaceDoc } from "../src/engine/docs.ts";
 import type { Engine } from "../src/engine/engine.ts";
 import { ChatFiles, type FileBackend } from "../src/engine/files.ts";
 import { openFiles } from "./support/files.ts";
@@ -65,14 +65,36 @@ for (const when of ["before", "after"] as const) {
 			await assert.rejects(panel.workspace.deleteChat({ id }, context), /simulated interruption/);
 			const pending = await world.engine().harness.snapshot(WorkspaceDoc, context);
 			assert.equal(pending!.chats.some((chat) => chat.id === id), false);
-			assert.deepEqual(pending!.pendingFileDeletes, [id]);
+			assert.deepEqual((await world.engine().harness.snapshot(FileDeletesDoc, context))!.pending.map((intent) => intent.chat), [id]);
 			await world.restart();
-			assert.deepEqual((await world.engine().harness.snapshot(WorkspaceDoc, context))!.pendingFileDeletes, []);
+			assert.deepEqual((await world.engine().harness.snapshot(FileDeletesDoc, context))!.pending, []);
 			assert.deepEqual(getOrThrow(await new ChatFiles(files, id).workspaceFiles(context)), []);
 			assert.equal(getOrThrow(await new ChatFiles(files, other).readTextFile("notes.txt", context)), "kept");
 		});
 	});
 }
+
+test("startup clears files from a chat deleted by an older version", async () => {
+	const inner = await openFiles();
+	const files: FileBackend = {
+		transact: (chat, mode, fn) => inner.transact(chat, mode, fn),
+		clear: (chat) => inner.clear(chat),
+	};
+	await withWorld(files, async (world) => {
+		const panel = await world.panel();
+		const id = await panel.workspace.createChat({}, context);
+		const chatFiles = new ChatFiles(files, id);
+		getOrThrow(await chatFiles.writeFile("notes.txt", "legacy pending delete", context));
+		await world.engine().harness.commit(async (tx) => {
+			const doc = await tx.doc(WorkspaceDoc);
+			doc.chats = doc.chats.filter((chat) => chat.id !== id);
+			doc.pendingFileDeletes = [id];
+		}, context);
+		await world.restart();
+		assert.deepEqual(getOrThrow(await chatFiles.workspaceFiles(context)), []);
+		assert.equal((await world.engine().harness.snapshot(WorkspaceDoc, context))?.pendingFileDeletes, undefined);
+	});
+});
 
 test("deleted chats cannot submit or read files through old/new references or write through an old environment", async () => {
 	const files = await openFiles();
@@ -134,33 +156,38 @@ test("deleting a running tool cancels it and rejects a late write through its ca
 	}, [extension]);
 });
 
-test("a send with an old lookup is rejected on the admission commit after deletion", async () => {
-	const files = await openFiles();
+test("chat deletion waits for an in-flight attachment write before clearing the files", async () => {
+	const inner = await openFiles();
+	const writing = Promise.withResolvers<void>();
+	const proceed = Promise.withResolvers<void>();
+	let pause = false;
+	let cleared = false;
+	const files: FileBackend = {
+		async transact(chat, mode, fn) {
+			if (pause && mode === "readwrite") { pause = false; writing.resolve(); await proceed.promise; }
+			return inner.transact(chat, mode, fn);
+		},
+		async clear(chat) { cleared = true; await inner.clear(chat); },
+	};
 	await withWorld(files, async (world) => {
 		const panel = await world.panel();
 		const id = await panel.workspace.createChat({}, context);
 		const held = await panel.chat(id);
-		const harness = world.engine().harness;
-		const original = harness.conversation;
-		const lookedUp = Promise.withResolvers<void>();
-		const proceed = Promise.withResolvers<void>();
-		let pause = true;
-		harness.conversation = async (lookup, ctx) => {
-			const found = await original.call(harness, lookup, ctx);
-			if (pause && lookup === id) { pause = false; lookedUp.resolve(); await proceed.promise; }
-			return found;
-		};
-		const sending = held.send({ text: "Race.", requestId: "old-lookup" }, context);
+		pause = true;
+		const sending = held.send({ text: "Race.", requestId: "pending-write", attachments: [
+			{ id: "notes", name: "notes.txt", mimeType: "text/plain", data: new TextEncoder().encode("notes") },
+		] }, context);
+		await writing.promise;
+		const removing = panel.workspace.deleteChat({ id }, context);
 		try {
-			await lookedUp.promise;
-			await panel.workspace.deleteChat({ id }, context);
-			proceed.resolve();
-			await assert.rejects(sending, /No chat/);
+			await Promise.race([removing, new Promise((resolve) => setTimeout(resolve, 100))]);
+			assert.equal(cleared, false, "the deletion cannot clear files ahead of the admitted write");
 		} finally {
 			proceed.resolve();
-			harness.conversation = original;
-			await sending.catch(() => {});
+			await Promise.allSettled([sending, removing]);
 		}
+		await sending;
+		await removing;
 		assert.deepEqual(getOrThrow(await new ChatFiles(files, id).workspaceFiles(context)), []);
 	});
 });
@@ -181,9 +208,12 @@ test("another panel cannot admit input while file deletion is pending", async ()
 		const deleting = first.workspace.deleteChat({ id }, context);
 		try {
 			await started.promise;
-			assert.deepEqual((await world.engine().harness.snapshot(WorkspaceDoc, context))!.pendingFileDeletes, [id]);
-			await assert.rejects(held.send({ text: "Race.", requestId: "race" }, context), /No chat/);
+			assert.deepEqual((await world.engine().harness.snapshot(FileDeletesDoc, context))!.pending.map((intent) => intent.chat), [id]);
 			await assert.rejects(held.files(context), /No chat/);
+			const sending = held.send({ text: "Race.", requestId: "race" }, context);
+			const rejected = assert.rejects(sending, /No chat/);
+			proceed.resolve();
+			await rejected;
 		} finally {
 			proceed.resolve();
 			await deleting;

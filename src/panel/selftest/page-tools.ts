@@ -153,6 +153,8 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 			&& nested.text.includes("[Inside page components]") && nested.text.includes("Shadowed words") && nested.text.includes("Sealed words")
 			&& nested.text.includes('[Frame "Inner frame"]') && nested.text.includes("Frame words"),
 			nested.elements.map((each: Seen) => each.name).join("|"));
+		step("a snapshot excludes shadow styles and hidden content",
+			!["private-css", "Hidden shadow child", "Hidden shadow host"].some((text) => nested.text.includes(text)), nested.text);
 
 		await page("page_click", { ref: deepRef("Shadow Open") });
 		await page("page_click", { ref: deepRef("Shadow Closed") });
@@ -174,10 +176,15 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 		step("a double click fires dblclick", (await nlog()).includes("dbl:dblclick"), await nlog());
 
 		const reveal = deepRef("Reveal");
-		await page("page_click", { ref: reveal });
-		const state = await page("settled", { ref: reveal });
+		const receiptId = crypto.randomUUID();
+		await page("page_click", { ref: reveal, receiptId });
+		const otherReceiptId = crypto.randomUUID();
+		await page("page_hover", { ref: deepRef("Attach"), receiptId: otherReceiptId });
+		const state = await page("settled", { ref: reveal, receiptId });
+		const other = await page("settled", { receiptId: otherReceiptId });
 		step("settled reports what an action revealed and the target's new state",
-			state.appeared.some((each: Seen) => each.name === "Item A") && state.target?.expanded === true, JSON.stringify(state));
+			state?.appeared.some((each: Seen) => each.name === "Item A") && state.target?.expanded === true &&
+			other && !other.appeared.some((each: Seen) => each.name === "Item A"), JSON.stringify({ state, other }));
 
 		const attached = await page("upload", { ref: deepRef("Attach"), files: [{ name: "otter.txt", type: "text/plain", data: new TextEncoder().encode("otter") }] });
 		const uploadLog = await nlog();

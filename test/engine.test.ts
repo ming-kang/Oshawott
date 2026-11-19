@@ -98,7 +98,14 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 	const snapshotMessage = chat.view.value?.entries.find((entry) => entry.kind === "pi.tool-result")?.model?.[0];
 	assert.equal(snapshotMessage?.role, "toolResult");
 	if (snapshotMessage?.role === "toolResult") {
-		assert.deepEqual(snapshotMessage.details, { snapshot: { title: "Example Domain", elementCount: 1 } });
+		assert.deepEqual(snapshotMessage.details, {
+			kind: "page_snapshot",
+			url: "https://example.com/",
+			title: "Example Domain",
+			text: "This domain is for use in examples.",
+			elementCount: 1,
+			elements: [{ ref: "e1", role: "link", name: "More information" }],
+		});
 		assert.equal(snapshotMessage.content[0]?.type, "text");
 		if (snapshotMessage.content[0]?.type === "text") {
 			assert.equal(snapshotMessage.content[0].text, [

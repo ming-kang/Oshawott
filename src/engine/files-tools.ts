@@ -3,6 +3,7 @@ import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
 import { arr, bool, int, map, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { hostOf } from "../platform/patterns.ts";
+import { TOOL_PREVIEW_CHARS, type ToolDetails } from "../tools/details.ts";
 import type { Approvals } from "./approvals.ts";
 import { ChatFiles, MAX_FILE_BYTES } from "./files.ts";
 
@@ -31,10 +32,21 @@ const lsTool = defineTool({
 		const listed = getOrThrow(await env.listTree(root, context)).slice(0, MAX_LISTED)
 			.map(({ path, kind, size }) => ({ path, kind, size }));
 		const lines = listed.map((entry) => (entry.kind === "directory" ? `${entry.path}/` : `${entry.path}  (${entry.size} bytes)`));
-		if (listed.length >= MAX_LISTED) lines.push(`[Stopped at ${MAX_LISTED} entries.]`);
-		return { output: text(lines.length ? lines.join("\n") : `${root} is empty.`), structuredOutput: listed };
+		const limit = listed.length >= MAX_LISTED ? MAX_LISTED : undefined;
+		if (limit) lines.push(`[Stopped at ${limit} entries.]`);
+		return { output: text(lines.length ? lines.join("\n") : `${root} is empty.`), structuredOutput: listed,
+			details: { kind: "ls", root, entries: listed, ...(limit === undefined ? {} : { limit }) } satisfies ToolDetails };
 	},
 });
+
+const write = createWriteTool();
+const writeTool = {
+	...write,
+	execute: async (...args: Parameters<typeof write.execute>) => ({
+		...await write.execute(...args),
+		details: { kind: "write", bytes: new TextEncoder().encode(args[0].content).length } satisfies ToolDetails,
+	}),
+};
 
 /** Programs need complete data, not `read`'s 50 KiB line preview. Keep each result bounded and out of model tools. */
 const readTextTool = defineTool({
@@ -223,24 +235,25 @@ function fetchTool({ fetch: request, approvals, confirmActions }: FilesToolsOpti
 				contentType,
 				bytes: body.length,
 			};
-			const details = { http: { status: summary.status, bytes: summary.bytes } };
 			const head = [`HTTP ${response.status} ${response.statusText}`.trim(), contentType || "no content type", `${body.length} bytes`];
 			if (summary.url !== url.href) head.push(`from ${summary.url}`);
 			const line = head.join(" · ");
+			const details = (preview: string): ToolDetails => ({
+				kind: "fetch", http: { status: summary.status, bytes: summary.bytes }, headline: line,
+				preview: preview.length > TOOL_PREVIEW_CHARS ? `${preview.slice(0, TOOL_PREVIEW_CHARS)}\n…` : preview,
+			});
 
 			if (args.saveTo !== undefined) {
 				const env = envOf(api);
 				const path = getOrThrow(await env.absolutePath(args.saveTo, context));
 				getOrThrow(await env.writeFile(path, body, context));
-				return { output: text(`${line}\nSaved the body to ${path}.`), structuredOutput: { ...summary, savedTo: path }, details };
+				const note = `Saved the body to ${path}.`;
+				return { output: text(`${line}\n${note}`), structuredOutput: { ...summary, savedTo: path }, details: details(note) };
 			}
 			const decoded = decodeBody(contentType, body);
 			if (decoded === undefined) {
-				return {
-					output: text(`${line}\nA binary body, not shown: pass saveTo to keep it as a file.`),
-					structuredOutput: summary,
-					details,
-				};
+				const note = "A binary body, not shown: pass saveTo to keep it as a file.";
+				return { output: text(`${line}\n${note}`), structuredOutput: summary, details: details(note) };
 			}
 			const max = args.maxChars ?? DEFAULT_MAX_CHARS;
 			const truncated = decoded.length > max;
@@ -248,7 +261,7 @@ function fetchTool({ fetch: request, approvals, confirmActions }: FilesToolsOpti
 			const note = truncated
 				? `\n\n[The body is cut at ${max} of ${decoded.length} characters: pass saveTo to keep all of it as a file, or a larger maxChars.]`
 				: "";
-			return { output: text(`${line}\n\n${shown}${note}`), structuredOutput: { ...summary, body: shown, truncated }, details };
+			return { output: text(`${line}\n\n${shown}${note}`), structuredOutput: { ...summary, body: shown, truncated }, details: details(shown + note) };
 		},
 	});
 }
@@ -270,6 +283,6 @@ export function filesExtension(options: FilesToolsOptions): Extension {
 				{ tag: false },
 			),
 		],
-		tools: [createReadTool(), createWriteTool(), createEditTool(), lsTool, readTextTool, fetchTool(options)],
+		tools: [createReadTool(), writeTool, createEditTool(), lsTool, readTextTool, fetchTool(options)],
 	});
 }

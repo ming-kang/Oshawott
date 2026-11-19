@@ -1,9 +1,12 @@
 import { computed, shallowRef, type ComputedRef, type ShallowRef } from "vue";
-import type { InboxItem, InboxState, LiveState } from "@earendil-works/pi-durable";
+import type { AgentState, InboxItem, InboxState, LiveState } from "@earendil-works/pi-durable";
+import type { Watchable } from "@earendil-works/chord";
 import { ConversationTranscript, type TranscriptItem as DurableTranscriptItem, type TranscriptView } from "@earendil-works/pi-durable";
-import { PREFERENCE_DEFAULTS, type ApprovalView, type BusyMode, type LoginView, type ModelRef, type Preference, type ProviderSummary, type ThinkingLevel } from "../contracts/chat.ts";
+import { DEFAULT_BUSY_MODE, PREFERENCE_DEFAULTS, type ApprovalView, type BusyMode, type LoginView, type ModelRef, type ProviderSummary } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
-import type { ChatSession } from "./session.ts";
+import type { ChatSession, WorkspaceRef } from "./session.ts";
+import { clampThinking, configuredProviders, sameModel, shownModel, supportedThinkingLevels } from "./models.ts";
+import { watchMember } from "./watch-member.ts";
 
 export type QueueItem = Extract<InboxItem, { mode: BusyMode }>;
 
@@ -13,27 +16,31 @@ export type QueueItem = Extract<InboxItem, { mode: BusyMode }>;
  */
 export class PanelStore {
 	readonly #session: ChatSession;
-	readonly #revision = shallowRef(0);
 	readonly #transcript = shallowRef<TranscriptView | null>(null);
+	readonly #defaultModel = shallowRef<WorkspaceRef["defaultModel"]["value"]>(null);
+	readonly #defaultThinking = shallowRef<WorkspaceRef["defaultThinkingLevel"]["value"]>("off");
+	readonly #preferences = {
+		autoTitle: shallowRef(PREFERENCE_DEFAULTS.autoTitle),
+		autoCompaction: shallowRef(PREFERENCE_DEFAULTS.autoCompaction),
+		autoRetry: shallowRef(PREFERENCE_DEFAULTS.autoRetry),
+		confirmActions: shallowRef(PREFERENCE_DEFAULTS.confirmActions),
+	};
 	#history: ConversationTranscript | undefined;
-	#inbox: InboxState | undefined;
-	#queueItems: readonly QueueItem[] = [];
-	#preferenceValues: Readonly<Record<Preference, boolean>> = PREFERENCE_DEFAULTS;
 	readonly reconnecting = shallowRef(false);
 	readonly sending = shallowRef(false);
 	readonly forking = shallowRef(false);
 	readonly conversationKey = shallowRef(0);
 
-	readonly chats: ComputedRef<ChatSession["chats"]>;
-	readonly providers: ComputedRef<readonly ProviderSummary[]>;
-	readonly connected: ComputedRef<readonly ProviderSummary[]>;
-	readonly logins: ComputedRef<readonly LoginView[]>;
+	readonly chats = shallowRef<ChatSession["chats"]>([]);
+	readonly providers = shallowRef<readonly ProviderSummary[]>([]);
+	readonly connected = computed(() => configuredProviders(this.providers.value));
+	readonly logins = shallowRef<readonly LoginView[]>([]);
 	readonly id: ComputedRef<number | undefined>;
 	readonly status: ComputedRef<ChatSession["status"]>;
 	readonly loaded: ComputedRef<boolean>;
 	readonly model: ComputedRef<ModelRef | undefined>;
-	readonly thinking: ComputedRef<ThinkingLevel>;
-	readonly busyMode: ComputedRef<BusyMode>;
+	readonly thinking;
+	readonly busyMode = shallowRef<BusyMode>(DEFAULT_BUSY_MODE);
 	readonly configuring: ComputedRef<boolean>;
 	readonly ready: ComputedRef<boolean>;
 	readonly title: ComputedRef<string>;
@@ -43,55 +50,62 @@ export class PanelStore {
 	readonly queue: ComputedRef<readonly QueueItem[]>;
 	readonly approvals: ComputedRef<readonly ApprovalView[]>;
 	readonly target: ComputedRef<number | null>;
-	readonly preferences: ComputedRef<Readonly<Record<Preference, boolean>>>;
-	readonly instructions: ComputedRef<string>;
+	readonly preferences = computed(() => ({
+		autoTitle: this.#preferences.autoTitle.value,
+		autoCompaction: this.#preferences.autoCompaction.value,
+		autoRetry: this.#preferences.autoRetry.value,
+		confirmActions: this.#preferences.confirmActions.value,
+	}));
+	readonly instructions = shallowRef("");
 	readonly transcript: ShallowRef<TranscriptView | null> = this.#transcript;
 
 	constructor(session: ChatSession) {
 		this.#session = session;
-		const select = <T,>(read: () => T): ComputedRef<T> => computed(() => {
-			this.#revision.value;
-			return read();
+		this.id = computed(() => session.id);
+		this.status = computed(() => session.status);
+		this.loaded = computed(() => session.loaded);
+		const agent = computed(() => this.transcript.value?.docs["pi.agent"] as AgentState | undefined);
+		const chatModel = computed(() => agent.value?.model);
+		this.model = computed((previous) => {
+			const next = shownModel(this.providers.value, chatModel.value ?? this.#defaultModel.value ?? undefined);
+			return sameModel(previous, next) ? previous : next;
 		});
-		this.chats = select(() => session.chats);
-		this.providers = select(() => session.providers);
-		this.connected = select(() => session.connected);
-		this.logins = select(() => session.workspace?.logins.value ?? []);
-		this.id = select(() => session.id);
-		this.status = select(() => session.status);
-		this.loaded = select(() => session.loaded);
-		this.model = select(() => session.model);
-		this.thinking = select(() => session.thinking);
-		this.busyMode = select(() => session.busyMode);
-		this.configuring = select(() => session.configuring !== undefined);
+		this.thinking = computed(() => clampThinking(supportedThinkingLevels(this.providers.value, this.model.value),
+			this.id.value === undefined ? this.#defaultThinking.value : agent.value?.thinkingLevel ?? "off"));
+		this.configuring = computed(() => session.configuring !== undefined);
 		this.ready = computed(() => this.connected.value.length > 0);
 		this.title = computed(() => this.chats.value.find((chat) => chat.id === this.id.value)?.title ?? "");
 		this.view = computed(() => this.transcript.value);
 		this.live = computed(() => this.view.value?.docs["pi.live"] as LiveState | undefined);
 		this.busy = computed(() => Boolean(this.live.value?.run));
-		this.queue = computed(() => {
-			const inbox = this.view.value?.docs["pi.inbox"] as InboxState | undefined;
-			if (inbox === this.#inbox) return this.#queueItems;
-			this.#inbox = inbox;
-			this.#queueItems = (inbox?.items ?? []).filter((item): item is QueueItem => item.mode === "steer" || item.mode === "followUp");
-			return this.#queueItems;
-		});
-		this.approvals = select(() => session.chat?.approvals.value ?? []);
-		this.target = select(() => session.chat?.target.value ?? null);
-		this.preferences = select(() => {
-			const previous = this.#preferenceValues;
-			const next = Object.fromEntries(Object.keys(PREFERENCE_DEFAULTS).map((key) => [
-				key, session.workspace?.[key as Preference].value ?? PREFERENCE_DEFAULTS[key as Preference],
-			])) as Readonly<Record<Preference, boolean>>;
-			if (Object.keys(PREFERENCE_DEFAULTS).every((key) => next[key as Preference] === previous[key as Preference])) return previous;
-			this.#preferenceValues = next;
-			return next;
-		});
-		this.instructions = select(() => session.workspace?.instructions.value ?? "");
+		const inbox = computed(() => this.view.value?.docs["pi.inbox"] as InboxState | undefined);
+		this.queue = computed(() => (inbox.value?.items ?? []).filter((item): item is QueueItem => item.mode === "steer" || item.mode === "followUp"));
+		this.approvals = computed(() => session.approvals.value);
+		this.target = computed(() => session.target.value);
 	}
 
-	mark() {
-		this.#revision.value++;
+	async attachWorkspace(workspace: WorkspaceRef, chatsChanged: (previous: ChatSession["chats"], next: ChatSession["chats"]) => Promise<void>) {
+		const bind = async <T,>(member: Watchable<T>, target: ShallowRef<T>) =>
+			watchMember(await member.watch(BACKGROUND_CONTEXT), (value) => { target.value = value; });
+		const chats = await workspace.chats.watch(BACKGROUND_CONTEXT);
+		this.chats.value = chats.value;
+		watchMember(chats, (next) => {
+			const previous = this.chats.value;
+			this.chats.value = next;
+			if (previous !== next) return chatsChanged(previous, next);
+		});
+		await Promise.all([
+			bind(workspace.providers, this.providers),
+			bind(workspace.logins, this.logins),
+			bind(workspace.defaultModel, this.#defaultModel),
+			bind(workspace.defaultThinkingLevel, this.#defaultThinking),
+			bind(workspace.busyMode, this.busyMode),
+			bind(workspace.instructions, this.instructions),
+			bind(workspace.autoTitle, this.#preferences.autoTitle),
+			bind(workspace.autoCompaction, this.#preferences.autoCompaction),
+			bind(workspace.autoRetry, this.#preferences.autoRetry),
+			bind(workspace.confirmActions, this.#preferences.confirmActions),
+		]);
 	}
 
 	/** A chat switch drops all client-side transcript pages along with its remote reference. */
@@ -109,7 +123,6 @@ export class PanelStore {
 	publishView() {
 		const view = this.#session.view;
 		this.#transcript.value = view && this.#history ? { ...this.#history.merge(view) } : null;
-		this.mark();
 	}
 
 	async loadEarlier() {

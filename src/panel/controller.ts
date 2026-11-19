@@ -43,7 +43,7 @@ export class PanelController {
 
 	constructor(host: PanelHost) {
 		this.host = host;
-		this.session = new ChatSession(host, () => this.#changed());
+		this.session = new ChatSession(host, () => this.#scheduleView());
 		this.store = new PanelStore(this.session);
 		this.composer = new ComposerState(() => this.drafts.schedule());
 		this.drafts = new DraftSession(this.composer, () => this.session.id);
@@ -62,8 +62,7 @@ export class PanelController {
 
 	get workspace() { return this.session.workspace; }
 
-	#changed() {
-		this.store.mark();
+	#scheduleView() {
 		this.#viewFrame ??= requestAnimationFrame(() => {
 			this.#viewFrame = undefined;
 			this.store.publishView();
@@ -77,25 +76,12 @@ export class PanelController {
 		const held = await this.host.get(Workspace, {}, context);
 		if (held.variant !== "owner") throw new Error("The Engine refused the panel.");
 		this.session.attachWorkspace(held);
-		this.store.mark();
-		let knownChats = new Set(this.session.chats.map((chat) => chat.id));
-		for (const member of [
-			held.chats, held.providers, held.logins, held.defaultModel, held.defaultThinkingLevel, held.busyMode,
-			held.autoTitle, held.autoCompaction, held.autoRetry, held.confirmActions, held.instructions,
-		]) {
-			const subscription = await member.watch(context);
-			subscription.start(async () => {
-				if (member === held.chats) {
-					const current = new Set(this.session.chats.map((chat) => chat.id));
-					for (const id of knownChats) if (!current.has(id)) await this.drafts.forget(id);
-					if (this.session.id !== undefined && knownChats.has(this.session.id) && !current.has(this.session.id)) {
-						await this.open(undefined, { discardPrevious: true });
-					}
-					knownChats = current;
-				}
-				this.store.mark();
-			});
-		}
+		await this.store.attachWorkspace(held, async (previous, next) => {
+			const current = new Set(next.map((chat) => chat.id));
+			const removed = previous.filter((chat) => !current.has(chat.id));
+			for (const { id } of removed) await this.drafts.forget(id);
+			if (removed.some((chat) => chat.id === this.session.id)) await this.open(undefined, { discardPrevious: true });
+		});
 		await this.drafts.opened();
 		this.session.markLoaded();
 		const newest = [...this.session.chats].sort((a, b) => b.updatedAt - a.updatedAt)[0];

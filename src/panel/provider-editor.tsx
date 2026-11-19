@@ -5,7 +5,7 @@ import { Icon, Segmented, useConfirmation } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
 import { t } from "./i18n/index.ts";
 import { LoginCard } from "./login-card.tsx";
-import { DiscoveredModel, ModelEditor } from "./provider-models.tsx";
+import { DiscoveredModel, Field, ModelEditor } from "./provider-models.tsx";
 import { baseUrlPlaceholder, connectionNote, defaultModel, modelCapabilitiesText, providerRank, validEndpointUrl } from "./provider-utils.ts";
 import { toast, toastError } from "./ui.ts";
 
@@ -199,13 +199,6 @@ export const ProviderEditorSheet = defineComponent({
 				controller.openSettings();
 			} catch (error) { toastError(error); removeConfirmation.reset(); } finally { busyAction.value = undefined; }
 		};
-		const Field = defineComponent({
-			props: { label: { type: String, required: true } },
-			setup(fieldProps, { slots }) {
-				return () => <label class="provider-field"><span>{fieldProps.label}</span>{slots.default?.()}</label>;
-			},
-		});
-
 		return () => (
 			<section class="sheet" id="provider-editor" role="dialog" aria-modal="true" aria-label={t("settings.providerEditor")} data-busy={String(busy.value)} ref={sheet}>
 				<div class="panel-head">

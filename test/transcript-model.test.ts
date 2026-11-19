@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { ROOT_CONVERSATION_ID, type EntryRecord, type LiveState, type TaskId, type TranscriptView } from "@earendil-works/pi-durable";
-import { groupToolRuns, transcriptItems } from "../src/panel/transcript-model.ts";
+import { groupToolRuns, transcriptItems, transcriptRows } from "../src/panel/transcript-model.ts";
 
 const taskId = 42 as TaskId;
 const committed = (id = 1, text = "Attempt 1"): EntryRecord => ({
@@ -79,6 +79,26 @@ const user = (id: number): EntryRecord => ({
 	model: [{ role: "user", content: "hi", timestamp: 0 }],
 });
 const runsOf = (entries: EntryRecord[], busy = false) => groupToolRuns(transcriptItems(view(entries)), busy);
+
+test("retry and final failure reuse the tail notice, while a response folds earlier errors", () => {
+	const failed = (id: number): EntryRecord => ({
+		...committed(id), model: [fauxAssistantMessage("", { stopReason: "error", errorMessage: `failure ${id}` })],
+	});
+	const entries = [user(1), failed(2), failed(3)];
+	const items = transcriptItems(view(entries));
+	const notices = (rows: ReturnType<typeof transcriptRows>["rows"]) => rows.flatMap((row) => row.kind === "item" ? [row.row.notice?.mode] : []);
+	const retry = transcriptRows(items, { run: { taskId, turns: 0, inputs: [] }, generation: { attempt: 2, retry: { at: 100, error: "failure 3" } } });
+	assert.deepEqual(notices(retry.rows), [undefined, "recovered", "retrying"]);
+	const failure = transcriptRows(items, { runFailure: { reason: "model_error", inputs: [], taskId } });
+	assert.equal(failure.lastError, "failure 3");
+	assert.deepEqual(notices(failure.rows), [undefined, "recovered", "suppressed"]);
+	const recovered = transcriptRows(transcriptItems(view([...entries, committed(4)])), undefined);
+	assert.deepEqual(notices(recovered.rows), [undefined, "suppressed", "recovered", undefined]);
+	const group = recovered.rows[2];
+	assert.deepEqual(group?.kind === "item" ? group.row.notice : null, { mode: "recovered", raw: "failure 3", raws: ["failure 2", "failure 3"] });
+	const answer = recovered.rows[3];
+	assert.equal(answer?.kind === "item" && answer.row.forkFrom, 1);
+});
 
 test("a tool-only run past the threshold folds into one group", () => {
 	const entries: EntryRecord[] = [
