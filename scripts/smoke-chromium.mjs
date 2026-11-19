@@ -82,7 +82,17 @@ try {
 		panel.$eval("#approvals .approval .approval-target", (node) => node.textContent || undefined).catch(() => undefined), 20_000);
 	const idle = (what, selector) => until(what, () => panel.evaluate((wanted) =>
 		document.body.dataset.busy === "false" && document.querySelector(wanted) ? true : undefined, selector), 20_000);
-	await tab.$eval("#out", (p) => { p.textContent = ""; });
+	await tab.evaluate(() => {
+		const fixture = document.createElement("div");
+		fixture.id = "snapshot-preview-fixture";
+		for (let i = 0; i < 40; i++) {
+			const input = document.createElement("input");
+			input.size = 1;
+			fixture.append(input);
+		}
+		document.body.prepend(fixture);
+		document.querySelector("#out").textContent = "";
+	});
 	await confirmActions(true);
 	await ask("Click the button");
 	const asked = await approval();
@@ -97,9 +107,10 @@ try {
 	await idle("the allowed click", '.tool[data-tool="page_click"][data-status="done"]');
 	const afterAllow = await tab.$eval("#out", (p) => p.textContent);
 	const cleared = await panel.$eval("#approvals", (bar) => bar.hidden);
-	step("with confirmation on, a page action waits for the user: Deny stops it, Allow runs it",
+	step("the demo clicks a button beyond the snapshot preview only when the user allows it",
 		asked.includes("Go") && whileWaiting === "" && afterDeny === "" && afterAllow.startsWith("searched:") && cleared, `asked “${asked}”; then “${afterAllow}”`);
 	await confirmActions(false);
+	await tab.$eval("#snapshot-preview-fixture", (fixture) => fixture.remove());
 
 	await ask(`Download and measure ${site.url}items.json`);
 	await panel.click("#files-toggle");

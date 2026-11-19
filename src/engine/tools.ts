@@ -55,8 +55,10 @@ type Described = { role: string; name: string };
 function detailsOf(name: string, result: unknown, element: Described | undefined): ToolDetails | { element: Described } | undefined {
 	if (name === "page_snapshot") {
 		const snapshot = result as Static<typeof SnapshotResult>;
+		const firstButtonRef = snapshot.elements.find(({ role }) => role === "button")?.ref;
 		return { kind: name, url: snapshot.url, title: snapshot.title, text: snapshot.text.slice(0, TOOL_PREVIEW_CHARS),
-			elements: snapshot.elements.slice(0, SNAPSHOT_PREVIEW_ELEMENTS), elementCount: snapshot.elements.length };
+			elements: snapshot.elements.slice(0, SNAPSHOT_PREVIEW_ELEMENTS), elementCount: snapshot.elements.length,
+			...(firstButtonRef === undefined ? {} : { firstButtonRef }) };
 	}
 	if (name === "page_inspect") {
 		return { ...(result as Static<typeof InspectResult>), kind: name };
