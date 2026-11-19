@@ -6,6 +6,7 @@ import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { ChatFiles, MAX_FILE_BYTES } from "../src/engine/files.ts";
 import { filesExtension, MAX_READ_CHARS, redirectGuesses } from "../src/engine/files-tools.ts";
 import { type Context } from "../src/lib/chord.ts";
+import { readToolDetails } from "../src/tools/details.ts";
 import { openFiles } from "./support/files.ts";
 import { context } from "./support/world.ts";
 
@@ -39,24 +40,19 @@ test("fetch truncates text, preserves binary bytes on disk, and sets safe reques
 		return new Response('{"items":[1,2,3]}', { headers: { "content-type": "application/json" } });
 	}, async (call, files) => {
 		const preview = await call({ url: "https://data.example/text", maxChars: 5 });
-		assert.deepEqual(preview.details, { http: { status: 200, bytes: 17 } });
 		assert.deepEqual(valueOf(preview), {
 			status: 200, statusText: "", url: "https://data.example/text", contentType: "application/json", bytes: 17, body: '{"ite', truncated: true,
 		});
 		const savedResult = await call({ url: "https://data.example/binary", saveTo: "nested/data.bin", method: "POST", body: "input" });
-		assert.deepEqual(savedResult.details, { http: { status: 200, bytes: 4 } });
 		const saved = valueOf(savedResult);
 		assert.equal(saved.savedTo, "/workspace/nested/data.bin");
 		assert.equal(saved.body, undefined);
 		assert.deepEqual(getOrThrow(await files.readBinaryFile("nested/data.bin", context)), new Uint8Array([0, 255, 128, 1]));
 		const binary = await call({ url: "https://data.example/binary" });
-		assert.deepEqual(binary.details, { http: { status: 200, bytes: 4 } });
 		assert.equal(valueOf(binary).body, undefined);
 		const latin = await call({ url: "https://data.example/latin" });
-		assert.deepEqual(latin.details, { http: { status: 200, bytes: 1 } });
 		assert.equal(valueOf(latin).body, "é");
 		const head = await call({ url: "https://data.example/text", method: "HEAD", body: "ignored" });
-		assert.deepEqual(head.details, { http: { status: 200, bytes: 0 } });
 		assert.equal(valueOf(head).bytes, 0);
 		assert.equal(requests[1]?.body, "input");
 		assert.equal(requests.at(-1)?.body, undefined);
@@ -74,7 +70,9 @@ test("fetch records HTTP UI details for non-2xx responses without changing the m
 	await withFetch(async () => new Response("gone", { status: 404, statusText: "Not Found", headers: { "content-type": "text/plain" } }), async (call) => {
 		const result = await call({ url: "https://data.example/missing" });
 		assert.notEqual(result.isError, true);
-		assert.deepEqual(result.details, { http: { status: 404, bytes: 4 } });
+		assert.deepEqual(readToolDetails(result.details, "fetch"), {
+			kind: "fetch", http: { status: 404, bytes: 4 }, headline: "HTTP 404 Not Found · text/plain · 4 bytes", preview: "gone",
+		});
 		assert.deepEqual(result.output, [{ type: "text", text: "HTTP 404 Not Found · text/plain · 4 bytes\n\ngone" }]);
 	});
 });

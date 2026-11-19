@@ -12,7 +12,7 @@ type Part =
 
 /** Content parts, disclosures and code controls survive both streaming and finalization. */
 export class AssistantView {
-	readonly element = h("div", { class: "msg assistant" });
+	readonly element = h("div", { class: "native-view" });
 	#parts = new Map<string, Part>();
 	#groups = new Map<number, HTMLElement>();
 
@@ -21,7 +21,6 @@ export class AssistantView {
 	}
 
 	update(message: AssistantMessage, live: boolean) {
-		this.element.toggleAttribute("data-live", live);
 		const parts = new Map<string, Part>();
 		const groups = new Map<number, HTMLElement>();
 		const nodes: Node[] = [];
@@ -78,11 +77,11 @@ export class AssistantView {
 			}
 		}
 		flushGroup();
-		this.element.toggleAttribute("data-tools-only", hasTool && !hasNonTool);
 		for (const [key, part] of this.#parts) if (!parts.has(key) && part.type !== "toolCall") part.markdown.dispose();
 		this.#parts = parts;
 		this.#groups = groups;
 		reconcileChildren(this.element, nodes);
+		return hasTool && !hasNonTool;
 	}
 
 	dispose() {

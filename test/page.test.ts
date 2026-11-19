@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clip, cut, shapeGrid, take, takeWhere } from "../src/page/limits.ts";
 import { LIMITS } from "../src/tools/page-limits.ts";
-import { readback } from "../src/page/dom.ts";
+import { readback } from "../src/page/act.ts";
 import { pageUrl, RefTable } from "../src/page/refs.ts";
 import { renderSnapshot } from "../src/tools/render.ts";
 

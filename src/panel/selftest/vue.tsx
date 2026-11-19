@@ -80,6 +80,13 @@ export async function testVueComponents(fixture: HTMLElement, step: Step, escape
 		const view: ConversationView = { conversation: { id: conversationId }, entries, docs: { "pi.live": live } };
 		await transcript.update({ kind: "conversation", view, ready: true });
 		const user = transcript.element.querySelector(".msg.user");
+		const copy = user?.querySelector<HTMLButtonElement>(".msg-actions button");
+		copy?.focus();
+		transcript.controller.store.forking.value = true;
+		await nextTick();
+		step("user message actions preserve the focused copy button while a fork is pending",
+			Boolean(copy) && user?.querySelector(".msg-actions button") === copy && document.activeElement === copy);
+		transcript.controller.store.forking.value = false;
 		const card = transcript.element.querySelector<HTMLElement>(".tool")!;
 		const running = transcript.busy && card.dataset.status === "running" && Boolean(transcript.element.querySelector(".msg[data-live]"));
 		const result: EntryRecord = { id: 3 as EntryId, conversationId, kind: "pi.tool-result", model: [{ role: "toolResult", toolCallId: "call-1", toolName: "read", content: [{ type: "text", text: "File contents" }], isError: false, timestamp: 0 }] };

@@ -2,7 +2,7 @@ import { createApp } from "vue";
 import { PanelApp } from "./app.tsx";
 import { createPanelHost } from "./connection.ts";
 import { PanelController } from "./controller.ts";
-import { LANG } from "./i18n/index.ts";
+import { language } from "./i18n/index.ts";
 import { initializeTheme } from "./settings.tsx";
 import { testAttachmentComposer } from "./selftest/attachments.ts";
 import { testMarkdown } from "./selftest/markdown.ts";
@@ -13,7 +13,7 @@ import { testToolCards } from "./selftest/tool-cards.ts";
 import { toastError } from "./ui.ts";
 
 initializeTheme();
-document.documentElement.lang = LANG;
+document.documentElement.lang = language();
 const controller = new PanelController(createPanelHost());
 createApp(PanelApp, { controller }).mount(document.body);
 

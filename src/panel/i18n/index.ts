@@ -6,6 +6,7 @@ export type LanguagePreference = Language | "system";
 const LANGUAGE_KEY = "oshawott:language";
 
 export function savedLanguagePreference(): LanguagePreference {
+	if (typeof window === "undefined") return "system";
 	try {
 		const stored = localStorage.getItem(LANGUAGE_KEY);
 		if (stored === "zh-CN" || stored === "en") return stored;
@@ -17,7 +18,7 @@ export function savedLanguagePreference(): LanguagePreference {
 export function savedLanguage(): Language {
 	const preference = savedLanguagePreference();
 	if (preference !== "system") return preference;
-	return (navigator.language || "en").toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+	return (globalThis.navigator?.language || "en").toLowerCase().startsWith("zh") ? "zh-CN" : "en";
 }
 
 export function saveLanguage(preference: LanguagePreference) {
@@ -25,10 +26,10 @@ export function saveLanguage(preference: LanguagePreference) {
 	else localStorage.setItem(LANGUAGE_KEY, preference);
 }
 
-export const LANG: Language = savedLanguage();
-
-const table: Record<Key, string> = LANG === "zh-CN" ? zh : en;
+let current: Language | undefined;
+export const language = (): Language => current ??= savedLanguage();
 
 export function t(key: Key, ...args: (string | number)[]): string {
+	const table = language() === "zh-CN" ? zh : en;
 	return table[key].replace(/\{(\d)\}/g, (_, i: string) => String(args[Number(i)] ?? ""));
 }

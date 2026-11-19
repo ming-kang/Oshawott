@@ -4,12 +4,13 @@ import { Chat } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { ChordError, type Context, type FacetHost } from "../lib/chord.ts";
 import {
-	attachmentPaths, completeAttachmentDeletes, inputForSend, inputForUpdate, intendAttachmentDeletes, type QueuedInput,
+	attachmentPaths, inputForSend, inputForUpdate, type QueuedInput,
 	requireContentVision, rollbackAttachments, safeAttachmentPath, storeAttachments,
 } from "./attachments.ts";
 import { preference, TargetDoc, WorkspaceDoc } from "./docs.ts";
 import { type FacetServices, forbidden, gone } from "./facet-services.ts";
 import { ChatFiles, resolvePath, WORKSPACE } from "./files.ts";
+import { completeAttachmentDeletes, intendAttachmentDeletes } from "./files-lifecycle.ts";
 import { titleOf } from "./titles.ts";
 
 /**
@@ -38,11 +39,10 @@ async function withdrawInputs(target: Conversation, chatId: number, ctx: Context
 export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 	const { harness, admin } = services;
 	/** Deletion completes after the commit that recorded it; a failure leaves the intent for the next Engine. */
-	const completeDeletes = (context: Context) =>
-		completeAttachmentDeletes(harness, services.files, context, services.onError).catch(services.onError);
-
 	host.serve(Chat, ({ id }, principal, self) => {
 		if (principal.kind !== "panel") forbidden();
+		const completeDeletes = (context: Context) =>
+			completeAttachmentDeletes(harness, services.files, id, context, services.onError).catch(services.onError);
 		const conversationId = id as ConversationId;
 		const conversation = async (ctx: Context) => {
 			const workspace = await harness.snapshot(WorkspaceDoc, ctx);

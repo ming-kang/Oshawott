@@ -50,7 +50,7 @@ export async function testMarkdown(origin?: string) {
 		const answer = transcript.element.querySelector(".msg.assistant")!;
 		const thinking = answer.querySelector<HTMLDetailsElement>(".thinking")!;
 		thinking.open = true;
-		const paragraph = answer.querySelector(":scope > .md > p")!;
+		const paragraph = answer.querySelector(".md:not(.thinking *) > p")!;
 		const codeblock = answer.querySelector(".codeblock")!;
 		const pre = codeblock.querySelector("pre")!;
 		pre.scrollLeft = 60;
@@ -67,7 +67,7 @@ export async function testMarkdown(origin?: string) {
 		await transcript.update({ kind: "conversation", view: view(next, "Reading the page. Found the content."), ready: true });
 		const afterStreaming = selection?.toString();
 		step("Markdown streaming preserves the answer, completed paragraphs and thinking disclosure", transcript.element.querySelector(".msg.assistant") === answer
-			&& answer.querySelector(":scope > .md > p") === paragraph && answer.querySelector(".thinking") === thinking && thinking.open);
+			&& answer.querySelector(".md:not(.thinking *) > p") === paragraph && answer.querySelector(".thinking") === thinking && thinking.open);
 		step("streaming code retains its scroll position, controls and keyboard focus", answer.querySelector(".codeblock") === codeblock
 			&& codeblock.querySelector("pre") === pre && left > 0 && pre.scrollLeft === left && document.activeElement === copy, `scrollLeft=${pre.scrollLeft}`);
 		copy.click();
@@ -160,6 +160,22 @@ export async function testMarkdown(origin?: string) {
 		await until(() => streamedDiagram.element.querySelector(".codeblock-view svg")?.textContent?.includes("Streamed"));
 		step("closing an unchanged streaming fence starts its enricher", streamedDiagram.element.querySelector("pre")?.hasAttribute("hidden") === true);
 		await until(() => diagram.element.querySelector(".codeblock-view svg")?.textContent?.includes("Changed"));
+		const root = document.documentElement;
+		const previousTheme = root.dataset.theme;
+		try {
+			const renderWithTheme = async (theme: "light" | "dark", label: string) => {
+				root.dataset.theme = theme;
+				diagram.update(`\`\`\`mermaid\ngraph TD; A[${label}]-->B[Two];\n\`\`\``);
+				await until(() => diagram.element.querySelector(".codeblock-view svg")?.textContent?.includes(label));
+				return getComputedStyle(diagram.element.querySelector(".codeblock-view .node rect")!).fill;
+			};
+			const light = await renderWithTheme("light", "Light diagram");
+			const dark = await renderWithTheme("dark", "Dark diagram");
+			step("a new Mermaid diagram uses the theme selected after the library loaded", light !== dark, `${light} → ${dark}`);
+		} finally {
+			if (previousTheme === undefined) delete root.dataset.theme;
+			else root.dataset.theme = previousTheme;
+		}
 		diagram.update("```ts\nconst plainCode = 1;\n```");
 		step("fence enrichment is revision-safe and ordinary code returns to source", diagram.element.querySelector<HTMLElement>("pre")?.hidden === false
 			&& diagram.element.querySelector("code")?.textContent === "const plainCode = 1;" && diagram.element.querySelector<HTMLElement>(".codeblock-view")?.hidden === true);

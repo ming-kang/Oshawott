@@ -1,11 +1,13 @@
 import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
+import { shallowRef } from "vue";
 import {
-	Chat, type BusyMode, type ChatConfiguration, DEFAULT_BUSY_MODE, type ModelRef, type ProviderSummary, type ThinkingLevel, type Workspace,
+	Chat, type ApprovalView, type BusyMode, type ChatConfiguration, DEFAULT_BUSY_MODE, type ModelRef, type ProviderSummary, type ThinkingLevel, type Workspace,
 } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../lib/chord.ts";
 import type { PanelHost } from "./connection.ts";
 import { clampThinking, configuredProviders, sameModel, shownModel, supportedThinkingLevels } from "./models.ts";
 import { toastError } from "./ui.ts";
+import { watchMember } from "./watch-member.ts";
 
 export type WorkspaceRef = Extract<Reference<typeof Workspace>, { variant: "owner" }>;
 export type ChatRef = Extract<Reference<typeof Chat>, { variant: "owner" }>;
@@ -15,18 +17,19 @@ type ChatSessionStatus = "new" | "loading" | "open";
 /** The Engine objects the panel is showing (`id` undefined is the new-chat screen) and the model they would run with. */
 export class ChatSession {
 	readonly #host: PanelHost;
-	readonly #changed: () => void;
+	readonly #viewChanged: () => void;
 	#workspace: WorkspaceRef | undefined;
-	#chat: ChatRef | undefined;
-	#id: number | undefined;
-	#loaded = false;
+	readonly #chat = shallowRef<ChatRef>();
+	readonly #id = shallowRef<number>();
+	readonly #loaded = shallowRef(false);
+	readonly approvals = shallowRef<readonly ApprovalView[]>([]);
+	readonly target = shallowRef<number | null>(null);
 	#generation = 0;
-	#task: Promise<void> | undefined;
+	readonly #task = shallowRef<Promise<void>>();
 
-	/** `changed` runs for observed chat updates and when `configuring` flips. */
-	constructor(host: PanelHost, changed: () => void) {
+	constructor(host: PanelHost, viewChanged: () => void) {
 		this.#host = host;
-		this.#changed = changed;
+		this.#viewChanged = viewChanged;
 	}
 
 	get workspace() {
@@ -34,19 +37,19 @@ export class ChatSession {
 	}
 
 	get chat() {
-		return this.#chat;
+		return this.#chat.value;
 	}
 
 	get id() {
-		return this.#id;
+		return this.#id.value;
 	}
 
 	get loaded() {
-		return this.#loaded;
+		return this.#loaded.value;
 	}
 
 	get status(): ChatSessionStatus {
-		return this.#id === undefined ? "new" : this.#chat ? "open" : "loading";
+		return this.id === undefined ? "new" : this.chat ? "open" : "loading";
 	}
 
 	get busyMode(): BusyMode {
@@ -58,7 +61,7 @@ export class ChatSession {
 	}
 
 	markLoaded() {
-		this.#loaded = true;
+		this.#loaded.value = true;
 	}
 
 	/**
@@ -68,32 +71,42 @@ export class ChatSession {
 	async open(id: number | undefined, prepare: (commit: () => void) => Promise<void>) {
 		const generation = ++this.#generation;
 		await prepare(() => {
-			this.#chat?.release();
-			this.#chat = undefined;
-			this.#id = id;
+			this.chat?.release();
+			this.#chat.value = undefined;
+			this.#id.value = id;
+			this.approvals.value = [];
+			this.target.value = null;
 		});
 		if (id === undefined) return;
 		const next = await this.#host.get(Chat, { id }, BACKGROUND_CONTEXT);
-		if (generation !== this.#generation || this.#id !== id || next.variant !== "owner") {
+		if (generation !== this.#generation || this.id !== id || next.variant !== "owner") {
 			next.release();
 			return;
 		}
 		let watches;
 		try {
-			watches = await Promise.all([next.view, next.approvals, next.target].map((member) => member.watch(BACKGROUND_CONTEXT)));
+			watches = await Promise.all([
+				next.view.watch(BACKGROUND_CONTEXT), next.approvals.watch(BACKGROUND_CONTEXT), next.target.watch(BACKGROUND_CONTEXT),
+			]);
 		} catch (error) {
 			next.release();
 			throw error;
 		}
-		if (generation !== this.#generation || this.#id !== id) {
+		if (generation !== this.#generation || this.id !== id) {
 			next.release();
 			return;
 		}
-		this.#chat = next;
-		for (const watch of watches) watch.start(async () => {
-			if (this.#chat === next) this.#changed();
+		this.#chat.value = next;
+		const [view, approvals, target] = watches;
+		watchMember(view, () => {
+			if (this.chat === next) this.#viewChanged();
 		});
-		this.#changed();
+		watchMember(approvals, (value) => {
+			if (this.chat === next) this.approvals.value = value;
+		});
+		watchMember(target, (value) => {
+			if (this.chat === next) this.target.value = value;
+		});
 	}
 
 	async setBusyMode(mode: BusyMode) {
@@ -124,7 +137,7 @@ export class ChatSession {
 	}
 
 	get configuring() {
-		return this.#task;
+		return this.#task.value;
 	}
 
 	get model(): ModelRef | undefined {
@@ -174,7 +187,7 @@ export class ChatSession {
 
 	/** One change at a time; a second caller shares the running one. */
 	configure(configuration: ChatConfiguration): Promise<void> {
-		if (this.#task) return this.#task;
+		if (this.configuring) return this.configuring;
 		const source = this.workspace;
 		const id = this.id;
 		const task = (async () => {
@@ -187,11 +200,9 @@ export class ChatSession {
 				toastError(error);
 			}
 		})();
-		this.#task = task;
-		this.#changed();
+		this.#task.value = task;
 		return task.finally(() => {
-			if (this.#task === task) this.#task = undefined;
-			this.#changed();
+			if (this.#task.value === task) this.#task.value = undefined;
 		});
 	}
 

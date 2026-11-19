@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { EntryRecord, LiveState, TaskId, TranscriptItem as DurableItem, TranscriptView } from "@earendil-works/pi-durable";
+import type { EntryId, EntryRecord, LiveState, TaskId, TranscriptItem as DurableItem, TranscriptView } from "@earendil-works/pi-durable";
 import { USER_ENTRY } from "../lib/attachments.ts";
 
 export type TranscriptItem =
@@ -122,4 +122,64 @@ export function hasVisibleAnswer(items: readonly TranscriptItem[]) {
 		if (item.kind !== "entry") return false;
 		return item.entry.kind === "pi.user" || item.entry.kind === USER_ENTRY || item.entry.kind === "pi.assistant";
 	});
+}
+
+export type ErrorNoticeSpec =
+	| { mode: "normal" | "suppressed"; raw: string }
+	| { mode: "recovered"; raw: string; raws: readonly string[] }
+	| { mode: "retrying"; raw: string; at: number };
+
+function errorRaw(item: TranscriptItem | undefined): string | undefined {
+	if (item?.kind !== "entry" || item.entry.kind !== "pi.assistant") return undefined;
+	const message = item.entry.model?.[0];
+	return message?.role === "assistant" && message.stopReason === "error" ? message.errorMessage : undefined;
+}
+
+type PresentedItem = { item: TranscriptItem; notice?: ErrorNoticeSpec; forkFrom?: EntryId };
+
+export function transcriptRows(items: readonly TranscriptItem[], live: LiveState | undefined) {
+	const busy = Boolean(live?.run);
+	const retry = live?.generation?.retry;
+	const failure = busy ? undefined : live?.runFailure;
+	const lastEntry = items.findLast((item) => item.kind === "entry");
+	const lastAssistant = items.findLastIndex((item) => item.kind === "entry" && item.entry.kind === "pi.assistant");
+	const presentation = new Map<TranscriptItem, PresentedItem>();
+	let lastUser: EntryId | undefined;
+	let recovered: { row: PresentedItem; raw: string }[] = [];
+	const flush = () => {
+		const last = recovered.at(-1);
+		if (!last) return;
+		last.row.notice = { mode: "recovered", raw: last.raw, raws: recovered.map(({ raw }) => raw) };
+		recovered = [];
+	};
+	for (const [index, item] of items.entries()) {
+		const row: PresentedItem = { item };
+		presentation.set(item, row);
+		if (item.kind === "entry") {
+			if (item.entry.kind === "pi.user" || item.entry.kind === USER_ENTRY) lastUser = item.entry.id;
+			else if (item.entry.kind === "pi.assistant") row.forkFrom = lastUser;
+		}
+		const raw = errorRaw(item);
+		if (raw === undefined) { flush(); continue; }
+		if (item === lastEntry && retry) {
+			flush();
+			row.notice = { mode: "retrying", raw, at: retry.at };
+		} else if (item === lastEntry && failure?.reason === "model_error") {
+			flush();
+			row.notice = { mode: "suppressed", raw };
+		} else if (index < lastAssistant) {
+			row.notice = { mode: "suppressed", raw };
+			recovered.push({ row, raw });
+		} else {
+			flush();
+			row.notice = { mode: "normal", raw };
+		}
+	}
+	flush();
+	return {
+		lastError: errorRaw(lastEntry),
+		rows: groupToolRuns(items, busy).map((row) => row.kind === "run"
+			? { ...row, items: row.items.map((item) => presentation.get(item)!) }
+			: { ...row, row: presentation.get(row.item)! }),
+	};
 }

@@ -4,8 +4,8 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemor
 import { defineExtension, defineTool, type InboxItem, type InboxState, type Storage, type SubmissionId } from "@earendil-works/pi-durable";
 import { USER_ENTRY, userInput } from "../src/lib/attachments.ts";
 import { fromBase64, toBase64 } from "../src/lib/base64.ts";
-import { completeAttachmentDeletes } from "../src/engine/attachments.ts";
-import { AttachmentDeletesDoc } from "../src/engine/docs.ts";
+import { FileDeletesDoc } from "../src/engine/docs.ts";
+import { completeAttachmentDeletes } from "../src/engine/files-lifecycle.ts";
 import type { FileBackend, FileTx } from "../src/engine/files.ts";
 import { obj } from "../src/lib/chord.ts";
 import { openFiles } from "./support/files.ts";
@@ -352,11 +352,11 @@ test("post-commit cleanup failure preserves new files and retries only the remov
 		}, context), "updated");
 		const paths = (await f.chat.files(context)).map((file) => file.path);
 		assert.ok(paths.some((path) => path.endsWith("new.txt")), "the committed attachment is never rolled back by cleanup");
-		const intents = (await f.engine.harness.snapshot(AttachmentDeletesDoc, context))?.pending ?? [];
+		const intents = (await f.engine.harness.snapshot(FileDeletesDoc, context))?.pending ?? [];
 		assert.deepEqual(intents.map((intent) => intent.paths), [[oldPath]], "the edit's own commit recorded the deletion");
 		files.failures.delete(oldPath);
-		await completeAttachmentDeletes(f.engine.harness, files, context, (error) => { throw error; });
-		assert.deepEqual((await f.engine.harness.snapshot(AttachmentDeletesDoc, context))?.pending, []);
+		await completeAttachmentDeletes(f.engine.harness, files, f.id, context, (error) => { throw error; });
+		assert.deepEqual((await f.engine.harness.snapshot(FileDeletesDoc, context))?.pending, []);
 		const remaining = await f.chat.files(context);
 		assert.ok(!remaining.some((file) => file.path === oldPath.slice("/workspace/".length)));
 		assert.ok(remaining.some((file) => file.path.endsWith("new.txt")));
@@ -452,7 +452,7 @@ test("Stop deletes only withdrawn inputs' files; a placed steer keeps its attach
 		assert.ok(visibleUsers(f.chat).some((text) => text.startsWith("Placed")), "and its entry stays in the transcript");
 		assert.deepEqual(await f.chat.readFile({ path: keptPath }, context), utf8.encode("still referenced"));
 		await assert.rejects(f.chat.readFile({ path: droppedPath }, context));
-		assert.deepEqual((await f.engine.harness.snapshot(AttachmentDeletesDoc, context))?.pending, []);
+		assert.deepEqual((await f.engine.harness.snapshot(FileDeletesDoc, context))?.pending, []);
 	} finally {
 		await f.close();
 	}

@@ -1,4 +1,4 @@
-import { defineComponent, nextTick, onBeforeUnmount, onMounted, shallowReactive, shallowRef, watch, type PropType } from "vue";
+import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, shallowReactive, shallowRef, watch, type PropType } from "vue";
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { ToolResultEntry, type EntryId, type EntryRecord, type RunFailure, type RunFailureReason } from "@earendil-works/pi-durable";
 import { isImageAttachment, type AttachmentRef, USER_ENTRY, userInput } from "../lib/attachments.ts";
@@ -6,13 +6,13 @@ import { fromBase64 } from "../lib/base64.ts";
 import { formatBytes } from "../lib/bytes.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
 import { AssistantView } from "./assistant-view.ts";
-import { Icon, Mascot, NativeView } from "./components.tsx";
+import { CopyButton, Icon, Mascot, NativeView } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
 import { describeError, type ErrorDescription } from "./errors.ts";
 import { t } from "./i18n/index.ts";
 import { ToolCard, toolLook } from "./tool-card.ts";
-import { groupToolRuns, hasVisibleAnswer, transcriptItems, type TranscriptItem } from "./transcript-model.ts";
-import { copyButton, download, h, icon, type IconName, toastError } from "./ui.ts";
+import { hasVisibleAnswer, transcriptItems, transcriptRows, type ErrorNoticeSpec, type TranscriptItem } from "./transcript-model.ts";
+import { download, h, type IconName, toastError } from "./ui.ts";
 
 const FAILURE_LABELS = {
 	no_model: "failure.no_model", model_error: "failure.model_error", interrupted: "failure.interrupted", turn_limit: "failure.turn_limit",
@@ -20,17 +20,6 @@ const FAILURE_LABELS = {
 } as const satisfies Record<RunFailureReason, string | null>;
 const textOf = (content: UserMessage["content"] | Extract<UserMessage["content"][number], { type: "text" }>[]) =>
 	typeof content === "string" ? content : content.map((block) => block.type === "text" ? block.text : "").join("");
-
-type ErrorNoticeSpec =
-	| { mode: "normal" | "suppressed"; raw: string }
-	| { mode: "recovered"; raw: string; raws: readonly string[] }
-	| { mode: "retrying"; raw: string; at: number };
-
-const errorRaw = (item: TranscriptItem): string | undefined => {
-	if (item.kind !== "entry" || item.entry.kind !== "pi.assistant") return undefined;
-	const message = item.entry.model?.[0];
-	return message?.role === "assistant" && message.stopReason === "error" ? message.errorMessage : undefined;
-};
 
 const errorHeadline = (description: ErrorDescription) => {
 	switch (description.kind) {
@@ -66,7 +55,6 @@ const ErrorNotice = defineComponent({
 		}, { immediate: true });
 		onBeforeUnmount(() => clearInterval(timer));
 		const raws = () => [...new Set(props.raws?.length ? props.raws : [props.raw])];
-		const copy = copyButton(() => raws().join("\n\n"), t("copy"));
 		const description = () => describeError(props.raw);
 		const headline = () => errorHeadline(description());
 		const notice = (tone: "error" | "warn", role: "alert" | "status") => (
@@ -79,7 +67,7 @@ const ErrorNotice = defineComponent({
 					<details class="notice-raw">
 						<summary><Icon name="chevron" size={13} />{t("error.showRaw")}</summary>
 						<div class="notice-raw-body">
-							<div class="notice-raw-head"><NativeView element={copy} /></div>
+							<div class="notice-raw-head"><CopyButton text={raws().join("\n\n")} /></div>
 							{raws().map((part) => <pre>{part}</pre>)}
 						</div>
 					</details>
@@ -218,7 +206,7 @@ const UserRow = defineComponent({
 								{images.slice(attachments.filter(isImageAttachment).length).map((image) => <img class="user-image" src={`data:${image.mimeType};base64,${image.data}`} alt={t("attachments.title")} />)}
 							</div>
 							<div class="msg-actions">
-								<NativeView element={copyButton(() => text, t("copy"))} />
+								<CopyButton text={text} />
 								<button class="icon-btn small" data-action="edit" type="button" title={t("msg.edit")} aria-label={t("msg.edit")}
 									disabled={props.controller.store.forking.value}
 									onClick={() => { draft.value = text; editing.value = true; }}><Icon name="compose" size={14} /></button>
@@ -243,7 +231,8 @@ const AssistantRow = defineComponent({
 	setup(props) {
 		const assistant = new AssistantView();
 		const registered = new Set<string>();
-		watch(() => [props.item, props.forkFrom, props.disabled] as const, ([item]) => {
+		const presentation = shallowRef({ live: false, toolsOnly: false, copy: "" });
+		watch(() => props.item, (item) => {
 			let message: AssistantMessage | undefined;
 			let live = false;
 			if (item.kind === "live") { message = item.message; live = true; }
@@ -252,22 +241,11 @@ const AssistantRow = defineComponent({
 				if (candidate?.role === "assistant") message = candidate;
 			}
 			if (!message) return;
-			assistant.update(message, live);
+			const toolsOnly = assistant.update(message, live);
 			for (const [id, card] of assistant.cards) { props.cards.set(id, card); registered.add(id); }
-			if (!live) {
-				const text = message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n\n").trim();
-				if (text && !message.content.some((block) => block.type === "toolCall")) {
-					const actions = [copyButton(() => text, t("copy"))];
-					if (props.forkFrom !== undefined) {
-						actions.push(h("button", {
-							class: "icon-btn small", type: "button", "data-action": "regenerate",
-							title: t("msg.regenerate"), "aria-label": t("msg.regenerate"), disabled: props.disabled,
-							onClick: () => void props.controller.fork(props.forkFrom as EntryId),
-						}, icon("refresh", 14)));
-					}
-					assistant.element.append(h("div", { class: "msg-actions" }, actions));
-				}
-			}
+			const copy = live || message.content.some((block) => block.type === "toolCall") ? ""
+				: message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n\n").trim();
+			presentation.value = { live, toolsOnly, copy };
 			void nextTick(props.syncCards);
 		}, { immediate: true });
 		onBeforeUnmount(() => {
@@ -277,7 +255,16 @@ const AssistantRow = defineComponent({
 		});
 		return () => (
 			<>
-				<NativeView element={assistant.element} />
+				<div class="msg assistant" data-live={presentation.value.live ? "" : undefined}
+					data-tools-only={presentation.value.toolsOnly ? "" : undefined}>
+					<NativeView element={assistant.element} />
+					{presentation.value.copy && <div class="msg-actions">
+						<CopyButton text={presentation.value.copy} />
+						{props.forkFrom !== undefined && <button class="icon-btn small" type="button" data-action="regenerate"
+							title={t("msg.regenerate")} aria-label={t("msg.regenerate")} disabled={props.disabled}
+							onClick={() => void props.controller.fork(props.forkFrom as EntryId)}><Icon name="refresh" size={14} /></button>}
+					</div>}
+				</div>
 				{props.notice && props.notice.mode !== "suppressed" && (
 					<ErrorNotice controller={props.controller} tone={props.notice.mode === "retrying" ? "warn" : "error"} raw={props.notice.raw}
 						raws={props.notice.mode === "recovered" ? props.notice.raws : undefined}
@@ -389,6 +376,7 @@ export const Transcript = defineComponent({
 		const items = shallowRef<readonly TranscriptItem[]>([]);
 		const cards = shallowReactive(new Map<string, ToolCard>());
 		const runStates = shallowReactive(new Map<string, boolean>());
+		const model = computed(() => transcriptRows(items.value, store.live.value));
 		watch(store.transcript, (view) => { items.value = view ? transcriptItems(view, items.value) : []; }, { immediate: true });
 		const syncCards = () => {
 			const live = store.live.value;
@@ -421,46 +409,10 @@ export const Transcript = defineComponent({
 			const empty = !hasVisibleAnswer(items.value) && !busy;
 			const running = (live?.tools ?? []).some((slot) => slot.status === "running");
 			const partial = items.value.some((item) => item.kind === "live");
-			const committed = items.value.filter((item): item is Extract<TranscriptItem, { kind: "entry" }> => item.kind === "entry");
-			const lastCommitted = committed.at(-1);
-			const lastError = lastCommitted ? errorRaw(lastCommitted) : undefined;
-			const laterAssistant = new Map<TranscriptItem, boolean>();
-			let seenAssistant = false;
-			for (let index = committed.length - 1; index >= 0; index--) {
-				laterAssistant.set(committed[index]!, seenAssistant);
-				if (committed[index]!.entry.kind === "pi.assistant") seenAssistant = true;
-			}
-			const notices = new Map<TranscriptItem, ErrorNoticeSpec>();
-			let recoveredGroup: { item: TranscriptItem; raw: string }[] = [];
-			const flushGroup = () => {
-				const last = recoveredGroup.at(-1);
-				if (!last) return;
-				notices.set(last.item, { mode: "recovered", raw: last.raw, raws: recoveredGroup.map((entry) => entry.raw) });
-				for (const entry of recoveredGroup.slice(0, -1)) notices.set(entry.item, { mode: "suppressed", raw: entry.raw });
-				recoveredGroup = [];
-			};
-			for (const item of items.value) {
-				const raw = item.kind === "entry" ? errorRaw(item) : undefined;
-				if (raw === undefined) { flushGroup(); continue; }
-				if (item === lastCommitted) {
-					if (retry) { flushGroup(); notices.set(item, { mode: "retrying", raw, at: retry.at }); continue; }
-					if (failure?.reason === "model_error") { flushGroup(); notices.set(item, { mode: "suppressed", raw }); continue; }
-				}
-				if (laterAssistant.get(item)) recoveredGroup.push({ item, raw });
-				else { flushGroup(); notices.set(item, { mode: "normal", raw }); }
-			}
-			flushGroup();
-			// The user entry that started each assistant turn, for regenerate; undefined before the first loaded one.
-			const regen = new Map<TranscriptItem, EntryId | undefined>();
-			let lastUser: EntryId | undefined;
-			for (const item of items.value) {
-				if (item.kind !== "entry") continue;
-				if (item.entry.kind === "pi.user" || item.entry.kind === USER_ENTRY) lastUser = item.entry.id;
-				else if (item.entry.kind === "pi.assistant") regen.set(item, lastUser);
-			}
+			const { rows, lastError } = model.value;
 			return (
 				<div class="thread">
-					{view ? groupToolRuns(items.value, busy).map((entry) => entry.kind === "run" ? (
+					{view ? rows.map((entry) => entry.kind === "run" ? (
 						<details class="run-fold" key={entry.key} open={runStates.get(entry.key) ?? false}
 							onToggle={(event) => { runStates.set(entry.key, (event.currentTarget as HTMLDetailsElement).open); }}>
 							<summary>
@@ -469,9 +421,9 @@ export const Transcript = defineComponent({
 								{entry.failures > 0 && <span class="run-fold-failures">{t("run.failed", entry.failures)}</span>}
 								<span class="run-fold-chevron"><Icon name="chevron" size={14} /></span>
 							</summary>
-							<div class="run-fold-body">{entry.items.map((item) => row(item, notices.get(item), regen.get(item)))}</div>
+							<div class="run-fold-body">{entry.items.map(({ item, notice, forkFrom }) => row(item, notice, forkFrom))}</div>
 						</details>
-					) : row(entry.item, notices.get(entry.item), regen.get(entry.item))) : store.loaded.value && store.status.value === "new" ? null : <div class="connecting"><span class="spinner" />{t("connecting")}</div>}
+					) : row(entry.row.item, entry.row.notice, entry.row.forkFrom)) : store.loaded.value && store.status.value === "new" ? null : <div class="connecting"><span class="spinner" />{t("connecting")}</div>}
 					{view && empty && <EmptyState controller={props.controller} />}
 					{!view && store.loaded.value && store.status.value === "new" && <EmptyState controller={props.controller} />}
 					{busy && !partial && !running && !retry && <div class="typing" role="status"><span /><span>{t("thinking.live")}</span></div>}

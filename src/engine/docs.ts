@@ -35,7 +35,7 @@ export type WorkspaceState = {
 	confirmActions?: boolean;
 	/** Global native Durable instructions, shared by every chat; absent means the built-in text. */
 	instructions?: string;
-	/** Optional for older v1 documents. An intent survives eviction between removing a chat and clearing its files. */
+	/** Legacy chat deletion intents, migrated to FileDeletesDoc on startup. */
 	pendingFileDeletes?: number[];
 };
 
@@ -45,7 +45,6 @@ export const WorkspaceDoc = defineDoc<WorkspaceState>({
 	scope: "session",
 	initial: () => ({
 		chats: [], defaultModel: null, defaultThinkingLevel: "off", busyMode: DEFAULT_BUSY_MODE, ...PREFERENCE_DEFAULTS,
-		pendingFileDeletes: [],
 	}),
 	checkpointWhen: () => true,
 });
@@ -61,13 +60,13 @@ export const ProvidersDoc = defineDoc<{ custom: ProviderProfile[] }>({
 	checkpointWhen: () => true,
 });
 
-export type AttachmentDelete = { id: string; chat: number; paths: string[] };
+export type FileDelete = { id: string; chat: number; paths?: string[] };
 
 /**
- * Attachment files whose last reference a commit removed, recorded in that same commit: a crash or eviction between it
- * and the deletion leaves the intent, which the next Engine completes.
+ * Deletions are recorded in the same commit that removes a chat or the last reference to its files.
+ * No paths means clear the whole chat. Keep the original document kind so outstanding attachment intents survive upgrades.
  */
-export const AttachmentDeletesDoc = defineDoc<{ pending: AttachmentDelete[] }>({
+export const FileDeletesDoc = defineDoc<{ pending: FileDelete[] }>({
 	kind: "oshawott.attachment-deletes",
 	version: 1,
 	scope: "session",

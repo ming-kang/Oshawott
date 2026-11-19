@@ -71,6 +71,20 @@ export const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
+export function iconShapes(name: IconName) {
+	return ICONS[name].map((shape) => {
+		if (shape.startsWith("c:")) {
+			const [cx, cy, r] = shape.slice(2).split(",");
+			return { tag: "circle", attrs: { cx: cx!, cy: cy!, r: r! } } as const;
+		}
+		if (shape.startsWith("r:")) {
+			const [x, y, width, height, rx] = shape.slice(2).split(",");
+			return { tag: "rect", attrs: { x: x!, y: y!, width: width!, height: height!, rx: rx! } } as const;
+		}
+		return { tag: "path", attrs: { d: shape } } as const;
+	});
+}
+
 export function icon(name: IconName, size = 16): SVGSVGElement {
 	const svg = document.createElementNS(SVG, "svg");
 	svg.setAttribute("viewBox", "0 0 24 24");
@@ -78,22 +92,9 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 	svg.setAttribute("height", String(size));
 	svg.setAttribute("aria-hidden", "true");
 	svg.classList.add("icon");
-	for (const shape of ICONS[name]) {
-		let node: SVGElement;
-		if (shape.startsWith("c:")) {
-			const [cx, cy, r] = shape.slice(2).split(",");
-			node = document.createElementNS(SVG, "circle");
-			node.setAttribute("cx", cx!);
-			node.setAttribute("cy", cy!);
-			node.setAttribute("r", r!);
-		} else if (shape.startsWith("r:")) {
-			const [x, y, w, hgt, rx] = shape.slice(2).split(",");
-			node = document.createElementNS(SVG, "rect");
-			for (const [k, v] of [["x", x], ["y", y], ["width", w], ["height", hgt], ["rx", rx]] as const) node.setAttribute(k, v!);
-		} else {
-			node = document.createElementNS(SVG, "path");
-			node.setAttribute("d", shape);
-		}
+	for (const { tag, attrs } of iconShapes(name)) {
+		const node = document.createElementNS(SVG, tag);
+		for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
 		svg.appendChild(node);
 	}
 	return svg;

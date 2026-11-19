@@ -1,6 +1,6 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import type { FauxResponseFactory, OAuthCredential, Provider, ToolResultMessage } from "@earendil-works/pi-ai";
-import { type ParsedSnapshot, parseSnapshot } from "../tools/render.ts";
+import { readToolDetails, type ToolDetails } from "../tools/details.ts";
 
 const DEMO_PROVIDER = "demo";
 
@@ -8,7 +8,7 @@ const CJK = /\p{Script=Han}/u;
 
 const textOf = (result: ToolResultMessage) => result.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
-function answer(snapshot: ParsedSnapshot | undefined, error: string | undefined, zh: boolean) {
+function answer(snapshot: Extract<ToolDetails, { kind: "page_snapshot" }> | undefined, error: string | undefined, zh: boolean) {
 	if (!snapshot) return zh ? `没能读取页面：${error ?? "没有结果"}。` : `I could not read the page: ${error ?? "no result"}.`;
 	const elements = snapshot.elements;
 	const rows = elements
@@ -27,7 +27,7 @@ function answer(snapshot: ParsedSnapshot | undefined, error: string | undefined,
 					`我用 \`page_snapshot\` 读取了 **${host}**：`,
 					"",
 					`- 可见文字约 ${size}`,
-					`- ${elements.length} 个可交互元素，前几个如下`,
+					`- ${snapshot.elementCount} 个可交互元素，前几个如下`,
 					"",
 					"| ref | 类型 | 名称 |",
 					"|---|---|---|",
@@ -47,7 +47,7 @@ function answer(snapshot: ParsedSnapshot | undefined, error: string | undefined,
 					`I read **${host}** with \`page_snapshot\`:`,
 					"",
 					`- about ${size} of visible text`,
-					`- ${elements.length} interactive elements, the first ones below`,
+					`- ${snapshot.elementCount} interactive elements, the first ones below`,
 					"",
 					"| ref | role | name |",
 					"|---|---|---|",
@@ -176,12 +176,12 @@ export function demoProvider() {
 			return fauxAssistantMessage(last.isError ? (zh ? `没有点击：${text}` : `I did not click: ${text}`) : (zh ? "点好了。" : "Clicked."));
 		}
 		if (last?.role === "toolResult" && last.toolName === "page_snapshot" && clicking && !last.isError) {
-			const button = parseSnapshot(textOf(last))?.elements.find((element) => element.role === "button");
-			if (button) return fauxAssistantMessage([fauxToolCall("page_click", { ref: button.ref })], { stopReason: "toolUse" });
+			const ref = readToolDetails(last.details, "page_snapshot")?.firstButtonRef;
+			if (ref) return fauxAssistantMessage([fauxToolCall("page_click", { ref })], { stopReason: "toolUse" });
 		}
 		if (last?.role === "toolResult") {
 			const text = textOf(last);
-			const snapshot = last.isError ? undefined : parseSnapshot(text);
+			const snapshot = last.isError ? undefined : readToolDetails(last.details, "page_snapshot");
 			return fauxAssistantMessage(answer(snapshot, last.isError ? text : undefined, zh));
 		}
 		return fauxAssistantMessage(

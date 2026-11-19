@@ -1,4 +1,4 @@
-import { AgentDoc, type Conversation, type ConversationId, type ConversationInit, type EntryId, type Harness } from "@earendil-works/pi-durable";
+import { AgentDoc, configure, type Conversation, type ConversationId, type ConversationInit, type EntryId, type Harness } from "@earendil-works/pi-durable";
 import { DEFAULT_BUSY_MODE, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
 import { USER_ENTRY, userInput } from "../lib/attachments.ts";
@@ -56,17 +56,14 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 				providers: self.derive([providers], ([value]) => value.list),
 				logins: self.derive([logins], ([value]) => value.items),
 				createChat: async ({ title }, ctx) => {
-					const workspace = await harness.snapshot(WorkspaceDoc, ctx);
-					const defaultModel = workspace?.defaultModel ?? null;
-					const defaultThinkingLevel = workspace?.defaultThinkingLevel ?? "off";
 					const initialTitle = title?.trim() ?? "";
 					const createdAt = services.now();
 					const conversation = await harness.createConversation({
 						ownership: { kind: "ownerless" },
-						agent: { ...(defaultModel ? { model: defaultModel } : {}), thinkingLevel: defaultThinkingLevel },
 						// Registered in the creating commit: no conversation exists without its Workspace entry.
 						init: async (tx, conversationId) => {
 							const doc = await tx.doc(WorkspaceDoc);
+							await configure(tx, conversationId, { model: doc.defaultModel, thinkingLevel: doc.defaultThinkingLevel ?? "off" });
 							doc.chats.push({
 								id: conversationId, title: initialTitle, createdAt, updatedAt: createdAt,
 								titleSource: initialTitle ? "manual" : "fallback",
@@ -77,11 +74,11 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 					}, ctx);
 					return conversation.id;
 				},
-				deleteChat: async ({ id }, ctx) => {
+				deleteChat: ({ id }, ctx) => services.chatLine.run(id, async () => {
 					services.approvals.forget(id);
 					await deleteChatFiles(harness, services.files, id, ctx);
 					return null;
-				},
+				}),
 				renameChat: ({ id, title }, ctx) => services.chatLine.run(id, async () => {
 					const next = title.trim();
 					const existing = await harness.snapshot(WorkspaceDoc, ctx);
@@ -125,10 +122,12 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 					const forked = workspace!.chats.find((chat) => chat.forkRequestId === requestId)?.id;
 					if (forked !== undefined) target = await harness.conversation(forked as ConversationId, ctx);
 					if (!target) {
-						const agent = await harness.snapshot(AgentDoc, id as ConversationId, ctx);
 						const createdAt = services.now();
 						const init: ConversationInit = async (tx, conversationId) => {
 							const doc = await tx.doc(WorkspaceDoc);
+							// Override the as-of copy with the parent's selection in this commit.
+							const agent = await tx.doc(AgentDoc, parent.id);
+							await configure(tx, conversationId, { model: agent.model, thinkingLevel: agent.thinkingLevel });
 							doc.chats.push({
 								id: conversationId, title, createdAt, updatedAt: createdAt, titleSource: "manual", titleInitialized: true,
 								...(summary.fallbackTitle !== undefined ? { fallbackTitle: summary.fallbackTitle } : {}),
@@ -136,14 +135,11 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 							});
 							await writeInstructions(tx, undefined, conversationId);
 						};
-						// `agent` applies after the creation hook's as-of copy: the branch runs the current selection,
-						// not the model that answered at the fork point.
-						const change = { model: agent?.model ?? null, thinkingLevel: agent?.thinkingLevel ?? "off" };
 						const earlier = await parent.entries({ maxEntryId: (entry - 1) as EntryId, order: "descending" }, 1, undefined, ctx);
 						const at = earlier.items[0]?.id;
 						target = at === undefined
-							? await harness.createConversation({ ownership: { kind: "ownerless" }, agent: change, init }, ctx)
-							: await parent.fork(at, { ownership: { kind: "ownerless" }, agent: change, init }, ctx);
+							? await harness.createConversation({ ownership: { kind: "ownerless" }, init }, ctx)
+							: await parent.fork(at, { ownership: { kind: "ownerless" }, init }, ctx);
 					}
 					const newId = target.id;
 					// A placed input means an earlier call completed; the copy always precedes it.

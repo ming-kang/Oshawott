@@ -1,4 +1,5 @@
 import type { Mermaid } from "mermaid";
+import { Serial } from "../lib/serial.ts";
 import { type FenceEnricher, type FenceHost, registerFence } from "./markdown-fences.ts";
 import { t } from "./i18n/index.ts";
 import { h } from "./ui.ts";
@@ -20,11 +21,17 @@ const MAX_SOURCE = 20_000;
 let nextId = 0;
 
 let runtime: Promise<Mermaid> | undefined;
+const renders = new Serial();
 
 function loadMermaid(): Promise<Mermaid> {
-	runtime ??= import("mermaid").then((mod) => {
-		// The API is the default export; fall back to the namespace for interop.
-		const mermaid = (mod.default ?? mod) as Mermaid;
+	runtime ??= import("mermaid").then((mod) => (mod.default ?? mod) as Mermaid)
+		.catch((error) => { runtime = undefined; throw error; });
+	return runtime;
+}
+
+function renderDiagram(id: string, source: string) {
+	return renders.run(async () => {
+		const mermaid = await loadMermaid();
 		mermaid.initialize({
 			startOnLoad: false,            // never auto-scan the panel DOM for `.mermaid` nodes
 			securityLevel: "strict",       // sanitize model-authored labels; strip scripts, handlers and foreign HTML
@@ -34,9 +41,8 @@ function loadMermaid(): Promise<Mermaid> {
 			// No icon packs, web fonts or CDN URLs are configured: the whole diagram renders from the
 			// bundled chunk with only system fonts, so nothing leaves the extension origin.
 		});
-		return mermaid;
-	}).catch((error) => { runtime = undefined; throw error; });
-	return runtime;
+		return mermaid.render(id, source);
+	});
 }
 
 function resolvedTheme(): "dark" | "default" {
@@ -82,7 +88,7 @@ class MermaidFence implements FenceEnricher {
 		host.reveal();
 		let cancelled = false;
 		const id = `oshawott-mermaid-${++nextId}`;
-		void loadMermaid().then((mermaid) => mermaid.render(id, host.source)).then((result) => {
+		void renderDiagram(id, host.source).then((result) => {
 			const svg: unknown = (result as { svg?: unknown } | undefined)?.svg;
 			if (typeof svg !== "string") throw new Error("Mermaid returned no diagram");
 			if (cancelled || host.stale()) return;

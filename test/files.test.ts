@@ -7,6 +7,7 @@ import { InlineCodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codem
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { ChatFiles, type FileBackend, MAX_FILE_BYTES } from "../src/engine/files.ts";
 import { withAbortSignal } from "../src/lib/chord.ts";
+import { readToolDetails } from "../src/tools/details.ts";
 import { openFiles } from "./support/files.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, fakeBrowser, openEngine, portPair, serveBrowser, useModel } from "./support/world.ts";
@@ -154,7 +155,7 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, and the pane
 		assert.equal(requests.length, 1);
 		assert.equal(requests[0]?.init?.credentials, "omit");
 		assert.match(textOf(fetched!), /HTTP 200 · application\/json · 17 bytes\nSaved the body to \/workspace\/items\.json\./);
-		assert.deepEqual(fetched!.details, { http: { status: 200, bytes: 17 } });
+		assert.deepEqual(readToolDetails(fetched!.details, "fetch")?.http, { status: 200, bytes: 17 });
 		assert.equal(textOf(read!), '{"items":[1,2,3]}');
 		assert.equal(code!.isError, false, textOf(code!));
 		assert.match(textOf(code!), /"total":6/);

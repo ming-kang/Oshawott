@@ -6,7 +6,6 @@ import { PANEL_LINK_LIMITS } from "../contracts/chat.ts";
 import { BrokerHost, EngineHost, type Principal, TabHost } from "../contracts/hosts.ts";
 import { PAGE_LINK_LIMITS } from "../contracts/page.ts";
 import { type Context, createHost, type Host, type HostError, type Link } from "../lib/chord.ts";
-import { completeAttachmentDeletes } from "./attachments.ts";
 import { ConversationActivity } from "./activity.ts";
 import { Approvals } from "./approvals.ts";
 import { preference, ProvidersDoc, WorkspaceDoc, type WorkspaceState } from "./docs.ts";
@@ -170,7 +169,6 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	if (workspaceRevision === 0) acceptWorkspace(workspaceObservation.value, context);
 	const titles = new ChatTitles({ harness, models: options.models, providers, timeoutMs: options.titleTimeoutMs ?? TITLE_TIMEOUT_MS });
 	await resumeFileDeletes(harness, options.files, context, onError);
-	await completeAttachmentDeletes(harness, options.files, context, onError);
 	const admin = new ProviderAdmin({ harness, models: options.models, credentials: options.credentials, providers, logins, fetch: options.fetch, onError });
 	// A finished sign-in changes the provider's auth, and the account decides which models it may use.
 	const signedIn = new Set<string>();

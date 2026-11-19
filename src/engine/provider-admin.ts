@@ -1,5 +1,5 @@
 import { clampThinkingLevel, getSupportedThinkingLevels, type CredentialStore, type MutableModels } from "@earendil-works/pi-ai";
-import { AgentDoc, type ConversationId, type Harness } from "@earendil-works/pi-durable";
+import { AgentDoc, type ConversationId, type Harness, type Tx } from "@earendil-works/pi-durable";
 import type { ChatConfiguration, ModelApi, ModelRef, ProbeModelsResult, ProviderProfile, ThinkingLevel } from "../contracts/chat.ts";
 import { ChordError, type Context } from "../lib/chord.ts";
 import { Serial } from "../lib/serial.ts";
@@ -105,29 +105,24 @@ export class ProviderAdmin {
 		const { harness, credentials, providers, onError } = this.#services;
 		return this.serialize(async () => {
 			const profile = normalizeProfile(input);
-			const previous = providers.profile(profile.id);
 			const activate = await providers.prepare(profile);
 			const available = providers.candidateModelIds(profile);
-			for (const model of await this.#modelsInUse(ctx)) {
-				if (model.provider === profile.id && !available.has(model.modelId)) {
-					invalid(`Model ${model.modelId} is still used by the default model or a chat. Choose another model before removing it.`);
-				}
-			}
 			const previousKey = key === undefined ? undefined : await credentials.read(profile.id);
 			if (key !== undefined) {
 				const stored = apiKey(key);
 				await credentials.modify(profile.id, async () => ({ type: "api_key", key: stored }));
 			}
-			const writeProfile = (next: ProviderProfile | undefined) => harness.commit(async (tx) => {
-				const doc = await tx.doc(ProvidersDoc);
-				doc.custom = [...doc.custom.filter((provider) => provider.id !== profile.id), ...(next ? [next] : [])];
-			}, ctx);
-			let committed = false;
 			try {
-				await writeProfile(profile);
-				committed = true;
+				await harness.commit(async (tx) => {
+					for (const model of await this.#modelsInUse(tx)) {
+						if (model.provider === profile.id && !available.has(model.modelId)) {
+							invalid(`Model ${model.modelId} is still used by the default model or a chat. Choose another model before removing it.`);
+						}
+					}
+					const doc = await tx.doc(ProvidersDoc);
+					doc.custom = [...doc.custom.filter((provider) => provider.id !== profile.id), profile];
+				}, ctx);
 			} catch (error) {
-				if (committed) await writeProfile(previous).catch(onError);
 				if (key !== undefined) {
 					if (previousKey) await credentials.modify(profile.id, async () => previousKey);
 					else await credentials.delete(profile.id);
@@ -143,14 +138,14 @@ export class ProviderAdmin {
 	remove(provider: string, ctx: Context) {
 		const { harness, credentials, providers, onError } = this.#services;
 		return this.serialize(async () => {
-			if ((await this.#modelsInUse(ctx)).some((model) => model.provider === provider)) {
-				invalid("This provider is still used by the default model or a chat. Choose another model before deleting it.");
-			}
 			const activate = await providers.prepareDelete(provider);
 			const previousKey = await credentials.read(provider);
 			await credentials.delete(provider);
 			try {
 				await harness.commit(async (tx) => {
+					if ((await this.#modelsInUse(tx)).some((model) => model.provider === provider)) {
+						invalid("This provider is still used by the default model or a chat. Choose another model before deleting it.");
+					}
 					const doc = await tx.doc(ProvidersDoc);
 					doc.custom = doc.custom.filter((item) => item.id !== provider);
 				}, ctx);
@@ -163,11 +158,14 @@ export class ProviderAdmin {
 		});
 	}
 
-	async #modelsInUse(ctx: Context): Promise<ModelRef[]> {
-		const { harness } = this.#services;
-		const workspace = await harness.snapshot(WorkspaceDoc, ctx);
-		const chats = await Promise.all((workspace?.chats ?? []).map(async (chat) => (await harness.snapshot(AgentDoc, chat.id as ConversationId, ctx))?.model));
-		return [workspace?.defaultModel, ...chats].filter((model): model is ModelRef => model !== null && model !== undefined);
+	async #modelsInUse(tx: Tx): Promise<ModelRef[]> {
+		const workspace = await tx.doc(WorkspaceDoc);
+		const models = workspace.defaultModel ? [workspace.defaultModel] : [];
+		for (const chat of workspace.chats) {
+			const { model } = await tx.doc(AgentDoc, chat.id as ConversationId);
+			if (model) models.push(model);
+		}
+		return models;
 	}
 }
 

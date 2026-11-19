@@ -43,7 +43,8 @@ ${Array.from({ length: 30 }, (_, i) => `<i class="many">${i}</i>`).join("")}
 
 /** Nested-DOM fixture: open and closed shadow roots and a same-origin frame, for deep page-tool reads. */
 export const NESTED_PAGE = `<!doctype html><title>Nested fixture</title>
-<div id="open-host"></div><div id="closed-host"></div>
+<div id="open-host"></div><div id="closed-host"></div><div id="hidden-host" hidden></div>
+<div id="boxless-host" style="display:contents"></div>
 <iframe src="/nested-frame" style="display:block;width:420px;height:180px;border:6px solid #888"></iframe>
 <button id="reveal" aria-expanded="false">Reveal</button>
 <input id="fu" type="file" multiple aria-label="Attach" onchange="log('files:'+[...this.files].map(f=>f.name+':'+f.size).join(','))">
@@ -52,11 +53,13 @@ export const NESTED_PAGE = `<!doctype html><title>Nested fixture</title>
 <pre id="log"></pre><script>
 function log(t){document.getElementById('log').textContent+=t+' '}
 const open=document.getElementById('open-host').attachShadow({mode:'open'});
-open.innerHTML='<p>Shadowed words</p><button id="sh-open">Shadow Open</button>';
+open.innerHTML='<style>p { --shadow-source: private-css }</style><p>Shadowed words</p><p hidden>Hidden shadow child</p><button id="sh-open">Shadow Open</button>';
 open.querySelector('#sh-open').addEventListener('click',()=>log('shadow:open'));
 const closed=document.getElementById('closed-host').attachShadow({mode:'closed'});
 closed.innerHTML='<p>Sealed words</p><button id="sh-closed">Shadow Closed</button>';
 closed.querySelector('#sh-closed').addEventListener('click',()=>log('shadow:closed'));
+document.getElementById('hidden-host').attachShadow({mode:'open'}).innerHTML='<p>Hidden shadow host</p>';
+document.getElementById('boxless-host').attachShadow({mode:'open'}).innerHTML='<p>Boxless host words</p><div style="display:contents">Boxless child words<span hidden>Hidden boxless child</span></div>';
 document.getElementById('reveal').addEventListener('click',function(){
 this.setAttribute('aria-expanded','true');log('reveal');
 const m=document.createElement('div');m.setAttribute('role','menu');
