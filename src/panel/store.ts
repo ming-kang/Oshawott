@@ -21,6 +21,7 @@ export class PanelStore {
 	#preferenceValues: Readonly<Record<Preference, boolean>> = PREFERENCE_DEFAULTS;
 	readonly reconnecting = shallowRef(false);
 	readonly sending = shallowRef(false);
+	readonly forking = shallowRef(false);
 	readonly conversationKey = shallowRef(0);
 
 	readonly chats: ComputedRef<ChatSession["chats"]>;

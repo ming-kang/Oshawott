@@ -261,38 +261,31 @@
 	}
 }
 
-.chat-actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 2px;
-	padding: 0 var(--space-1) var(--space-1);
-	animation: rise var(--duration-base) var(--ease);
+.chat-actions-menu {
+	width: max-content;
+	min-inline-size: 168px;
+	max-width: calc(100vw - 24px);
+	padding: 6px;
 }
 
-.chat-action {
-	height: 26px;
-	padding: 0 var(--space-2);
-}
-
-@media (hover: hover) {
-	.chat-action:hover:not(:disabled) {
-		background: var(--fill-quiet-hover);
-	}
-}
-
-.chat-action.remove[data-confirm],
-.chat-action.remove:hover:not(:disabled) {
+.chat-actions-menu .menu-item.danger,
+.chat-actions-menu .menu-item.danger .icon {
 	color: var(--danger);
 }
 
-.chat-action[data-confirm] {
-	background: var(--fill-quiet-hover);
-	color: var(--text);
+.chat-actions-menu .menu-item[data-confirm] {
+	background: var(--fill-ghost-hover);
 	font-weight: var(--weight-emphasis);
 }
 
-.chat-action.remove[data-confirm] {
+.chat-actions-menu .menu-item.danger[data-confirm] {
 	background: var(--danger-soft);
+}
+
+.chat-title mark {
+	border-radius: var(--radius-xs, 2px);
+	background: color-mix(in srgb, var(--accent) 24%, transparent);
+	color: inherit;
 }
 
 .rename-form {

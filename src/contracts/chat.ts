@@ -139,7 +139,7 @@ export type ChatSummary = Static<typeof ChatSummary>;
 export const MAX_INSTRUCTIONS_CHARS = 100_000;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 8,
+	version: 9,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -164,6 +164,8 @@ export const Workspace = remote("oshawott.workspace", {
 				deleteChat: method(obj({ id: int() })),
 				/** Empty titles restore the first-message fallback but still count as a manual title decision. */
 				renameChat: method(obj({ id: int(), title: str({ max: 500 }) })),
+				/** Starts a new chat from `id`'s history before the user entry `entry` and resends that input (its text replaced by `text` when given). The original chat is unchanged. */
+				forkChat: method(obj({ id: int(), entry: typed<EntryId>(int()), title: str({ max: 500 }), text: opt(str({ max: 1_000_000 })), requestId: str({ min: 1, max: 200 }) }), int()),
 				setPreference: method(obj({ key: Preference, enabled: bool() })),
 				/** Blank text restores the built-in instructions; both return the instructions now in effect. */
 				setInstructions: method(obj({ instructions: str({ max: MAX_INSTRUCTIONS_CHARS }) }), str()),

@@ -162,25 +162,27 @@ export async function testPanel(source: Source, origin?: string) {
 	await settled();
 	const idleSelect = chatSelect.getBoundingClientRect();
 	chatRow.querySelector<HTMLButtonElement>('[data-action="more"]')!.click();
-	const chatActions = await until(() => chatRow.querySelector<HTMLElement>(".chat-actions"));
+	const chatActions = await until(() => document.querySelector<HTMLElement>(".chat-actions-menu"));
 	await settled();
 	const openSelect = chatSelect.getBoundingClientRect();
 	const actionsRect = chatActions.getBoundingClientRect();
-	const rowRect = chatRow.getBoundingClientRect();
-	step("opening a chat's menu leaves its title in place and keeps the actions inside the row",
+	const moreRect = chatRow.querySelector<HTMLElement>('[data-action="more"]')!.getBoundingClientRect();
+	step("opening a chat's menu pops over the drawer, hugs the more button and leaves the title in place",
 		idleSelect.left === openSelect.left && idleSelect.top === openSelect.top && idleSelect.width === openSelect.width
-		&& actionsRect.top >= openSelect.bottom && actionsRect.right <= rowRect.right && actionsRect.bottom <= rowRect.bottom,
-		JSON.stringify({ idle: idleSelect, open: openSelect, actions: actionsRect }));
+		&& Boolean(document.querySelector("#chat-drawer"))
+		&& Math.abs(actionsRect.right - moreRect.right) <= 2 && actionsRect.right <= innerWidth && actionsRect.bottom <= innerHeight
+		&& document.querySelectorAll(".overlay:not(.leaving)").length === 1,
+		JSON.stringify({ idle: idleSelect, open: openSelect, actions: actionsRect, more: moreRect }));
 	const openMenu = async (id: number | undefined) => {
 		const row = `.chat-item[data-id="${id}"]`;
-		if (!document.querySelector(`${row} .chat-actions`)) click(`${row} [data-action="more"]`);
-		await until(() => document.querySelector(`${row} [data-action="rename"]`));
+		if (!document.querySelector(".chat-actions-menu")) click(`${row} [data-action="more"]`);
+		await until(() => document.querySelector(".chat-actions-menu [data-action='rename']"));
 	};
 	const renamedId = source.chats.value[0]?.id;
 	const originalTitle = source.chats.value[0]?.title ?? "";
 	const renamedRow = document.querySelector(`.chat-item[data-id="${renamedId}"]`);
 	await openMenu(renamedId);
-	click(`.chat-item[data-id="${renamedId}"] [data-action="rename"]`);
+	click('.chat-actions-menu [data-action="rename"]');
 	await until(() => document.querySelector(".rename-input"));
 	const rename = document.querySelector<HTMLInputElement>(".rename-input")!;
 	rename.value = "Panel smoke title";
@@ -206,22 +208,29 @@ export async function testPanel(source: Source, origin?: string) {
 	await source.renameChat({ id: renamedId!, title: originalTitle }, BACKGROUND_CONTEXT);
 	step("chat titles can be edited inline without leaving the drawer", document.querySelector("#chat-drawer") !== null);
 	await openMenu(resetId);
-	const reset = document.querySelector<HTMLButtonElement>(`.chat-item[data-id="${resetId}"] [data-action="reset"]`)!;
-	click(`.chat-item[data-id="${resetId}"] [data-action="reset"]`);
+	const reset = document.querySelector<HTMLButtonElement>('.chat-actions-menu [data-action="reset"]')!;
+	click('.chat-actions-menu [data-action="reset"]');
 	await until(() => reset.hasAttribute("data-confirm"));
-	const requiresConfirm = reset.hasAttribute("data-confirm") && !reset.disabled;
-	click(`.chat-item[data-id="${resetId}"] [data-action="reset"]`);
-	await until(() => !reset.disabled && !reset.hasAttribute("data-confirm"));
+	const requiresConfirm = reset.hasAttribute("data-confirm") && !reset.disabled && document.contains(reset);
+	click('.chat-actions-menu [data-action="reset"]');
+	await until(() => !document.querySelector(".chat-actions-menu"));
 	step("resetting a background chat keeps its row and focus-managed controls", source.chats.value.some((chat) => chat.id === resetId));
-	step("reset requires confirmation and returns to its idle label after completion", requiresConfirm && !reset.hasAttribute("data-confirm")
-		&& document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="reset"]`) === reset);
-	click(`.chat-item[data-id="${resetId}"] [data-action="rename"]`);
+	step("reset requires confirmation and closes the menu after completion", requiresConfirm && !reset.hasAttribute("data-confirm")
+		&& document.activeElement === document.querySelector(`.chat-item[data-id="${resetId}"] [data-action="more"]`));
+	await openMenu(resetId);
+	click('.chat-actions-menu [data-action="rename"]');
 	await until(() => document.querySelector(".rename-input"));
 	await source.deleteChat({ id: resetId }, BACKGROUND_CONTEXT);
 	await until(() => !document.querySelector(`.chat-item[data-id="${resetId}"]`));
 	step("a renamed chat removed elsewhere drops its draft and focuses a surviving control", !document.querySelector(".rename-input")
 		&& Boolean(document.activeElement?.closest("#chat-drawer") && document.activeElement.matches("button")),
 		JSON.stringify({ active: document.activeElement?.outerHTML?.slice(0, 240), rows: document.querySelectorAll(".chat-item").length }));
+	click('.chat-item [data-action="more"]');
+	await until(() => document.querySelector(".chat-actions-menu"));
+	escape();
+	await until(() => !document.querySelector(".chat-actions-menu"));
+	step("Escape dismisses only the chat menu and returns focus to its button",
+		Boolean(document.querySelector("#chat-drawer")) && (document.activeElement as HTMLElement)?.dataset.action === "more");
 	escape();
 	await until(() => !document.querySelector("#chat-drawer"));
 
@@ -291,6 +300,28 @@ export async function testPanel(source: Source, origin?: string) {
 		click("#files-back");
 		await until(() => !document.querySelector("#files"));
 	}
+
+	// Editing a committed user message branches the conversation; the original chat stays untouched.
+	const parentTitle = document.querySelector<HTMLElement>("#title")?.textContent ?? "";
+	const chatsBefore = source.chats.value.length;
+	const userRows = await until(() => {
+		const rows = [...document.querySelectorAll<HTMLElement>(".msg.user")];
+		return rows.some((row) => row.querySelector('[data-action="edit"]')) ? rows : undefined;
+	});
+	userRows[0]!.querySelector<HTMLElement>('[data-action="edit"]')!.click();
+	const editArea = await until(() => document.querySelector<HTMLTextAreaElement>(".user-edit-text"));
+	editArea.value = "Edited in a branch by the panel smoke";
+	editArea.dispatchEvent(new Event("input", { bubbles: true }));
+	click(".user-edit-send");
+	const branchTitle = t("chat.branchTitle", parentTitle);
+	await until(() => document.querySelector<HTMLElement>("#title")?.textContent === branchTitle && source.chats.value.length === chatsBefore + 1, 20_000);
+	const branchTexts = await until(() => {
+		const texts = [...document.querySelectorAll<HTMLElement>(".msg.user .user-text")].map((item) => item.textContent);
+		return texts.length === 1 && texts[0] === "Edited in a branch by the panel smoke" ? texts : undefined;
+	}, 20_000);
+	step("editing a user message continues in a new branch chat and keeps the original",
+		source.chats.value.some((chat) => chat.title === parentTitle) && source.chats.value.some((chat) => chat.title === branchTitle) && branchTexts !== undefined,
+		JSON.stringify(source.chats.value.map((chat) => chat.title)));
 
 	const fixture = h("div");
 	document.body.append(fixture);

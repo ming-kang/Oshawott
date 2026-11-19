@@ -61,7 +61,7 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 
 	const place = () => {
 		const active = props.overlays.current.value;
-		if (active?.kind === "popover" && root?.isConnected) placePopover(root, active);
+		if (active?.kind === "popover" && root?.isConnected && rootKey === active.key) placePopover(root, active);
 	};
 	const disconnect = () => {
 		observer?.disconnect();
@@ -71,6 +71,9 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 	const bindRoot = (key: number, value: unknown) => {
 		const element = elementOf(value);
 		if (element) {
+			// When a popover stacks over a base layer both refs fire; the current overlay wins.
+			const primary = props.overlays.current.value?.key === key;
+			if (!primary && rootKey === props.overlays.current.value?.key) return;
 			root = element;
 			rootKey = key;
 			place();
@@ -80,7 +83,7 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 	const stop = watch(props.overlays.current, async (active, previous) => {
 		const ticket = ++revision;
 		disconnect();
-		previous?.anchor.setAttribute("aria-expanded", "false");
+		if (previous && previous !== props.overlays.under.value) previous.anchor.setAttribute("aria-expanded", "false");
 		if (!active) { root = undefined; return; }
 		await nextTick();
 		if (ticket !== revision || props.overlays.current.value !== active) return;
@@ -91,7 +94,7 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 			observer.observe(root);
 			observer.observe(active.anchor);
 			if (active.boundary) observer.observe(active.boundary);
-		} else if (root) {
+		} else if (root && !active.resumed) {
 			const target = focusable(root)[0] ?? root;
 			target.focus({ preventScroll: true });
 		}
@@ -130,10 +133,14 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 			first.focus({ preventScroll: true });
 		}
 	};
+	// Closing a stacked popover restores its base layer synchronously; the same click must
+	// not then land on the base layer's backdrop and dismiss it too.
+	let swallowBackdropClick = 0;
 	const outside = (event: PointerEvent) => {
 		const active = props.overlays.current.value;
 		if (active?.kind === "popover" && root && event.target instanceof Node && !root.contains(event.target) && !active.anchor.contains(event.target)) {
 			props.overlays.close();
+			if (props.overlays.current.value) swallowBackdropClick = Date.now();
 		}
 	};
 	document.addEventListener("keydown", keydown);
@@ -151,19 +158,19 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 
 	return () => {
 		const active = props.overlays.current.value;
-		if (!active) return null;
-		const close = () => {
-			if (props.overlays.current.value?.key === active.key) props.overlays.close();
-		};
-		const content = h(active.component, {
-			...active.props,
-			"data-overlay-key": active.key,
-			...(active.kind === "popover" ? {} : { role: "dialog", "aria-modal": "true" }),
-			onClose: close,
-			...(active.kind === "popover" ? { ref: (value: unknown) => bindRoot(active.key, value) } : {}),
+		const base = props.overlays.under.value ?? (active?.kind === "popover" ? undefined : active);
+		const popover = active?.kind === "popover" ? active : undefined;
+		if (!base && !popover) return null;
+		const content = (overlay: ActiveOverlay) => h(overlay.component, {
+			...overlay.props,
+			"data-overlay-key": overlay.key,
+			...(overlay.kind === "popover" ? {} : { role: "dialog", "aria-modal": "true" }),
+			onClose: () => {
+				if (props.overlays.current.value?.key === overlay.key) props.overlays.close();
+			},
+			...(overlay.kind === "popover" ? { ref: (value: unknown) => bindRoot(overlay.key, value) } : {}),
 		});
-		if (active.kind === "popover") return content;
-		return (
+		const layer = base && (
 			<Transition
 				leaveActiveClass="leaving"
 				onBeforeLeave={(element) => {
@@ -171,11 +178,15 @@ export const OverlayHost = defineComponent<{ overlays: Overlays }>((props) => {
 					(element as HTMLElement).setAttribute("aria-hidden", "true");
 				}}
 			>
-				<div class={`overlay ${active.kind}-overlay`} key={active.key} data-overlay-key={active.key} ref={(value) => bindRoot(active.key, value)}>
-					<div class="backdrop" onClick={close} />
-					{content}
+				<div class={`overlay ${base.kind}-overlay`} key={base.key} data-overlay-key={base.key} ref={(value) => bindRoot(base.key, value)}>
+					<div class="backdrop" onClick={() => {
+						if (Date.now() - swallowBackdropClick < 500) { swallowBackdropClick = 0; return; }
+						if (props.overlays.current.value?.key === base.key) props.overlays.close();
+					}} />
+					{content(base)}
 				</div>
 			</Transition>
 		);
+		return <>{layer}{popover && content(popover)}</>;
 	};
 }, { props: ["overlays"] });

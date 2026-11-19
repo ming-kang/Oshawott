@@ -88,6 +88,27 @@ export async function testVueComponents(fixture: HTMLElement, step: Step, escape
 		const failure: RunFailure = { taskId: 1 as TaskId, inputs: [], reason: "restart_limit", detail: "Retry exhausted" };
 		await transcript.update({ kind: "conversation", view: { ...view, entries: [...entries, result], docs: { "pi.live": { runFailure: failure } } }, ready: true });
 		step("all upstream failure reasons remain renderable", transcript.element.querySelector<HTMLElement>(".notice")?.dataset.reason === "restart_limit");
+		const failed = fauxAssistantMessage("", { stopReason: "error", errorMessage: `500: {"message":"The server had an error while processing your request","type":"server_error"}` });
+		const failedEntry: EntryRecord = { id: 4 as EntryId, conversationId, kind: "pi.assistant", model: [failed] };
+		const retrying: LiveState = { run: { taskId: 1 as TaskId, inputs: [], turns: 0 }, generation: { attempt: 2, retry: { at: Date.now() + 60_000, error: failed.errorMessage! } } };
+		await transcript.update({ kind: "conversation", view: { ...view, entries: [...entries, result, failedEntry], docs: { "pi.live": retrying } }, ready: true });
+		const retryNotices = [...transcript.element.querySelectorAll<HTMLElement>(".notice")];
+		step("a pending retry reuses the failed answer's notice instead of adding a retry row and typing indicator",
+			retryNotices.length === 1 && retryNotices[0]?.dataset.tone === "warn" && Boolean(retryNotices[0]?.querySelector(".notice-retry")) && !transcript.element.querySelector(".typing"),
+			JSON.stringify(retryNotices.map((notice) => notice.outerHTML.slice(0, 160))));
+		const failedAgain: EntryRecord = { id: 5 as EntryId, conversationId, kind: "pi.assistant", model: [failed] };
+		const modelFailure: RunFailure = { taskId: 1 as TaskId, inputs: [], reason: "model_error", detail: failed.errorMessage };
+		await transcript.update({ kind: "conversation", view: { ...view, entries: [...entries, result, failedEntry, failedAgain], docs: { "pi.live": { runFailure: modelFailure } } }, ready: true });
+		const failureNotices = [...transcript.element.querySelectorAll<HTMLElement>(".notice")];
+		step("a final model failure collapses the entry and run failure into one notice",
+			failureNotices.length === 2 && transcript.element.querySelectorAll(".notice-recovered").length === 1 && Boolean(transcript.element.querySelector(".notice[data-reason='model_error'] #retry")),
+			JSON.stringify(failureNotices.map((notice) => notice.dataset.reason)));
+		const answered: EntryRecord = { id: 6 as EntryId, conversationId, kind: "pi.assistant", model: [fauxAssistantMessage("Recovered answer")] };
+		await transcript.update({ kind: "conversation", view: { ...view, entries: [...entries, result, failedEntry, failedAgain, answered], docs: {} }, ready: true });
+		step("consecutive retried errors collapse into one counted line that reopens",
+			transcript.element.querySelectorAll(".notice-recovered").length === 1 && transcript.element.querySelectorAll(".notice").length === 1
+				&& transcript.element.querySelector(".notice-recovered-label")?.textContent?.includes(t("error.retriedTimes", 2)) === true,
+			transcript.element.querySelector(".notice-recovered-label")?.textContent);
 		await transcript.update({ kind: "empty", ready: true });
 		step("switching to a new chat clears committed rows and cards", !transcript.element.querySelector(".msg, .tool") && !transcript.busy);
 		transcript.dispose();

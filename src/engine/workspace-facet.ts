@@ -1,10 +1,12 @@
-import type { ConversationId, Harness } from "@earendil-works/pi-durable";
+import { AgentDoc, type Conversation, type ConversationId, type ConversationInit, type EntryId, type Harness } from "@earendil-works/pi-durable";
 import { DEFAULT_BUSY_MODE, Workspace } from "../contracts/chat.ts";
 import type { Principal } from "../contracts/hosts.ts";
-import { userInput } from "../lib/attachments.ts";
+import { USER_ENTRY, userInput } from "../lib/attachments.ts";
 import { ChordError, type Context, type FacetHost } from "../lib/chord.ts";
+import { inputForUpdate, requireContentVision } from "./attachments.ts";
 import { preference, WorkspaceDoc } from "./docs.ts";
 import { type FacetServices, forbidden, gone } from "./facet-services.ts";
+import { type Entry as FileEntry, WORKSPACE } from "./files.ts";
 import { deleteChatFiles } from "./files-lifecycle.ts";
 import { currentInstructions, writeInstructions } from "./instructions.ts";
 import { titleOf } from "./titles.ts";
@@ -97,6 +99,85 @@ export function serveWorkspace(host: FacetHost<Principal>, services: FacetServic
 						current.titleSource = "manual";
 					}, ctx);
 					return null;
+				}),
+				forkChat: ({ id, entry, title, text, requestId }, ctx) => services.chatLine.run(id, async () => {
+					const workspace = await harness.snapshot(WorkspaceDoc, ctx);
+					const summary = workspace?.chats.find((chat) => chat.id === id);
+					if (!summary) throw gone(id);
+					const parent = await harness.conversation(id as ConversationId, ctx);
+					if (!parent) throw gone(id);
+					const found = await parent.entries({ minEntryId: entry, maxEntryId: entry }, 1, undefined, ctx);
+					const record = found.items[0];
+					if (!record || (record.kind !== "pi.user" && record.kind !== USER_ENTRY)) return invalid("Not a user message.");
+					const message = record.model?.find((item) => item.role === "user");
+					// Rebuild the input from the entry; image blocks come along with the model content, attachment bytes stay
+					// at their paths. An invalid result (empty, no attachments) fails before any chat exists.
+					const input = inputForUpdate(
+						{
+							content: message?.role === "user" ? message.content : "",
+							...(record.kind === USER_ENTRY ? { entry: { kind: record.kind, data: record.data } } : {}),
+						},
+						text, [], new Set(),
+					);
+					// The creating commit records `requestId` on the summary, so a retried call converges on the same chat:
+					// the files copy and the resend below are both idempotent.
+					let target: Conversation | undefined;
+					const forked = workspace!.chats.find((chat) => chat.forkRequestId === requestId)?.id;
+					if (forked !== undefined) target = await harness.conversation(forked as ConversationId, ctx);
+					if (!target) {
+						const agent = await harness.snapshot(AgentDoc, id as ConversationId, ctx);
+						const createdAt = services.now();
+						const init: ConversationInit = async (tx, conversationId) => {
+							const doc = await tx.doc(WorkspaceDoc);
+							doc.chats.push({
+								id: conversationId, title, createdAt, updatedAt: createdAt, titleSource: "manual", titleInitialized: true,
+								...(summary.fallbackTitle !== undefined ? { fallbackTitle: summary.fallbackTitle } : {}),
+								forkRequestId: requestId,
+							});
+							await writeInstructions(tx, undefined, conversationId);
+						};
+						// `agent` applies after the creation hook's as-of copy: the branch runs the current selection,
+						// not the model that answered at the fork point.
+						const change = { model: agent?.model ?? null, thinkingLevel: agent?.thinkingLevel ?? "off" };
+						const earlier = await parent.entries({ maxEntryId: (entry - 1) as EntryId, order: "descending" }, 1, undefined, ctx);
+						const at = earlier.items[0]?.id;
+						target = at === undefined
+							? await harness.createConversation({ ownership: { kind: "ownerless" }, agent: change, init }, ctx)
+							: await parent.fork(at, { ownership: { kind: "ownerless" }, agent: change, init }, ctx);
+					}
+					const newId = target.id;
+					// A placed input means an earlier call completed; the copy always precedes it.
+					const placed = await harness.commit((tx) => tx.submissionByRequest(target.id, requestId), ctx);
+					if (placed) return newId;
+					try {
+						const copied = await services.files.transact(id, "readonly", async (tx) => {
+							const files: [string, FileEntry, Uint8Array | undefined][] = [];
+							for (const [path, file] of await tx.below(WORKSPACE)) {
+								files.push([path, file, file.kind === "file" ? (await tx.data(path)) ?? new Uint8Array() : undefined]);
+							}
+							return { root: await tx.get(WORKSPACE), files };
+						});
+						await services.files.transact(newId, "readwrite", async (tx) => {
+							tx.put(WORKSPACE, copied.root ?? { kind: "directory", size: 0, mtimeMs: services.now() });
+							for (const [path, file, data] of copied.files) tx.put(path, file, data);
+						});
+					} catch (error) {
+						await deleteChatFiles(harness, services.files, newId, ctx);
+						throw error;
+					}
+					await target.commit(async (tx) => {
+						// Recheck inside the commit: a resume may find the same request already admitted.
+						const known = await tx.submissionByRequest(target.id, requestId);
+						if (known) return;
+						const doc = await tx.doc(WorkspaceDoc);
+						const current = doc.chats.find((chat) => chat.id === newId);
+						if (!current) throw gone(newId);
+						const agent = await tx.doc(AgentDoc, target.id);
+						requireContentVision(services.models, agent.model ?? doc.defaultModel, input.content);
+						await target.submit(tx, { type: "input", content: input.content, ...(input.entry ? { entry: input.entry } : {}), requestId });
+						current.updatedAt = services.now();
+					}, ctx);
+					return newId;
 				}),
 				setPreference: async ({ key, enabled }, ctx) => {
 					await harness.commit(async (tx) => { (await tx.doc(WorkspaceDoc))[key] = enabled; }, ctx);

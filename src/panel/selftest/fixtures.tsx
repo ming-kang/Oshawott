@@ -27,7 +27,7 @@ export class TranscriptFixture {
 	constructor(actions: TranscriptFixtureActions) {
 		const store = {
 			transcript: this.#transcript, status: this.#status, loaded: this.#loaded, ready: this.#ready,
-			view: computed(() => this.#transcript.value), live: this.#live, busy: this.#busy,
+			view: computed(() => this.#transcript.value), live: this.#live, busy: this.#busy, forking: shallowRef(false),
 			loadEarlier: async () => undefined, fillGap: async () => undefined,
 		};
 		this.controller = {

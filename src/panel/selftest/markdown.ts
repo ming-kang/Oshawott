@@ -295,6 +295,17 @@ async function testScrollFollow() {
 		filler.style.minHeight = `${filler.offsetHeight + 200}px`;
 		await frames();
 		steps.push({ name: "late content growth does not pull a reader away from earlier messages", ok: Math.abs(scroller.scrollTop - reading) < 2 && !jump.hidden, detail: `scrollTop=${reading} → ${scroller.scrollTop}` });
+
+		// A small upward wheel step leaves the gap under the old 72px threshold; intent, not distance, ends following.
+		scroller.scrollTo({ top: scroller.scrollHeight });
+		await frames();
+		scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, bubbles: true }));
+		scroller.scrollTop = Math.max(0, scroller.scrollTop - 40);
+		await frames();
+		const wheeled = scroller.scrollTop;
+		filler.style.minHeight = `${filler.offsetHeight + 200}px`;
+		await frames();
+		steps.push({ name: "an upward wheel on a pinned reader ends follow; growth keeps position and shows jump", ok: Math.abs(scroller.scrollTop - wheeled) < 2 && !jump.hidden, detail: `scrollTop=${wheeled} → ${scroller.scrollTop}` });
 	} finally {
 		filler.remove();
 		scroller.scrollTop = pinned ? scroller.scrollHeight : originalTop;

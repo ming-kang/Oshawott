@@ -1,7 +1,8 @@
 import { formatBytes } from "../lib/bytes.ts";
 import { hostOf } from "../platform/patterns.ts";
 import { t } from "./i18n/index.ts";
-import type { IconName } from "./ui.ts";
+import { codeBlock } from "./tool-highlight.ts";
+import { h, type IconName } from "./ui.ts";
 
 /** Model text is data, never markup. */
 export interface ToolResult {
@@ -76,6 +77,124 @@ const elementAndInputMeta = (details: unknown, argsMeta: string): string | undef
 	return element && [element, argsMeta].filter(Boolean).join(" · ");
 };
 
+const parseJsonRecord = (text: string): Record<string, unknown> | undefined => {
+	try {
+		return record(JSON.parse(text));
+	} catch {
+		return undefined;
+	}
+};
+
+export interface SnapshotResultView {
+	url: string;
+	title: string;
+	text: string;
+	elements: { ref: string; role: string; name: string }[];
+}
+
+/** The `page_snapshot` result is its `SnapshotResult` serialized as JSON for the model. */
+export function parseSnapshotResult(text: string): SnapshotResultView | undefined {
+	const data = parseJsonRecord(text);
+	if (!data || typeof data.url !== "string" || typeof data.title !== "string" || !Array.isArray(data.elements)) return undefined;
+	const elements = data.elements.flatMap((entry) => {
+		const element = record(entry);
+		return element && typeof element.ref === "string" && typeof element.role === "string" && typeof element.name === "string"
+			? [{ ref: element.ref, role: element.role, name: element.name }]
+			: [];
+	});
+	return { url: data.url, title: data.title, text: typeof data.text === "string" ? data.text : "", elements };
+}
+
+/** The `codemode` result header from Durable's `formatResult`: status line, wall time, then the output. */
+export function parseCodemodeResult(text: string): { ok: boolean; seconds: string; output: string } | undefined {
+	const match = /^Script (completed|failed)\nWall time ([\d.]+) seconds\nOutput:\n?([\s\S]*)$/.exec(text);
+	return match ? { ok: match[1] === "completed", seconds: match[2]!, output: match[3]! } : undefined;
+}
+
+/** The `ls` result lines: `path/` for directories, `path  (N bytes)` for files, bracketed notes. */
+const parseListing = (text: string): { entries: { name: string; size?: number }[]; note?: string; empty?: string } | undefined => {
+	const entries: { name: string; size?: number }[] = [];
+	let note: string | undefined;
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		const file = /^(.*\S)\s{2}\((\d+) bytes\)$/.exec(line);
+		if (file) { entries.push({ name: file[1]!, size: Number(file[2]!) }); continue; }
+		if (line.startsWith("[")) { note ??= line; continue; }
+		if (/ is empty\.$/.test(line)) return { entries, note, empty: line };
+		entries.push({ name: line });
+	}
+	return { entries, note };
+};
+
+const prettyJson = (text: string): string | undefined => {
+	try {
+		return JSON.stringify(JSON.parse(text), null, 2);
+	} catch {
+		return undefined;
+	}
+};
+
+const SNAPSHOT_ELEMENTS_SHOWN = 40;
+
+const snapshotBody = ({ text }: ToolResult): Node | undefined => {
+	const snapshot = parseSnapshotResult(text);
+	if (!snapshot) return undefined;
+	const shown = snapshot.elements.slice(0, SNAPSHOT_ELEMENTS_SHOWN);
+	return h("div", { class: "tool-view" },
+		h("div", { class: "tv-title" }, snapshot.title || snapshot.url),
+		snapshot.url !== snapshot.title ? h("div", { class: "tv-url" }, snapshot.url) : null,
+		shown.length ? h("div", { class: "tv-rows" },
+			...shown.map((element) => h("div", { class: "tv-row" },
+				h("span", { class: "tv-ref" }, element.ref),
+				h("span", { class: "tv-role" }, element.role),
+				h("span", { class: "tv-name" }, element.name || "—"),
+			)),
+			snapshot.elements.length > shown.length ? h("div", { class: "tv-note" }, t("tool.more", snapshot.elements.length - shown.length)) : null,
+		) : null,
+		snapshot.text ? h("div", { class: "tv-text" }, snapshot.text) : null,
+	);
+};
+
+const fetchBody = ({ text }: ToolResult): Node | undefined => {
+	const [line = ""] = text.split("\n");
+	if (!/^HTTP \d{3}\b/.test(line)) return undefined;
+	const rest = text.slice(line.length).trim();
+	const pretty = rest ? prettyJson(rest) : undefined;
+	return h("div", { class: "tool-view" },
+		h("div", { class: "tv-status" }, line),
+		rest ? (pretty !== undefined ? codeBlock(pretty, "json") : h("pre", { class: "tv-preview" }, rest)) : null,
+	);
+};
+
+const codemodeBody = ({ text }: ToolResult): Node | undefined => {
+	const result = parseCodemodeResult(text);
+	if (!result) return undefined;
+	const output = result.output.trim();
+	const json = prettyJson(output);
+	return h("div", { class: "tool-view" },
+		h("div", { class: "tv-head" },
+			h("span", { class: "tv-chip", "data-tone": result.ok ? "success" : "danger" }, t(result.ok ? "tool.done" : "tool.error")),
+			h("span", { class: "tv-meta" }, t("tool.wallTime", result.seconds)),
+		),
+		output ? (json !== undefined ? codeBlock(json, "json") : h("pre", { class: result.ok ? null : "error" }, output)) : null,
+	);
+};
+
+const lsBody = ({ text }: ToolResult): Node | undefined => {
+	const listing = parseListing(text);
+	if (!listing || (!listing.entries.length && !listing.note && !listing.empty)) return undefined;
+	return h("div", { class: "tool-view" },
+		listing.empty ? h("div", { class: "tv-meta" }, listing.empty)
+			: h("div", { class: "tv-rows" },
+				...listing.entries.map((entry) => h("div", { class: "tv-row" },
+					h("span", { class: "tv-name mono" }, entry.name),
+					entry.size !== undefined ? h("span", { class: "tv-size" }, formatBytes(entry.size)) : null,
+				)),
+				listing.note ? h("div", { class: "tv-note" }, listing.note) : null,
+			),
+	);
+};
+
 const registry = new Map<string, ToolView>();
 
 const namesOf = (view: ToolView): readonly string[] => view.names ?? (view.name === undefined ? [] : [view.name]);
@@ -102,7 +221,7 @@ export function resolveToolLook(name: string, args: Record<string, unknown>): To
 }
 
 const BUILTIN_VIEWS: readonly ToolView[] = [
-	defineToolView({ name: "page_snapshot", icon: "eye", label: t("tool.snapshot"), argsMeta: refOrSelectorMeta, resultMeta: snapshotResultMeta }),
+	defineToolView({ name: "page_snapshot", icon: "eye", label: t("tool.snapshot"), argsMeta: refOrSelectorMeta, resultMeta: snapshotResultMeta, body: snapshotBody }),
 	defineToolView({ name: "page_inspect", icon: "code", label: t("tool.inspect"), argsMeta: refOrSelectorMeta, resultMeta: inspectResultMeta }),
 	defineToolView({ name: "page_click", icon: "pointer", label: t("tool.click"), argsMeta: refMeta, resultMeta: elementLabel }),
 	defineToolView({ name: "page_type", icon: "keyboard", label: t("tool.type"), argsMeta: quotedTextMeta, resultMeta: elementAndInputMeta }),
@@ -121,12 +240,12 @@ const BUILTIN_VIEWS: readonly ToolView[] = [
 	}),
 	defineToolView({ name: "tab_activate", icon: "tabs", label: t("tool.activate"), argsMeta: tabIdMeta }),
 	defineToolView({ name: "tab_close", icon: "x", label: t("tool.close"), argsMeta: tabIdMeta }),
-	defineToolView({ name: "codemode", icon: "code", label: t("tool.code") }),
+	defineToolView({ name: "codemode", icon: "code", label: t("tool.code"), body: codemodeBody }),
 	defineToolView({ names: ["read", "read_text"], icon: "file", label: t("tool.read"), argsMeta: pathMeta }),
 	defineToolView({ name: "write", icon: "file", label: t("tool.write"), argsMeta: pathMeta }),
 	defineToolView({ name: "edit", icon: "compose", label: t("tool.edit"), argsMeta: pathMeta }),
-	defineToolView({ name: "ls", icon: "folder", label: t("tool.ls"), argsMeta: (args) => String(args.path ?? "/workspace") }),
-	defineToolView({ name: "fetch", icon: "download", label: t("tool.fetch"), argsMeta: hostMeta, resultMeta: fetchResultMeta }),
+	defineToolView({ name: "ls", icon: "folder", label: t("tool.ls"), argsMeta: (args) => String(args.path ?? "/workspace"), body: lsBody }),
+	defineToolView({ name: "fetch", icon: "download", label: t("tool.fetch"), argsMeta: hostMeta, resultMeta: fetchResultMeta, body: fetchBody }),
 ];
 
 for (const view of BUILTIN_VIEWS) registerToolView(view);

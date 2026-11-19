@@ -17,6 +17,8 @@ export type WorkspaceChat = {
 	titleSource?: TitleSource;
 	/** Set by the first admitted input, the single opportunity for an automatic title. */
 	titleInitialized?: boolean;
+	/** Idempotence key of the forkChat call that created this chat; a retried call returns this chat instead of forking again. */
+	forkRequestId?: string;
 };
 
 export type WorkspaceState = {

@@ -18,6 +18,9 @@
 .msg.user {
 	align-self: flex-end;
 	max-width: 88%;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
 }
 
 .msg.user .bubble {
@@ -48,13 +51,60 @@
 	transition: var(--transition-fade);
 }
 
-.msg.assistant:hover .msg-actions,
+.msg:hover .msg-actions,
 .msg-actions:focus-within {
 	opacity: 1;
 }
 
 .msg-actions .icon-btn {
 	color: var(--text-3);
+}
+
+/* Editing a message branches the chat, so the editor replaces the bubble instead of styling like it. */
+.user-edit {
+	align-self: stretch;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: 100%;
+}
+
+.user-edit-text {
+	width: 100%;
+	min-height: 38px;
+	max-height: 160px;
+	padding: var(--space-2);
+	border: var(--border-width) solid var(--line-strong);
+	border-radius: var(--radius-s);
+	outline: 0;
+	resize: none;
+	background: var(--bg);
+	font: var(--font-ui);
+	line-height: var(--leading-snug);
+	box-sizing: border-box;
+}
+
+.user-edit-text:focus {
+	border-color: var(--accent);
+}
+
+.user-edit-attachments {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+}
+
+.user-edit-note,
+.user-edit-hint {
+	color: var(--text-3);
+	font: var(--font-ui-tertiary);
+}
+
+.user-edit-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
 }
 
 .md {

@@ -3,8 +3,9 @@ import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { Chat } from "../src/contracts/chat.ts";
 import { Page } from "../src/contracts/page.ts";
+import { USER_ENTRY, userInput } from "../src/lib/attachments.ts";
 import { until } from "./support/wait.ts";
-import { connectPanel, context, fakeBrowser, linkTo, openEngine, portPair, serveBrowser, servePage, useModel } from "./support/world.ts";
+import { type ChatRef, connectPanel, context, fakeBrowser, linkTo, openEngine, portPair, serveBrowser, servePage, useModel } from "./support/world.ts";
 
 test("a panel's prompt runs a page tool on its tab and the answer reaches the panel", async () => {
 	const errors: unknown[] = [];
@@ -141,3 +142,102 @@ function untypedNodes(schema: unknown, path: string): string[] {
 	];
 	return [...own, ...children.flatMap(([childPath, child]) => untypedNodes(child, childPath))];
 }
+
+test("forkChat branches an edit into a new chat and leaves the original untouched", async () => {
+	const errors: unknown[] = [];
+	const broker = await serveBrowser(fakeBrowser(), (error) => errors.push(error));
+	const faux = fauxProvider({ models: [{ id: "faux-1", name: "Faux" }] });
+	const respond = () => {
+		faux.appendResponses([respond]);
+		return fauxAssistantMessage("Answer.");
+	};
+	faux.setResponses([respond]);
+	const models = createModels({ credentials: new InMemoryCredentialStore() });
+	models.setProvider(faux.provider);
+	const engine = await openEngine(broker, { models, onError: (error) => errors.push(error) });
+	const panel = await connectPanel(engine);
+	await useModel(panel.workspace, faux);
+
+	const userEntries = (chat: ChatRef) => (chat.view.value?.entries ?? []).filter((entry) => entry.kind === "pi.user" || entry.kind === USER_ENTRY);
+	const userTexts = (chat: ChatRef) => userEntries(chat).flatMap((entry) => {
+		const message = entry.model?.find((item) => item.role === "user");
+		return message?.role === "user" ? [userInput(entry, message.content).text] : [];
+	});
+	const settled = (chat: ChatRef, users: number) =>
+		userEntries(chat).length === users && (chat.view.value?.docs["pi.live"] as { run?: unknown } | undefined)?.run === undefined ? true : undefined;
+
+	const id = await panel.workspace.createChat({}, context);
+	const chat = await panel.chat(id);
+	await chat.send({ text: "first question", requestId: "r1" }, context);
+	await until(() => settled(chat, 1), "the first answer");
+	await chat.send({ text: "second question", requestId: "r2" }, context);
+	await until(() => settled(chat, 2), "the second answer");
+	const parentTexts = userTexts(chat);
+	assert.deepEqual(parentTexts, ["first question", "second question"]);
+
+	// Editing the second message: the branch keeps the first turn, drops the original second input, resends the edit.
+	const before = panel.workspace.chats.value.length;
+	const secondUser = userEntries(chat)[1]!.id;
+	const branchId = await panel.workspace.forkChat({ id, entry: secondUser, title: "Parent (branch)", text: "edited second", requestId: "f1" }, context);
+	assert.notEqual(branchId, id);
+	const branch = await panel.chat(branchId);
+	const branchTexts = await until(() => {
+		const texts = userTexts(branch);
+		return texts.includes("edited second") ? texts : undefined;
+	}, "the edited input in the branch");
+	assert.deepEqual(branchTexts, ["first question", "edited second"]);
+	const branchEntries = branch.view.value?.entries ?? [];
+	const editedAt = branchEntries.findIndex((entry) => {
+		const message = entry.model?.find((item) => item.role === "user");
+		return message?.role === "user" && userInput(entry, message.content).text === "edited second";
+	});
+	assert.ok(branchEntries.slice(0, editedAt).some((entry) => entry.kind === "pi.assistant"), "the first turn's answer came along");
+	assert.deepEqual(userTexts(chat), parentTexts, "the parent's history is unchanged");
+	await until(() => panel.workspace.chats.value.length === before + 1 || undefined, "the branch in the chat list");
+
+	// The same request returns the same chat instead of forking again.
+	const again = await panel.workspace.forkChat({ id, entry: secondUser, title: "Parent (branch)", text: "edited second", requestId: "f1" }, context);
+	assert.equal(again, branchId);
+	assert.equal(panel.workspace.chats.value.length, before + 1);
+
+	// The first message has no earlier entry: a fresh conversation still resends the original input.
+	const firstUser = userEntries(chat)[0]!.id;
+	const emptyId = await panel.workspace.forkChat({ id, entry: firstUser, title: "First (branch)", requestId: "f2" }, context);
+	const empty = await panel.chat(emptyId);
+	const emptyTexts = await until(() => (userTexts(empty).length ? userTexts(empty) : undefined), "the resent first input");
+	assert.deepEqual(emptyTexts, ["first question"]);
+
+	// Attachments keep their paths, which the copied files resolve in the branch.
+	const fileId = await panel.workspace.createChat({}, context);
+	const fileChat = await panel.chat(fileId);
+	await fileChat.send({ text: "plain first", requestId: "r3" }, context);
+	await until(() => settled(fileChat, 1), "the file chat's first answer");
+	const bytes = new TextEncoder().encode("attachment body");
+	await fileChat.send({ text: "with a file", requestId: "r4", attachments: [{ id: "a1", name: "note.txt", mimeType: "text/plain", data: bytes }] }, context);
+	const attachEntry = await until(() => userEntries(fileChat)[1], "the attachment input");
+	const attachMessage = attachEntry.model?.find((item) => item.role === "user");
+	const attachPath = attachMessage?.role === "user" ? userInput(attachEntry, attachMessage.content).attachments[0]?.path : undefined;
+	assert.ok(attachPath);
+	const filesId = await panel.workspace.forkChat({ id: fileId, entry: attachEntry.id, title: "Files (branch)", text: "kept file", requestId: "f3" }, context);
+	const filesBranch = await panel.chat(filesId);
+	const resent = await until(() => {
+		const entries = userEntries(filesBranch);
+		const last = entries.at(-1);
+		const message = last?.model?.find((item) => item.role === "user");
+		const attachments = message?.role === "user" ? userInput(last, message.content).attachments : [];
+		return attachments.length ? attachments : undefined;
+	}, "the resent input's attachments");
+	assert.deepEqual(resent.map((item) => item.path), [attachPath]);
+	const relative = attachPath.replace("/workspace/", "");
+	const file = await until(async () => (await filesBranch.files(context)).find((item) => item.path === relative), "the copied attachment file");
+	assert.ok(file);
+	assert.deepEqual(new Uint8Array(await filesBranch.readFile({ path: file.path }, context)), bytes);
+
+	await panel.close();
+	await engine.close();
+	await broker.close(context);
+	assert.deepEqual(
+		errors.filter((error) => !/closed|released|aborted/i.test(JSON.stringify(error) + String(error))),
+		[],
+	);
+});

@@ -72,6 +72,13 @@ try {
 	await panel.$eval("#scroller", (s) => (s.scrollTop = s.scrollHeight));
 	await both("chat");
 
+	// Editing a user message replaces its bubble with an inline editor that branches the chat.
+	await panel.click(".msg.user [data-action='edit']");
+	await until("the inline message editor", () => panel.$(".user-edit-text"));
+	await both("edit-message");
+	await panel.click(".user-edit-cancel");
+	await until("the editor closed", async () => !(await panel.$(".user-edit")) || undefined);
+
 	await panel.click("#model");
 	await until("the model menu", () => panel.$("#model-menu .menu-item"));
 	for (const [width, height] of [[280, 600], [400, 760], [640, 520]]) {
@@ -107,7 +114,7 @@ try {
 	await until("the drawer", () => panel.$(".chat-item"));
 	await both("chats");
 	await panel.click(".chat-item [data-action='more']");
-	await until("the chat's actions", () => panel.$(".chat-item .chat-actions"));
+	await until("the chat's actions", () => panel.$(".chat-actions-menu"));
 	await both("chats-menu");
 	await panel.keyboard.press("Escape");
 	await panel.keyboard.press("Escape");
@@ -150,7 +157,35 @@ try {
 	await both("file-chat");
 	await panel.click("#files-toggle");
 	await until("the file sheet", () => panel.$$eval(".file-row", (rows) => rows.length === 2 || undefined));
+	await panel.click('.file-row[data-path="items.json"] .file-info');
+	await until("the JSON preview", () => panel.$('.file-preview[data-status="text"] pre'));
 	await both("files");
+	await panel.click("#files-back");
+
+	// "Steps" runs four tools in one go (the read fails), so the transcript folds the run.
+	await panel.click("#new-chat");
+	await panel.type("#prompt", zh ? "步骤" : "steps");
+	await panel.click("#send");
+	await until("the folded tool run", () => panel.evaluate(() =>
+		document.body.dataset.busy === "false" && document.querySelector(".run-fold") || undefined,
+	), 30_000);
+	await both("run-folded");
+	await panel.$eval(".run-fold", (d) => (d.open = true));
+	await panel.$eval('.tool[data-tool="page_snapshot"]', (d) => (d.open = true));
+	await panel.$eval('.tool[data-tool="codemode"]', (d) => (d.open = true));
+	await both("run-expanded");
+
+	// The demo model answers "fail" with a scripted 500, so the shared error notice is real engine output.
+	await panel.click("#new-chat");
+	await panel.type("#prompt", "fail");
+	await until("send enabled", () => panel.$eval("#send", (button) => !button.disabled || undefined));
+	await panel.click("#send");
+	await until("the retrying error notice", () => panel.$('.notice[data-tone="warn"] .notice-retry'), 30_000);
+	await both("error");
+	await until("the final model failure notice", () => panel.$('.notice[data-reason="model_error"] #retry'), 60_000);
+	await panel.$eval('.notice[data-reason="model_error"] .notice-raw', (details) => { details.open = true; });
+	await new Promise((r) => setTimeout(r, 150));
+	await both("error-final");
 } finally {
 	await browser.close();
 	site.close();

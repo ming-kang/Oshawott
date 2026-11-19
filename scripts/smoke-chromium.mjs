@@ -171,7 +171,8 @@ try {
 	await panel.click("#files-back");
 	await panel.click("#chats-toggle");
 	const chats = await until("the chat list", () => panel.$$eval(".chat-item", (items) => (items.length ? items.length : undefined)));
-	step("after the offscreen document closed, the panel works on the next Engine", chats === 3, `${chats} chats kept`);
+	// The kept set: the first chat, its edit branch, the custom-provider chat and this new one.
+	step("after the offscreen document closed, the panel works on the next Engine", chats === 4, `${chats} chats kept`);
 	await panel.keyboard.press("Escape");
 
 	const fresh = async (text) => {

@@ -63,6 +63,21 @@ export class ComposerState implements DraftSource {
 
 	focus(options?: FocusOptions) { this.prompt.value?.focus(options); }
 
+	/** Inserts text at the caret (or the end when the prompt isn't focused), padded by spaces as needed. */
+	insertText(text: string) {
+		const prompt = this.prompt.value;
+		const focused = prompt && document.activeElement === prompt;
+		const start = focused ? prompt.selectionStart : this.text.length;
+		const end = focused ? prompt.selectionEnd : start;
+		const before = this.text.slice(0, start);
+		const after = this.text.slice(end);
+		const insert = `${before && !/\s$/.test(before) ? " " : ""}${text}${after && !/^\s/.test(after) ? " " : ""}`;
+		this.editText(before + insert + after);
+		const caret = (before + insert).length;
+		prompt?.focus({ preventScroll: true });
+		prompt?.setSelectionRange(caret, caret);
+	}
+
 	resize() {
 		const prompt = this.prompt.value;
 		if (!prompt) return;

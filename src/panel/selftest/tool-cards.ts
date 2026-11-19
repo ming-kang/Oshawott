@@ -29,7 +29,7 @@ export async function testToolCards() {
 		error.element.remove();
 	}
 	const proseOnly = new ToolCard("fetch", { url: details.access.url });
-	proseOnly.setResult("No access to denied.example: network error", true);
+	proseOnly.setResult("<harness>\n[error] No access to denied.example: network error\n</harness>", true);
 	const uncoded = new ToolCard("fetch", { url: details.access.url });
 	uncoded.setResult("No access to denied.example", true, details, [{ severity: "error", code: "tool_error", message: "No access to denied.example" }]);
 	const noUrl = new ToolCard("fetch", { url: details.access.url });
@@ -96,6 +96,35 @@ export async function testToolCards() {
 		transcript.dispose();
 		transcript.element.remove();
 	}
+	const errorLine = proseOnly.element.querySelector(".tool-error")?.textContent;
+	const folded = new TranscriptFixture({ suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined, allowed: () => {} });
+	const runNames = ["ls", "read", "fetch", "codemode"];
+	const runEntries: EntryRecord[] = [
+		{
+			id: 10 as EntryId, conversationId, kind: "pi.assistant",
+			model: [fauxAssistantMessage(runNames.map((name, index) => fauxToolCall(name, {}, { id: `run-${index}` })), { stopReason: "toolUse" })],
+		},
+		...runNames.map((name, index): EntryRecord => ({
+			id: (11 + index) as EntryId, conversationId, kind: "pi.tool-result", data: { diagnostics: [] },
+			model: [{ role: "toolResult", toolCallId: `run-${index}`, toolName: name, content: [{ type: "text", text: `result ${index}` }], isError: index === 1, timestamp: 0 }],
+		})),
+		{ id: 15 as EntryId, conversationId, kind: "pi.assistant", model: [fauxAssistantMessage("Finished")] },
+	];
+	let foldOk = false;
+	document.body.append(folded.element);
+	try {
+		await folded.update({ kind: "conversation", view: { conversation: { id: conversationId }, entries: runEntries, docs: {} }, ready: true });
+		const fold = folded.element.querySelector<HTMLDetailsElement>(".run-fold");
+		const cards = [...(fold?.querySelectorAll<HTMLDetailsElement>(".tool") ?? [])];
+		foldOk = fold !== null && fold.open === false && cards.length === 4
+			&& cards.filter((card) => card.dataset.status === "done").length === 3
+			&& cards.some((card) => card.dataset.status === "error")
+			&& fold.querySelector(".run-fold-label")?.textContent === t("run.actions", 4)
+			&& fold.querySelector(".run-fold-failures")?.textContent === t("run.failed", 1);
+	} finally {
+		folded.dispose();
+		folded.element.remove();
+	}
 	return [
 		{
 			name: "fetch grant requests permission synchronously from details, without a port in its pattern",
@@ -107,5 +136,7 @@ export async function testToolCards() {
 		{ name: "inspect cards show the target, then how many elements were shown", ok: inspectArgs === ".item" && inspectMeta === t("tool.inspected", 5, 30), detail: inspectMeta },
 		{ name: "snapshot metadata uses details, not model-facing JSON", ok: snapshotMeta === `UI title · ${t("tool.elements", 3)}` && legacySnapshotIgnored, detail: snapshotMeta },
 		{ name: "Transcript forwards result details and diagnostics to running and orphaned cards", ok: forwarded },
+		{ name: "failed cards surface the first error line under the summary", ok: errorLine === "No access to denied.example: network error", detail: errorLine },
+		{ name: "long tool runs fold into one counted group, still delivering results", ok: foldOk },
 	];
 }

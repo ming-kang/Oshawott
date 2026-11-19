@@ -59,6 +59,63 @@ export function transcriptItems(view: TranscriptView, previous: readonly Transcr
 	return items;
 }
 
+export type TranscriptRow =
+	| { key: string; kind: "item"; item: TranscriptItem }
+	| { key: string; kind: "run"; items: readonly TranscriptItem[]; calls: readonly { id: string; name: string }[]; failures: number };
+
+const RUN_FOLD_THRESHOLD = 3;
+
+const toolCalls = (item: TranscriptItem): { id: string; name: string }[] => {
+	if (item.kind !== "entry" || item.entry.kind !== "pi.assistant") return [];
+	const message = item.entry.model?.[0];
+	if (message?.role !== "assistant" || message.stopReason === "error") return [];
+	const hasText = message.content.some((block) => block.type === "text" && block.text.trim());
+	if (hasText) return [];
+	return message.content.flatMap((block) => block.type === "toolCall" ? [{ id: block.id, name: block.name }] : []);
+};
+
+const isToolResult = (item: TranscriptItem): boolean =>
+	item.kind === "entry" && item.entry.kind === "pi.tool-result" && item.entry.model?.[0]?.role === "toolResult";
+
+/**
+ * Collapse a maximal sequence of tool-call-only assistant entries and their results once it
+ * holds more calls than the threshold. A run still at the committed tail stays open while busy.
+ */
+export function groupToolRuns(items: readonly TranscriptItem[], busy: boolean): TranscriptRow[] {
+	const rows: TranscriptRow[] = [];
+	const lastEntry = items.findLast((item) => item.kind === "entry");
+	let run: TranscriptItem[] = [];
+	let calls: { id: string; name: string }[] = [];
+	let failures = 0;
+	const flush = () => {
+		if (!run.length) return;
+		if (calls.length > RUN_FOLD_THRESHOLD && !(busy && run.at(-1) === lastEntry)) {
+			rows.push({ key: `run:${run[0]!.key}`, kind: "run", items: run, calls, failures });
+		} else {
+			for (const item of run) rows.push({ key: item.key, kind: "item", item });
+		}
+		run = [];
+		calls = [];
+		failures = 0;
+	};
+	for (const item of items) {
+		const itemCalls = toolCalls(item);
+		if (itemCalls.length) {
+			run.push(item);
+			calls.push(...itemCalls);
+		} else if (run.length && isToolResult(item)) {
+			run.push(item);
+			const message = item.kind === "entry" ? item.entry.model?.[0] : undefined;
+			if (message?.role === "toolResult" && message.isError) failures++;
+		} else {
+			flush();
+			rows.push({ key: item.key, kind: "item", item });
+		}
+	}
+	flush();
+	return rows;
+}
+
 export function hasVisibleAnswer(items: readonly TranscriptItem[]) {
 	return items.some((item) => {
 		if (item.kind === "live") return true;

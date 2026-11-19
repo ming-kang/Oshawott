@@ -1,4 +1,5 @@
 import { shallowRef, watch } from "vue";
+import type { EntryId } from "@earendil-works/pi-durable";
 import { Workspace } from "../contracts/chat.ts";
 import type { AttachmentInput } from "../lib/attachments.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
@@ -17,7 +18,7 @@ import { PanelStore } from "./store.ts";
 import { TabTracker } from "./tab.ts";
 import { supportedThinkingLevels, supportsVision } from "./models.ts";
 import { t } from "./i18n/index.ts";
-import { toastError } from "./ui.ts";
+import { toast, toastError } from "./ui.ts";
 
 const context = BACKGROUND_CONTEXT;
 type Origin = { id: number | undefined; revision: number; load: number };
@@ -164,6 +165,26 @@ export class PanelController {
 		} finally {
 			this.store.sending.value = false;
 			this.composer.resize();
+		}
+	}
+
+	/** Edits or resends the input at `entry` by branching the current chat; the original chat is left untouched. */
+	async fork(entry: EntryId, text?: string): Promise<number | undefined> {
+		const workspace = this.session.workspace;
+		const parent = this.session.id;
+		if (!workspace || parent === undefined || this.store.forking.value) return undefined;
+		this.store.forking.value = true;
+		try {
+			const title = this.store.chats.value.find((chat) => chat.id === parent)?.title || t("chat.untitled");
+			const id = await workspace.forkChat({ id: parent, entry, title: t("chat.branchTitle", title), requestId: crypto.randomUUID(), ...(text === undefined ? {} : { text }) }, context);
+			this.selectChat(id);
+			toast(t("chat.branched"));
+			return id;
+		} catch (error) {
+			toastError(error);
+			return undefined;
+		} finally {
+			this.store.forking.value = false;
 		}
 	}
 

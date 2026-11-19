@@ -3,8 +3,9 @@ import { NO_ACCESS_CODE } from "../contracts/browser.ts";
 import { sitePattern } from "../platform/patterns.ts";
 import { ext } from "../platform/webext.ts";
 import { t } from "./i18n/index.ts";
+import { codeBlock, highlightInto } from "./tool-highlight.ts";
 import { record, resolveToolLook, type ToolLook, toolViewFor } from "./tool-views.ts";
-import { h, icon, toast, toastError } from "./ui.ts";
+import { copyButton, h, icon, toast, toastError } from "./ui.ts";
 
 export type ToolStatus = "pending" | "running" | "done" | "error" | "stopped" | "streaming";
 
@@ -34,12 +35,14 @@ export class ToolCard {
 	readonly #summary: HTMLElement;
 	#initialMeta: string;
 	#args: HTMLElement | undefined;
-	#argsText: HTMLPreElement | undefined;
+	#argsPre: HTMLPreElement | undefined;
+	#argsCode: HTMLElement | undefined;
 	#argsSource: string | undefined;
 	readonly #onAllowed: ((site: string) => void) | undefined;
 	#grant: HTMLButtonElement | undefined;
 	#result: HTMLElement | undefined;
 	#output: HTMLElement | undefined;
+	#errorLine: HTMLElement | undefined;
 	#status: ToolStatus = "pending";
 
 	/** `onAllowed`: the user granted the site this call was refused on, so the task can go on. */
@@ -74,16 +77,19 @@ export class ToolCard {
 		this.#argsSource = source;
 		if (source === undefined) {
 			this.#args?.remove();
-			this.#args = this.#argsText = undefined;
+			this.#args = this.#argsPre = this.#argsCode = undefined;
 			return;
 		}
-		if (!this.#argsText) {
-			this.#argsText = h("pre");
-			this.#args = section(t("tool.args"), this.#argsText);
+		if (!this.#args) {
+			this.#argsCode = h("code");
+			this.#argsPre = h("pre", null, this.#argsCode);
+			this.#args = section(t("tool.args"), this.#argsPre, [copyButton(() => this.#argsSource ?? "", t("copy"))]);
 			this.#body.prepend(this.#args);
 		}
-		this.#argsText.classList.toggle("code", code !== undefined);
-		this.#argsText.textContent = source;
+		this.#argsPre!.classList.toggle("code", code !== undefined);
+		this.#argsCode!.className = "";
+		this.#argsCode!.textContent = source;
+		highlightInto(this.#argsCode!, source, code ? "javascript" : "json");
 	}
 
 	setStatus(status: ToolStatus) {
@@ -112,7 +118,7 @@ export class ToolCard {
 		if (this.settled || !output) return;
 		if (!this.#output) {
 			this.#output = h("pre");
-			this.#body.append(section(t("tool.output"), this.#output));
+			this.#body.append(section(t("tool.output"), this.#output, [copyButton(() => this.#output?.textContent ?? "", t("copy"))]));
 		}
 		this.#output.textContent = output.slice(-MAX_SHOWN);
 	}
@@ -121,12 +127,43 @@ export class ToolCard {
 		this.#output?.parentElement?.remove();
 		this.#output = undefined;
 		this.#result?.remove();
+		this.#errorLine?.remove();
+		this.#errorLine = undefined;
 		const view = toolViewFor(this.#name);
 		const rich = isError ? undefined : view?.body?.({ text, isError, details });
 		const shown = pretty(text);
-		const content = rich ?? h("pre", { class: isError ? "error" : null }, shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown);
-		this.#result = section(t("tool.result"), content);
+		const clamped = shown.length > MAX_SHOWN ? `${shown.slice(0, MAX_SHOWN)}\n…` : shown;
+		const rawPre = () => codeBlock(clamped, isError ? undefined : (shown !== text ? "json" : undefined), isError ? "error" : undefined);
+		const actions: Node[] = [];
+		let content: Node;
+		if (rich) {
+			const wrap = h("div", { class: "tool-section-content" }, rich);
+			const toggle = h("button", { class: "tool-toggle", type: "button", "aria-pressed": "false" }, t("tool.raw"));
+			toggle.addEventListener("click", () => {
+				const raw = toggle.getAttribute("aria-pressed") !== "true";
+				toggle.setAttribute("aria-pressed", String(raw));
+				wrap.replaceChildren(raw ? rawPre() : rich);
+			});
+			content = wrap;
+			actions.push(toggle);
+		} else {
+			content = rawPre();
+		}
+		actions.push(copyButton(() => text, t("copy")));
+		this.#result = section(t("tool.result"), content, actions);
 		this.#body.append(this.#result);
+		if (isError) {
+			const line = diagnostics.find((diagnostic) => diagnostic.severity === "error")?.message
+				?? text.split("\n")
+					.map((part) => part.trim())
+					.filter((part) => part && !/^<\/?harness>$/.test(part))
+					.map((part) => part.replace(/^\[(?:error|warning)\]\s*/i, ""))
+					.find(Boolean) ?? "";
+			if (line) {
+				this.#errorLine = h("div", { class: "tool-error" }, line);
+				this.#summary.append(this.#errorLine);
+			}
+		}
 		const meta = isError ? undefined : view?.resultMeta?.(details, this.#initialMeta);
 		this.#meta.textContent = meta ?? this.#initialMeta;
 		this.setStatus(isError ? "error" : "done");
@@ -169,6 +206,8 @@ export class ToolCard {
 	}
 }
 
-function section(title: string, content: Node) {
-	return h("div", { class: "tool-section" }, h("h4", null, title), content);
+function section(title: string, content: Node, actions: Node[] = []) {
+	return h("div", { class: "tool-section" },
+		h("div", { class: "tool-section-head" }, h("h4", null, title), actions.length ? h("div", { class: "tool-section-actions" }, ...actions) : null),
+		content);
 }

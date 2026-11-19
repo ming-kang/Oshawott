@@ -28,13 +28,18 @@
 
 .file-row {
 	display: flex;
-	align-items: center;
-	gap: var(--space-2);
-	padding: var(--space-3);
+	flex-direction: column;
 }
 
 .file-row + .file-row {
 	border-top: 1px solid var(--line);
+}
+
+.file-line {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-3);
 }
 
 .file-icon {
@@ -45,6 +50,20 @@
 .file-info {
 	flex: 1;
 	min-width: 0;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-s);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+@media (hover: hover) {
+	.file-info:hover .file-path {
+		color: var(--accent);
+	}
 }
 
 .file-path {
@@ -106,5 +125,61 @@
 	color: var(--danger);
 	font: var(--font-ui-secondary);
 	overflow-wrap: anywhere;
+}
+
+.file-preview {
+	margin: 0 var(--space-3) var(--space-3);
+	border: var(--border-width) solid var(--line);
+	border-radius: var(--radius-s);
+	background: var(--fill-quiet);
+	overflow: hidden;
+}
+
+.file-preview pre {
+	max-height: 320px;
+	margin: 0;
+	padding: var(--space-3);
+	overflow: auto;
+	background: var(--code-bg);
+	font: var(--font-mono-sm);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.file-preview-image {
+	display: block;
+	max-width: 100%;
+	max-height: 320px;
+	margin: 0 auto;
+	padding: var(--space-2);
+	box-sizing: border-box;
+	object-fit: contain;
+}
+
+.file-preview-state {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-4);
+	color: var(--text-3);
+	font: var(--font-ui-secondary);
+}
+
+.file-preview-state.error {
+	align-items: flex-start;
+	color: var(--danger);
+	overflow-wrap: anywhere;
+}
+
+.file-preview-note {
+	padding: var(--space-1) var(--space-3);
+	border-top: 1px solid var(--line);
+	color: var(--text-3);
+	font: var(--font-ui-tertiary);
+}
+
+.file-preview-note-text {
+	flex: 1;
+	min-width: 0;
 }
 

@@ -132,6 +132,27 @@ export function demoProvider() {
 		const zh = CJK.test(requested);
 		const url = URL_IN_TEXT.exec(requested)?.[0]?.replace(/[.,，。;；!?！？]+$/, "");
 		const method = /^\s*POST\s+https?:\/\//i.test(requested) ? "POST" : "GET";
+		// "Fail": a scripted model error that keeps failing across retries, so error notices can be exercised end to end.
+		if (/\bfail\b|失败/.test(requested)) {
+			return fauxAssistantMessage("", { stopReason: "error", errorMessage: `500: {"message":"The server had an error while processing your request","type":"server_error"}` });
+		}
+		// "Steps": a scripted multi-tool run (one failing) so a folded tool group renders in screenshots.
+		const steps = /\bsteps?\b|步骤/.test(requested);
+		if (steps && last?.role === "toolResult") {
+			return fauxAssistantMessage(zh ? "四步都跑完了。" : "All four steps finished.");
+		}
+		if (steps && last?.role === "user") {
+			return fauxAssistantMessage(
+				[
+					fauxThinking(zh ? "按顺序跑几个工具，看面板怎么折叠一长串调用。" : "Run several tools in sequence to exercise the folded group."),
+					fauxToolCall("page_snapshot", { maxChars: 2000 }),
+					fauxToolCall("ls", { path: "." }),
+					fauxToolCall("read", { path: "missing.txt" }),
+					fauxToolCall("codemode", { code: `return { steps: 4, done: true };` }),
+				],
+				{ stopReason: "toolUse" },
+			);
+		}
 		if (last?.role === "toolResult" && last.toolName === "fetch") {
 			const text = textOf(last);
 			if (last.isError) return fauxAssistantMessage(fetchFailed(text, zh));

@@ -1,10 +1,13 @@
 import { computed, defineComponent, nextTick, onMounted, ref, shallowRef, watch, type PropType } from "vue";
-import type { BusyMode, ModelRef, ThinkingLevel } from "../contracts/chat.ts";
+import type { BusyMode, ChatSummary, ModelRef, ThinkingLevel } from "../contracts/chat.ts";
+import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
 import { t } from "./i18n/index.ts";
 import { compactTokens, configuredProviders, sameModel } from "./models.ts";
 import type { PanelController } from "./controller.ts";
-import { Icon } from "./components.tsx";
-import { toastError } from "./ui.ts";
+import { Icon, useConfirmation } from "./components.tsx";
+import { toast, toastError } from "./ui.ts";
+
+const context = BACKGROUND_CONTEXT;
 
 export const ModelMenu = defineComponent({
 	props: { controller: { type: Object as PropType<PanelController>, required: true } },
@@ -154,6 +157,74 @@ export const SendModeMenu = defineComponent({
 							<span class="send-mode-description">{t(mode === "steer" ? "queue.steerDescription" : "queue.followUpDescription")}</span></span>
 					</button>
 				))}
+			</div>
+		);
+	},
+});
+
+/** Row actions for a chat in the drawer; opens stacked above it, anchored to the row's "more" button. */
+export const ChatActionsMenu = defineComponent({
+	props: {
+		controller: { type: Object as PropType<PanelController>, required: true },
+		summary: { type: Object as PropType<ChatSummary>, required: true }, current: Boolean,
+		onRename: { type: Function as PropType<() => void>, required: true },
+		/** `data-action` to focus on open; used by the Delete key so it lands on remove without running it. */
+		focus: { type: String, default: "" },
+	},
+	setup(props) {
+		const reset = useConfirmation();
+		const remove = useConfirmation();
+		const pending = shallowRef(false);
+		const menu = shallowRef<HTMLElement>();
+		onMounted(() => {
+			(menu.value?.querySelector<HTMLElement>(props.focus ? `[data-action="${props.focus}"]` : ".menu-item"))?.focus({ preventScroll: true });
+		});
+		const run = async (action: "reset" | "remove") => {
+			const confirmation = action === "reset" ? reset : remove;
+			if (pending.value) return;
+			if (!confirmation.armed.value) return confirmation.arm();
+			pending.value = true;
+			confirmation.reset();
+			try {
+				if (action === "reset") {
+					await props.controller.session.with(props.summary.id, (target) => target.reset(context));
+					toast(t("chat.resetDone"));
+				} else {
+					const source = props.controller.workspace;
+					if (!source) throw new Error("The workspace is not ready.");
+					await source.deleteChat({ id: props.summary.id }, context);
+					if (props.current) props.controller.selectChat(undefined);
+				}
+				props.controller.overlays.close();
+			} catch (error) { toastError(error); } finally { pending.value = false; }
+		};
+		const item = (action: "reset" | "remove", label: string, confirmLabel: string, title?: string) => {
+			const confirmation = action === "reset" ? reset : remove;
+			return (
+				<button class={{ "menu-item": true, danger: action === "remove" }} type="button" role="menuitem" data-action={action}
+					title={title} data-confirm={confirmation.armed.value ? "" : undefined} disabled={pending.value} onClick={() => void run(action)}>
+					<Icon name={action === "reset" ? "refresh" : "trash"} size={14} />
+					<span class="menu-item-name">{confirmation.armed.value ? confirmLabel : label}</span>
+				</button>
+			);
+		};
+		return () => (
+			<div class="popover chat-actions-menu" role="menu" aria-label={`${t("chat.more")}: ${props.summary.title || t("chat.untitled")}`} ref={menu}
+				onKeydown={(event) => {
+					if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+					event.preventDefault();
+					const buttons = [...menu.value!.querySelectorAll<HTMLButtonElement>(".menu-item")];
+					const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+					const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+						: (Math.max(0, current) + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+					buttons[next]?.focus();
+				}}>
+				<button class="menu-item" type="button" role="menuitem" data-action="rename"
+					onClick={() => { props.controller.overlays.close(false); props.onRename(); }}>
+					<Icon name="compose" size={14} /><span class="menu-item-name">{t("chat.rename")}</span>
+				</button>
+				{item("reset", t("chat.reset"), t("chat.resetConfirm"), t("chat.resetHint"))}
+				{item("remove", t("chat.delete"), t("chat.confirm"))}
 			</div>
 		);
 	},
