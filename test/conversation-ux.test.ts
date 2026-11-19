@@ -4,7 +4,7 @@ import {
 	createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, type FauxResponseStep, type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import {
-	AgentDoc, ConversationTranscript, defineExtension, defineTool, type Extension, type InboxState, LiveDoc, type LiveState, type Storage,
+	AgentDoc, ConversationTranscript, defineExtension, defineTool, type Extension, type InboxState, LiveDoc, type LiveState, ProviderDoc, type Storage,
 } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { chatStatus } from "../src/engine/activity.ts";
@@ -179,10 +179,12 @@ test("global instructions reach real requests and preferences and manual titles 
 test("automatic titles run once after a normal first answer and never overwrite a manual rename", async () => {
 	const titleStarted = deferred();
 	const releaseTitle = deferred();
-	let titleOptions: { maxRetries?: number; maxTokens?: number } | undefined;
+	let titleRequest: TranscriptContext | undefined;
+	let titleOptions: { maxRetries?: number; maxTokens?: number; sessionId?: string } | undefined;
 	const f = await fixture([
 		fauxAssistantMessage("Use the reset button in settings."),
-		(_request, options) => {
+		(request, options) => {
+			titleRequest = request;
 			titleOptions = options;
 			return fauxAssistantMessage("Title: \"Reset onboarding\"");
 		},
@@ -203,6 +205,15 @@ test("automatic titles run once after a normal first answer and never overwrite 
 		const title = await until(() => summary(f.workspace, first)?.title === "Reset onboarding" ? true : undefined, "the generated title");
 		assert.equal(title, true);
 		assert.equal(f.faux.state.callCount, 2, "one conversation request and one title request");
+		// The request is the conversation's own model context — system messages and all — ended by the title question.
+		const target = await f.engine.harness.conversation(first as never, context);
+		const view = await target!.context(context);
+		assert.deepEqual(titleRequest?.messages.slice(0, -1), view.messages);
+		const last = titleRequest?.messages.at(-1);
+		assert.equal(last?.role, "user");
+		assert.match(JSON.stringify(last?.content), /short, specific title/);
+		const provider = await f.engine.harness.snapshot(ProviderDoc, first as never, context);
+		assert.equal(titleOptions?.sessionId, provider?.sessionId);
 		assert.equal(titleOptions?.maxRetries, 0);
 		assert.equal(titleOptions?.maxTokens, 64);
 
@@ -226,6 +237,24 @@ test("automatic titles run once after a normal first answer and never overwrite 
 		assert.equal(summary(f.workspace, failed)?.title, "This run fails");
 	} finally {
 		releaseTitle.resolve();
+		await f.close();
+	}
+});
+
+test("a title reply that calls tools leaves the fallback title", async () => {
+	const f = await fixture([
+		fauxAssistantMessage("An answer"),
+		fauxAssistantMessage(fauxToolCall("page_snapshot", {}), { stopReason: "toolUse" }),
+	]);
+	try {
+		await f.workspace.setPreference({ key: "autoTitle", enabled: true }, context);
+		const id = await f.workspace.createChat({}, context);
+		const chat = await f.chat(id);
+		await chat.send({ text: "Do a thing", requestId: "title-tools" }, context);
+		await until(() => f.faux.state.callCount === 2 ? true : undefined, "the title request");
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		assert.equal(summary(f.workspace, id)?.title, "Do a thing");
+	} finally {
 		await f.close();
 	}
 });
