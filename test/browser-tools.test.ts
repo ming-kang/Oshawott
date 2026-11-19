@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { NO_ACCESS_CODE, type Tab } from "../src/contracts/browser.ts";
+import { type Tab } from "../src/contracts/browser.ts";
 import { Approvals, DECLINED } from "../src/engine/approvals.ts";
-import { sitePattern } from "../src/platform/patterns.ts";
 import { until } from "./support/wait.ts";
 import { connectPanel, context, fakeBrowser, linkTo, openEngine, serveBrowser, servePage, useModel } from "./support/world.ts";
 
@@ -19,9 +18,8 @@ async function fixture(tabs: Tab[]) {
 		getTab: async ({ tabId }) => tabs.find((tab) => tab.tabId === tabId) ?? null,
 		openTab: async ({ url }) => {
 			opened.push(url);
-			return { tabId: 50, windowId: 1, url, title: "Opened", active: true, access: false };
+			return { tabId: 50, windowId: 1, url, title: "Opened", active: true };
 		},
-		hasAccess: async ({ url }) => tabs.some((tab) => tab.access && new URL(tab.url).host === new URL(url).host),
 	}));
 	const done = async () => ({ ok: true });
 	const page = (tabId: number) => servePage(tabId, {
@@ -67,25 +65,22 @@ async function fixture(tabs: Tab[]) {
 	};
 }
 
-const tab = (tabId: number, host: string, access: boolean): Tab => ({ tabId, windowId: 1, url: `https://${host}/`, title: host, active: tabId === 7, access });
+const tab = (tabId: number, host: string): Tab => ({ tabId, windowId: 1, url: `https://${host}/`, title: host, active: tabId === 7 });
 
-test("a site the user has not allowed refuses page tools with the offer to allow it", async () => {
-	const f = await fixture([tab(7, "private.example", false)]);
+test("non-http(s) tabs refuse page tools", async () => {
+	const f = await fixture([{ tabId: 7, windowId: 1, url: "chrome://settings/", title: "Settings", active: true }]);
 	try {
 		const result = await f.call("page_click", { ref: "e1" }, 7);
 		assert.equal(result.isError, true);
-		assert.deepEqual(result.details, { access: { url: "https://private.example/" } });
-		assert.match(JSON.stringify(result.content), /No access to private\.example/);
+		assert.match(JSON.stringify(result.content), /only on http and https pages/);
 		assert.deepEqual(f.clicks, []);
-		const entry = f.chat.view.value!.entries.findLast((entry) => entry.kind === "pi.tool-result") as { data?: { diagnostics?: { code?: string }[] } };
-		assert.equal(entry.data?.diagnostics?.[0]?.code, NO_ACCESS_CODE);
 	} finally {
 		await f.close();
 	}
 });
 
 test("a closed target tab falls back to the active tab, and a named tab that is gone is an error", async () => {
-	const f = await fixture([tab(7, "example.com", true)]);
+	const f = await fixture([tab(7, "example.com")]);
 	try {
 		// The chat's target is tab 99, which no longer exists.
 		assert.equal((await f.call("page_click", { ref: "e1" }, 99)).isError, false);
@@ -98,28 +93,28 @@ test("a closed target tab falls back to the active tab, and a named tab that is 
 	}
 });
 
-test("with confirmation on, a page action waits for the user and a refusal reaches the model", async () => {
-	const f = await fixture([tab(7, "example.com", true)]);
+test("with confirmation on, unsafe page actions wait for allow/deny and refusals reach the model", async () => {
+	const f = await fixture([tab(7, "example.com")]);
 	try {
 		await f.workspace.setPreference({ key: "confirmActions", enabled: true }, context);
 		await until(() => f.workspace.confirmActions.value || undefined, "the preference");
-		const answer = (decision: "allow" | "deny" | "allow_chat") => async () => {
+		const answer = (decision: "allow" | "deny", expectedClicks: number[]) => async () => {
 			const [asked] = await until(() => f.chat.approvals.value.length ? f.chat.approvals.value : undefined, "the approval request");
 			assert.deepEqual({ ...asked, id: "" }, { id: "", tool: "page_click", target: "Buy now (button)", site: "example.com" });
-			assert.deepEqual(f.clicks, [], "nothing is clicked while the request waits");
+			assert.deepEqual(f.clicks, expectedClicks, "nothing is clicked while the request waits");
 			await f.chat.decide({ id: asked!.id, decision }, context);
 		};
-		const denied = await f.call("page_click", { ref: "e1" }, 7, answer("deny"));
+		const denied = await f.call("page_click", { ref: "e1" }, 7, answer("deny", []));
 		assert.equal(denied.isError, true);
 		assert.ok(JSON.stringify(denied.content).includes(DECLINED));
 		assert.deepEqual(f.clicks, []);
-		assert.equal((await f.call("page_click", { ref: "e1" }, 7, answer("allow_chat"))).isError, false);
+		const allowed = await f.call("page_click", { ref: "e1" }, 7, answer("allow", []));
+		assert.equal(allowed.isError, false);
 		assert.deepEqual(f.clicks, [7]);
-		// Trusted for the rest of the chat: the next action does not ask.
-		const trusted = await f.call("page_click", { ref: "e1" }, 7);
-		assert.equal(trusted.isError, false);
+		assert.deepEqual(allowed.details, { element: { role: "button", name: "Buy now" } });
+		// A second action still asks: there is no per-chat sticky trust.
+		assert.equal((await f.call("page_click", { ref: "e1" }, 7, answer("allow", [7]))).isError, false);
 		assert.deepEqual(f.clicks, [7, 7]);
-		assert.deepEqual(trusted.details, { element: { role: "button", name: "Buy now" } }, "the card can name the element without an approval");
 		// Reading a page never asks.
 		assert.equal((await f.call("page_snapshot", {}, 7)).isError, false);
 	} finally {
@@ -127,25 +122,27 @@ test("with confirmation on, a page action waits for the user and a refusal reach
 	}
 });
 
-test("opening a site the user has not allowed always asks, and only http(s) URLs open", async () => {
-	const f = await fixture([tab(7, "example.com", true)]);
+test("tab_open opens http(s) URLs directly when confirmation is off and asks only when confirmation is on", async () => {
+	const f = await fixture([tab(7, "example.com")]);
 	try {
-		assert.equal((await f.call("tab_open", { url: "https://example.com/next" }, 7)).isError, false, "an allowed site opens without asking");
-		const refused = await f.call("tab_open", { url: "https://elsewhere.example/?q=secret" }, 7, async () => {
+		assert.equal((await f.call("tab_open", { url: "https://elsewhere.example/next" }, 7)).isError, false);
+		const scheme = await f.call("tab_open", { url: "javascript:alert(1)" }, 7);
+		assert.match(JSON.stringify(scheme.content), /Only http and https/);
+		await f.workspace.setPreference({ key: "confirmActions", enabled: true }, context);
+		await until(() => f.workspace.confirmActions.value || undefined, "the preference");
+		const refused = await f.call("tab_open", { url: "https://blocked.example/?q=secret" }, 7, async () => {
 			const [asked] = await until(() => f.chat.approvals.value.length ? f.chat.approvals.value : undefined, "the approval request");
-			assert.equal(asked!.target, "https://elsewhere.example/?q=secret");
+			assert.equal(asked!.target, "https://blocked.example/?q=secret");
 			await f.chat.decide({ id: asked!.id, decision: "deny" }, context);
 		});
 		assert.equal(refused.isError, true);
-		const scheme = await f.call("tab_open", { url: "javascript:alert(1)" }, 7);
-		assert.match(JSON.stringify(scheme.content), /Only http and https/);
-		assert.deepEqual(f.opened, ["https://example.com/next"]);
+		assert.deepEqual(f.opened, ["https://elsewhere.example/next"]);
 	} finally {
 		await f.close();
 	}
 });
 
-test("approvals: trusting a chat answers all it waits for, and forgetting it declines them", async () => {
+test("approvals settle each decision individually and decline waiting items on forget, abort, and close", async () => {
 	const approvals = new Approvals();
 	const request = (chat: number) => approvals.request({ chat, tool: "page_click", target: "x", site: "example.com" });
 	const settled = (promise: Promise<void>) => promise.then(() => "allowed", (error: Error) => error.message);
@@ -154,25 +151,15 @@ test("approvals: trusting a chat answers all it waits for, and forgetting it dec
 	const other = settled(request(2));
 	const { value } = await approvals.observe({ advance: () => {}, end: () => {} });
 	assert.equal(value.items.length, 3);
-	assert.equal(approvals.decide(value.items[0]!.id, "allow_chat"), true);
-	assert.deepEqual(await Promise.all([first, second]), ["allowed", "allowed"]);
-	assert.equal(await settled(request(1)), "allowed", "a trusted chat is not asked again");
+	assert.equal(approvals.decide(value.items[0]!.id, "allow"), true);
+	assert.equal(await first, "allowed");
 	approvals.forget(2);
 	assert.equal(await other, DECLINED);
-	approvals.forget(1);
-	const again = settled(request(1));
 	const aborted = new AbortController();
 	const stopped = settled(approvals.request({ chat: 3, tool: "page_click", target: "x", site: "example.com" }, aborted.signal));
 	aborted.abort(new Error("stopped"));
 	assert.equal(await stopped, "stopped");
 	approvals.close();
-	assert.equal(await again, DECLINED);
+	assert.equal(await second, DECLINED);
 	assert.equal(approvals.decide("gone", "allow"), false);
-});
-
-test("site access is granted per host without its port, which Firefox match patterns cannot express", () => {
-	assert.equal(sitePattern("https://example.com:8443/path?q=1"), "https://example.com/*");
-	assert.equal(sitePattern("http://127.0.0.1:1234/"), "http://127.0.0.1/*");
-	assert.equal(sitePattern("file:///tmp/private"), undefined);
-	assert.equal(sitePattern("bad"), undefined);
 });

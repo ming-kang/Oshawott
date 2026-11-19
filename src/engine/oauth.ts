@@ -4,8 +4,6 @@ import { Published } from "./published.ts";
 
 /** How a browser completes one provider's Pi-AI sign-in. */
 export interface OAuthSetup {
-	/** Match patterns of the token and API hosts the Engine must reach. */
-	readonly origins: readonly string[];
 	/** The answer to the flow's method choice: the one method that needs no loopback callback. */
 	readonly select?: string;
 	/** The answer to the flow's free-text question (GitHub Enterprise domain: none). */

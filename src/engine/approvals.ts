@@ -15,13 +15,11 @@ export const DECLINED = "The user declined this action. Do not retry it or reach
  */
 export class Approvals {
 	readonly #pending = new Map<string, Pending>();
-	readonly #trusted = new Set<number>();
 	readonly #published = new Published<ApprovalSnapshot>({ items: [] });
 
 	readonly observe = this.#published.observe.bind(this.#published);
 
 	request(request: ApprovalRequest, signal?: AbortSignal): Promise<void> {
-		if (this.#trusted.has(request.chat)) return Promise.resolve();
 		signal?.throwIfAborted();
 		return new Promise((resolve, reject) => {
 			const id = crypto.randomUUID();
@@ -47,21 +45,14 @@ export class Approvals {
 	decide(id: string, decision: ApprovalDecision): boolean {
 		const pending = this.#pending.get(id);
 		if (!pending) return false;
-		if (decision === "allow_chat") this.#trusted.add(pending.view.chat);
-		// Trusting the chat answers everything it is waiting for, not only the request the button was on.
-		const answered = decision === "allow_chat"
-			? [...this.#pending.values()].filter((each) => each.view.chat === pending.view.chat) : [pending];
-		for (const each of answered) {
-			this.#pending.delete(each.view.id);
-			each.settle(decision !== "deny");
-		}
+		this.#pending.delete(id);
+		pending.settle(decision === "allow");
 		this.#publish();
 		return true;
 	}
 
-	/** A reset or removed chat: its waiting actions are declined and it is asked again from now on. */
+	/** A reset or removed chat: its waiting actions are declined. */
 	forget(chat: number) {
-		this.#trusted.delete(chat);
 		for (const [id, pending] of this.#pending) {
 			if (pending.view.chat !== chat) continue;
 			this.#pending.delete(id);

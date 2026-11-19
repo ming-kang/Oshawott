@@ -246,7 +246,10 @@ $$\frac{a}{b}=\sqrt{x}$$`);
 			{ id: 2 as EntryId, byTaskId: 75 as TaskId, conversationId: conversation.id, kind: "pi.assistant", model: [fauxAssistantMessage(fauxToolCall("write", { path: "report.md", content: "final content" }, { id: "live-call" }), { stopReason: "toolUse", timestamp: partial.timestamp })] },
 			{ id: 3 as EntryId, conversationId: conversation.id, kind: "pi.tool-result", model: [{ role: "toolResult", toolCallId: "live-call", toolName: "write", content: [{ type: "text", text: "Saved report." }], isError: false, timestamp: 0 }] },
 		]);
-		step("promoted live tool cards receive results in place, without orphan duplicates", tools.element.querySelectorAll(".tool").length === 1 && tools.element.querySelector(".tool") === call && call.open && call.dataset.status === "done" && call.textContent?.includes("Saved report.") === true);
+		call.querySelector<HTMLButtonElement>(".tool-toggle")?.click();
+		const promotedRaw = call.textContent?.includes("Saved report.") === true;
+		call.querySelector<HTMLButtonElement>(".tool-toggle")?.click();
+		step("promoted live tool cards receive results in place, without orphan duplicates", tools.element.querySelectorAll(".tool").length === 1 && tools.element.querySelector(".tool") === call && call.open && call.dataset.status === "done" && promotedRaw);
 
 		const retry = view("```ts\nconst oldAttempt = 1;");
 		await transcript.update({ kind: "conversation", view: retry, ready: true });

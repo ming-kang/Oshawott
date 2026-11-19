@@ -73,12 +73,6 @@ export interface WebExt {
 		clear(name: string): Promise<boolean>;
 		readonly onAlarm: WebExtEvent<(alarm: { readonly name: string }) => void>;
 	};
-	readonly permissions: {
-		contains(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
-		request(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
-		readonly onAdded: WebExtEvent<(permissions: { origins?: string[] }) => void>;
-		readonly onRemoved: WebExtEvent<(permissions: { origins?: string[] }) => void>;
-	};
 	readonly action: {
 		readonly onClicked: WebExtEvent<(tab: TabInfo) => void>;
 	};

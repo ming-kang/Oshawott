@@ -1,14 +1,5 @@
 import type { Target } from "./platform/target.ts";
 
-/** Host permissions allow cross-origin model API requests from the extension. */
-export const MODEL_ORIGINS = [
-	"https://api.anthropic.com/*",
-	"https://api.openai.com/*",
-	"https://generativelanguage.googleapis.com/*",
-	"https://openrouter.ai/*",
-	"https://api.deepseek.com/*",
-];
-
 /** Pin the unpacked ID so moving the build directory keeps chats, files and API keys on the same extension origin. */
 export const CHROMIUM_KEY =
 	"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoRB95+jYjZFX7/SFXV+nU+mQdRHP/Iam3cOn9RJKJQirf1kYWWeMC7mbMbNXvam5He0sNut4zuBepGO3F2z8Jg3w+KbQ43SrTrnBkoLXG3ABnYVPEQZuznQhFX548buYqL8QIQyBFCnNKBv7Mt098ln9I6XqbVsAAo1Pp0uc3RFPHm0JNidkJP75x/Yadb1O93/SEAVzdK+DB/viBBSlqpVISi8/FftYaH2oi1QjYcA/krL4nMcvQw+acLTrBmlU9KBl4tlxq6DVhzioDQ1GbiI/bDd+2iAtCiNubMF8tXFLxBEu7G9rI+0b3O8iEtvndJ3kjz3jp3v0Og4eP5UDMQIDAQAB";
@@ -21,8 +12,7 @@ export const RELEASES = "https://github.com/ming-kang/Oshawott/releases";
 
 const ICONS = { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 96: "icons/icon-96.png", 128: "icons/icon-128.png" };
 
-/** `dev`: page tools on every site without asking (automated tests cannot answer a permission prompt). */
-export function manifestFor(target: Target, version: string, { dev = false } = {}): Record<string, unknown> {
+export function manifestFor(target: Target, version: string): Record<string, unknown> {
 	const common = {
 		manifest_version: 3,
 		name: "Oshawott",
@@ -30,9 +20,8 @@ export function manifestFor(target: Target, version: string, { dev = false } = {
 		description: "A durable AI agent for your browser, built on Pi Durable.",
 		icons: ICONS,
 		action: { default_title: "Oshawott", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
-		permissions: ["tabs", "scripting", "activeTab", "alarms"],
-		host_permissions: dev ? [...MODEL_ORIGINS, "<all_urls>"] : MODEL_ORIGINS,
-		optional_host_permissions: ["<all_urls>"],
+		permissions: ["tabs", "scripting", "alarms"],
+		host_permissions: ["<all_urls>"],
 		// QuickJS (code mode) is WebAssembly.
 		content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
 	};

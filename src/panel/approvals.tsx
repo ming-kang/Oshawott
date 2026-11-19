@@ -29,7 +29,6 @@ const ApprovalItem = defineComponent({
 					<div class="approval-target" title={props.item.target}>{props.item.target}</div>
 					<div class="approval-actions">
 						<button class="btn small ghost" type="button" data-decision="deny" disabled={pending.value} onClick={() => decide("deny")}>{t("approval.deny")}</button>
-						<button class="btn small" type="button" data-decision="allow_chat" disabled={pending.value} onClick={() => decide("allow_chat")}>{t("approval.allowChat")}</button>
 						<button class="btn small primary" type="button" data-decision="allow" disabled={pending.value} onClick={() => decide("allow")}>{t("approval.allow")}</button>
 					</div>
 				</article>

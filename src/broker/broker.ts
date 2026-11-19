@@ -1,7 +1,6 @@
 import { Browser, type Tab } from "../contracts/browser.ts";
 import { BrokerHost, type Principal } from "../contracts/hosts.ts";
 import { type Context, createHost, defineFacet, type Host } from "../lib/chord.ts";
-import { sitePattern } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
 export const WAKE_ALARM = "oshawott:wake";
@@ -12,24 +11,17 @@ const DONE = Symbol("loaded");
 /** How long a navigation may take before the tools get the tab as it is. */
 const LOAD_TIMEOUT_MS = 15_000;
 
-async function hasAccess(url: string) {
-	const pattern = sitePattern(url);
-	return pattern !== undefined && (await ext.permissions.contains({ origins: [pattern] }));
-}
-
-async function tabOf(tab: TabInfo): Promise<Tab> {
-	const url = tab.url ?? "";
+function tabOf(tab: TabInfo): Tab {
 	return {
 		tabId: tab.id ?? -1,
 		windowId: tab.windowId ?? -1,
-		url,
+		url: tab.url ?? "",
 		title: tab.title ?? "",
 		active: tab.active ?? false,
-		access: await hasAccess(url),
 	};
 }
 
-const tabsOf = (tabs: readonly TabInfo[]) => Promise.all(tabs.map(tabOf));
+const tabsOf = (tabs: readonly TabInfo[]) => tabs.map(tabOf);
 
 /** Runs a navigation and waits for the tab's next finished load, so the next tool reads the new page, not the old one. */
 async function loaded(tabId: number, navigate: () => Promise<unknown>, started = false): Promise<Tab> {
@@ -120,7 +112,6 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 									await injectPage(tabId);
 									return null;
 								},
-								hasAccess: ({ url }) => hasAccess(url),
 								armWake: async (wake) => {
 									await armWake(wake);
 									return null;

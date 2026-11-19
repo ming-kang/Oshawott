@@ -27,12 +27,12 @@ const unused = async (): Promise<never> => {
 	throw new Error("unused");
 };
 
-/** A browser with no tabs and no site access; `overrides` supply what a test exercises. */
+/** A browser with no tabs; `overrides` supply what a test exercises. */
 export function fakeBrowser(overrides: Partial<BrowserMembers> = {}): BrowserMembers {
 	return {
 		listTabs: async () => [], activeTab: async () => null, getTab: async () => null,
 		openTab: unused, navigateTab: unused, activateTab: unused, closeTab: async () => null,
-		attach: async () => null, hasAccess: async () => false, armWake: async () => null,
+		attach: async () => null, armWake: async () => null,
 		...overrides,
 	};
 }

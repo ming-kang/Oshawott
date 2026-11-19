@@ -1,12 +1,8 @@
 import { defineExtension, defineTool, type Extension, section, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
-import { Browser } from "../contracts/browser.ts";
-import type { Principal } from "../contracts/hosts.ts";
 import { arr, bool, int, map, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
-import type { Host } from "../lib/chord.ts";
 import { ChatFiles, MAX_FILE_BYTES } from "./files.ts";
-import { noAccess, using } from "./tools.ts";
 
 const FETCH_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CHARS = 20_000;
@@ -131,18 +127,16 @@ export function redirectGuesses(url: URL): string[] {
 }
 
 export interface FilesToolsOptions {
-	readonly host: Host<Principal>;
 	readonly fetch: typeof fetch;
 }
 
-function fetchTool({ host, fetch: request }: FilesToolsOptions) {
+function fetchTool({ fetch: request }: FilesToolsOptions) {
 	return defineTool({
 		name: "fetch",
 		description:
 			"Request a URL over HTTP(S), without the user's cookies or logins. Returns the status and the body as text, " +
 			`at most maxChars characters (default ${DEFAULT_MAX_CHARS}); with saveTo, saves the whole body (any type, ` +
-			`up to ${MAX_FILE_BYTES / 1024 / 1024} MiB) to that file instead. Only sites the user has allowed: on another ` +
-			"site the call fails, and the user can allow it from the panel. A GET that is redirected to the https or www " +
+			`up to ${MAX_FILE_BYTES / 1024 / 1024} MiB) to that file instead. A GET that is redirected to the https or www ` +
 			"form of the same address is followed; any other redirect is refused: request the final URL directly.",
 		parameters: obj({
 			url: str({ description: "An http or https URL." }),
@@ -172,8 +166,6 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 				throw new Error(`Not a URL: ${args.url}`);
 			}
 			if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http and https URLs can be fetched.");
-			const allowed = (href: string) => using(host, Browser, {}, context, (browser) => browser.hasAccess({ url: href }, context));
-			if (!await allowed(url.href)) return noAccess(url.href);
 			const method = args.method ?? "GET";
 			const signal = AbortSignal.any([AbortSignal.timeout(FETCH_TIMEOUT_MS), ...(context.abortSignal ? [context.abortSignal] : [])]);
 			const attempt = (href: string) => request(href, {
@@ -183,7 +175,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 				credentials: "omit",
 				cache: "no-store",
 				// A browser cannot inspect an opaque manual redirect before following it. Refuse redirects rather
-				// than make an unchecked request to a site the user did not allow.
+				// than follow an unchecked jump across origins.
 				redirect: "error",
 				referrerPolicy: "no-referrer",
 				signal,
@@ -191,10 +183,7 @@ function fetchTool({ host, fetch: request }: FilesToolsOptions) {
 			const refused = (response: Response) => [301, 302, 303, 307, 308].includes(response.status);
 			let response: Response | undefined;
 			let failure: unknown;
-			// The redirect's target is unreadable, but the usual ones can be named: each is a request the model could
-			// have made itself, checked against the user's permissions like any other.
 			for (const href of [url.href, ...(method === "GET" || method === "HEAD" ? redirectGuesses(url) : [])]) {
-				if (href !== url.href && !await allowed(href)) continue;
 				try {
 					const answer = await attempt(href);
 					// A guess counts only when it finds the page; its own error would hide the redirect that was refused.

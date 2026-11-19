@@ -12,7 +12,7 @@ import { until } from "./dom.ts";
 import { QueueFixture, TranscriptFixture } from "./fixtures.tsx";
 
 type Step = (name: string, ok: boolean, detail?: string) => void;
-const actions = { suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined, allowed: () => {} };
+const actions = { suggest: () => {}, openSettings: () => {}, chooseModel: () => {}, readFile: async () => new Uint8Array(), retry: async () => undefined };
 
 export async function testVueComponents(fixture: HTMLElement, step: Step, escape: () => void) {
 	const overlays = new Overlays();

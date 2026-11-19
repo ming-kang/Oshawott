@@ -10,7 +10,9 @@ const archives = { chromium: `oshawott-${version}-chromium.zip`, firefox: `oshaw
 for (const [target, name] of Object.entries(archives)) {
 	const manifest = JSON.parse(await readFile(dist(target, "manifest.json"), "utf8"));
 	if (manifest.version !== version) throw new Error(`dist/${target} is not a build of ${version}: run npm run build`);
-	if (manifest.host_permissions?.includes("<all_urls>")) throw new Error(`dist/${target} is a --dev build: run npm run build`);
+	if ((await readFile(dist(target, "background.js"), "utf8")).includes("//# sourceMappingURL=")) {
+		throw new Error(`dist/${target} is a --dev build: run npm run build`);
+	}
 	await writeFile(dist(name), await zipDirectory(dist(target)));
 	console.log(`dist/${name}`);
 }

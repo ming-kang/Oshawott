@@ -5,7 +5,6 @@ import { Icon, Segmented, useConfirmation } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
 import { t } from "./i18n/index.ts";
 import { LoginCard } from "./login-card.tsx";
-import { requestModelAccess } from "./model-permissions.ts";
 import { DiscoveredModel, ModelEditor } from "./provider-models.tsx";
 import { baseUrlPlaceholder, connectionNote, defaultModel, modelCapabilitiesText, providerRank, validEndpointUrl } from "./provider-utils.ts";
 import { toast, toastError } from "./ui.ts";
@@ -119,13 +118,11 @@ export const ProviderEditorSheet = defineComponent({
 			const baseUrl = validEndpointUrl(rawUrl);
 			if (!baseUrl) return refuse("fetch", t("settings.endpointInvalid"));
 			checked.value = undefined;
-			const asked = requestModelAccess(baseUrl);
 			busyAction.value = "fetch";
 			fetchState.value = { kind: "loading" };
 			fetchChecked.value = new Set();
 			fetchSearch.value = "";
 			try {
-				if (!await asked) { closeFetch(); throw new Error(t("settings.permissionDenied")); }
 				const source = controller.workspace;
 				if (!source) throw new Error("The workspace is not ready.");
 				const result = await source.probeModels({
@@ -150,10 +147,8 @@ export const ProviderEditorSheet = defineComponent({
 			if (!profile.name || !profile.baseUrl || profile.models.some((model) => !model.id)) { refuse("save", t("settings.completeFields")); return false; }
 			if (keyMissing.value) { refuse("save", t("settings.keyRequired")); return false; }
 			checked.value = undefined;
-			const asked = requestModelAccess(profile.baseUrl);
 			busyAction.value = "save";
 			try {
-				if (!await asked) throw new Error(t("settings.permissionDenied"));
 				const source = controller.workspace;
 				if (!source) throw new Error("The workspace is not ready.");
 				await source.saveProvider({ profile, ...(key.value.trim() ? { key: key.value.trim() } : {}) }, context);
@@ -174,10 +169,8 @@ export const ProviderEditorSheet = defineComponent({
 				else refuse("save", t("settings.keyRequired"));
 				return;
 			}
-			const asked = requestModelAccess(provider.baseUrl);
 			busyAction.value = "save";
 			try {
-				if (!await asked) throw new Error(t("settings.permissionDenied"));
 				const source = controller.workspace;
 				if (!source) throw new Error("The workspace is not ready.");
 				await source.setApiKey({ provider: provider.id, key: key.value.trim() }, context);

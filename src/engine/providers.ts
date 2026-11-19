@@ -154,7 +154,7 @@ export class ProviderManager {
 				configured: auth !== undefined,
 				auth: auth?.type ?? null,
 				apiKey: apiKey !== undefined,
-				oauth: oauth ? { label: oauth.loginLabel ?? oauth.name, origins: [...(this.#oauth[provider.id]?.origins ?? [])] } : null,
+				oauth: oauth ? { label: oauth.loginLabel ?? oauth.name } : null,
 				models: models.map((model: Model<Api>) => ({
 					id: model.id,
 					name: model.name ?? model.id,

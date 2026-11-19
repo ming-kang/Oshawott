@@ -1,6 +1,5 @@
 import type { ThinkingLevel, Workspace } from "../../contracts/chat.ts";
 import { BACKGROUND_CONTEXT, type Reference } from "../../lib/chord.ts";
-import { ext } from "../../platform/webext.ts";
 import { t } from "../i18n/index.ts";
 import { click, control, input, until } from "./dom.ts";
 
@@ -20,9 +19,6 @@ export async function testModelManagement(source: Source, origin: string): Promi
 	const step = (name: string, ok: boolean, detail = "") => steps.push({ name, ok, ...(detail ? { detail } : {}) });
 	let customId: string | undefined;
 	let phase = "opening settings";
-	const originalPermission = ext.permissions.request;
-	// WebDriver cannot produce a trusted click inside Firefox's sidebar. Real user clicks still take the production path.
-	if (navigator.userAgent.includes("Firefox")) ext.permissions.request = async () => true;
 	try {
 		click("#settings-toggle");
 		await until(() => control("#add-provider"));
@@ -146,25 +142,6 @@ export async function testModelManagement(source: Source, origin: string): Promi
 		step("provider deletion removes its runtime entry after chats switch models", !source.providers.value.some((provider) => provider.id === customId));
 		customId = undefined;
 
-		await until(() => control("#add-provider"));
-		click("#add-provider");
-		await until(() => control("#provider-kind-custom"));
-		click("#provider-kind-custom");
-		await until(() => control("#provider-name"));
-		input("#provider-name", "Denied draft");
-		input("#provider-base-url", "https://denied.example/v1");
-		input("#provider-key", "denied-secret");
-		const original = ext.permissions.request;
-		ext.permissions.request = async () => false;
-		try {
-			click("#provider-save");
-			await new Promise((resolve) => setTimeout(resolve, 100));
-			step("permission denial keeps drafts and saves neither provider nor key", control<HTMLInputElement>("#provider-name")?.value === "Denied draft"
-				&& !source.providers.value.some((provider) => provider.baseUrl.includes("denied.example")));
-		} finally {
-			ext.permissions.request = original;
-		}
-		click("#provider-back");
 		await until(() => control("#settings-back"));
 		click("#settings-back");
 	} catch (error) {
@@ -176,7 +153,6 @@ export async function testModelManagement(source: Source, origin: string): Promi
 			: "";
 		step("model management browser flow", false, `${phase}: ${String(error)}${diagnostic}${conversation}`);
 	} finally {
-		ext.permissions.request = originalPermission;
 		const demo = source.providers.value.flatMap((provider) => provider.models.filter((model) => provider.id === "demo").map((model) => ({ provider: provider.id, modelId: model.id })))[0];
 		if (demo) await source.setDefaultConfiguration({ model: demo, thinkingLevel: "off" as ThinkingLevel }, context).catch(() => null);
 		for (let index = 0; index < 3 && document.querySelector(".overlay:not(.leaving)"); index++) {

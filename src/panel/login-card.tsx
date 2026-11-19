@@ -4,7 +4,6 @@ import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
 import { Icon } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
 import { t } from "./i18n/index.ts";
-import { requestOrigins } from "./model-permissions.ts";
 import { copyText, toast, toastError } from "./ui.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -36,9 +35,7 @@ export const LoginCard = defineComponent({
 			try { await work(); } catch (error) { toastError(error); } finally { busy.value = false; }
 		};
 		const start = (provider: ProviderSummary) => {
-			const asked = requestOrigins(provider.oauth?.origins ?? []);
 			void run(async () => {
-				if (!await asked) throw new Error(t("settings.permissionDenied"));
 				const source = props.controller.workspace;
 				if (!source) throw new Error(t("reconnecting"));
 				await source.startLogin({ provider: provider.id }, context);

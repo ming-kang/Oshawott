@@ -13,11 +13,8 @@ type Part =
 /** Content parts, disclosures and code controls survive both streaming and finalization. */
 export class AssistantView {
 	readonly element = h("div", { class: "msg assistant" });
-	readonly #allowed: (site: string) => void;
 	#parts = new Map<string, Part>();
 	#groups = new Map<number, HTMLElement>();
-
-	constructor(allowed: (site: string) => void) { this.#allowed = allowed; }
 
 	get cards(): Map<string, ToolCard> {
 		return new Map([...this.#parts.values()].flatMap((part) => part.type === "toolCall" ? [[part.id, part.card] as const] : []));
@@ -30,6 +27,8 @@ export class AssistantView {
 		const nodes: Node[] = [];
 		let group: HTMLElement | undefined;
 		let groupCards: Node[] = [];
+		let hasTool = false;
+		let hasNonTool = false;
 		const flushGroup = () => { if (group) reconcileChildren(group, groupCards); group = undefined; groupCards = []; };
 		for (const [index, block] of message.content.entries()) {
 			const last = index === message.content.length - 1;
@@ -49,12 +48,13 @@ export class AssistantView {
 					const markdown = new MarkdownView();
 					part = { type: "text", markdown, element: markdown.element };
 				} else {
-					const card = new ToolCard(block.name, block.arguments, this.#allowed);
+					const card = new ToolCard(block.name, block.arguments);
 					part = { type: "toolCall", card, element: card.element, id: block.id, name: block.name };
 				}
 			}
 			parts.set(key, part);
 			if (part.type === "thinking" && block.type === "thinking") {
+				hasNonTool = true;
 				const thinking = live && last;
 				part.element.toggleAttribute("data-live", thinking);
 				const label = t(thinking ? "thinking.live" : "thinking.title");
@@ -62,9 +62,11 @@ export class AssistantView {
 				part.markdown.update(block.thinking, thinking);
 				nodes.push(part.element);
 			} else if (part.type === "text" && block.type === "text") {
+				hasNonTool = true;
 				part.markdown.update(block.text, live && last);
 				nodes.push(part.element);
 			} else if (part.type === "toolCall" && block.type === "toolCall") {
+				hasTool = true;
 				part.card.setArguments(block.arguments);
 				part.card.setStatus(live ? "streaming" : "pending");
 				if (!group) {
@@ -76,6 +78,7 @@ export class AssistantView {
 			}
 		}
 		flushGroup();
+		this.element.toggleAttribute("data-tools-only", hasTool && !hasNonTool);
 		for (const [key, part] of this.#parts) if (!parts.has(key) && part.type !== "toolCall") part.markdown.dispose();
 		this.#parts = parts;
 		this.#groups = groups;

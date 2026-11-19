@@ -156,7 +156,7 @@ export class PanelController {
 				const tab = this.tabs.current;
 				await target.send({
 					text, requestId: crypto.randomUUID(), whenBusy: delivery, attachments: files,
-					...(tab && tab.access !== "unavailable" ? { tabId: tab.id } : {}),
+					...(tab?.available ? { tabId: tab.id } : {}),
 				}, context);
 			});
 			await this.settle(id, origin, given, raw, files);
@@ -273,9 +273,5 @@ export class PanelController {
 			this.overlays.close(false);
 			if (focused) this.composer.focus({ preventScroll: true });
 		}
-	}
-
-	failureMessage(site: string) {
-		void this.send(t("tool.allowedMessage", site));
 	}
 }

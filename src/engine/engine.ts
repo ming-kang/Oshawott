@@ -79,7 +79,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 
 	const registry = createRegistry();
 	registry.install(browserExtension({ host, approvals, confirmActions: () => preference(workspace, "confirmActions") }));
-	registry.install(filesExtension({ host, fetch: options.fetch ?? ((input, init) => fetch(input, init)) }));
+	registry.install(filesExtension({ fetch: options.fetch ?? ((input, init) => fetch(input, init)) }));
 	for (const extension of options.extensions ?? []) registry.install(extension);
 
 	let closing = false;

@@ -39,10 +39,15 @@ function sniffText(bytes: Uint8Array): boolean {
 	}
 }
 
+export function languageForPath(path: string): string | undefined {
+	const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
+	return LANGUAGES[extension];
+}
+
 export function previewKind(path: string, bytes: Uint8Array): PreviewKind {
 	const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
 	const mime = IMAGE_MIME[extension];
 	if (mime) return { type: "image", mime };
-	if (TEXT_EXTENSIONS.has(extension)) return { type: "text", language: LANGUAGES[extension] };
+	if (TEXT_EXTENSIONS.has(extension)) return { type: "text", language: languageForPath(path) };
 	return sniffText(bytes) ? { type: "text" } : { type: "binary" };
 }

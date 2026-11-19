@@ -14,7 +14,7 @@ test("a view can vary its icon and summary with the arguments", () => {
 	assert.equal(resolveToolLook("tab_navigate", { back: true }).icon, "back");
 	assert.equal(resolveToolLook("tab_navigate", { back: true }).meta, "");
 	assert.equal(resolveToolLook("tab_navigate", { url: "https://ex.com/p?q=1" }).icon, "globe");
-	assert.equal(resolveToolLook("tab_navigate", { url: "https://ex.com/p?q=1" }).meta, "ex.com");
+	assert.equal(resolveToolLook("tab_navigate", { url: "https://ex.com/p?q=1" }).meta, "ex.com/p?q=1");
 });
 
 test("an action names the element it touched and keeps its input", () => {

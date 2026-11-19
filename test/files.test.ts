@@ -6,7 +6,6 @@ import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { InlineCodemodeSandbox, loadQuickJSWasm } from "@earendil-works/pi-codemode";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { ChatFiles, type FileBackend, MAX_FILE_BYTES } from "../src/engine/files.ts";
-import { NO_ACCESS } from "../src/contracts/browser.ts";
 import { withAbortSignal } from "../src/lib/chord.ts";
 import { openFiles } from "./support/files.ts";
 import { until } from "./support/wait.ts";
@@ -91,11 +90,11 @@ test("listFiles enforces its deadline after metadata reads and observes cancella
 	assert.equal(!stopped.ok && stopped.error.code, "aborted");
 });
 
-test("a model fetches into a file, Code Mode reads/writes/edits it, another site is refused; the panel downloads it", async () => {
+test("a model fetches into a file, Code Mode reads/writes/edits it, and the panel downloads it", async () => {
 	const errors: unknown[] = [];
 	const onError = (error: unknown) => errors.push(error);
 
-	const broker = await serveBrowser(fakeBrowser({ hasAccess: async ({ url }) => new URL(url).hostname === "data.example" }), onError);
+	const broker = await serveBrowser(fakeBrowser(), onError);
 
 	const requests: { url: string; init: RequestInit | undefined }[] = [];
 	const network: typeof fetch = async (input, init) => {
@@ -122,7 +121,6 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 			'return { total, largeLength: large.padding.length, ending: large.ending, summary: await tools.read({ path: "summary.txt" }), files: files.map((file) => file.path) };',
 		].join("\n") }), { stopReason: "toolUse" }),
 		fauxAssistantMessage(fauxToolCall("ls", {}), { stopReason: "toolUse" }),
-		fauxAssistantMessage(fauxToolCall("fetch", { url: "https://other.example/" }), { stopReason: "toolUse" }),
 		fauxAssistantMessage("Saved items.json."),
 	]);
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
@@ -147,13 +145,13 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		type Result = { kind: string; model?: { toolName?: string; isError?: boolean; details?: unknown; content?: { type: string; text?: string }[] }[] };
 		const results = await until(() => {
 			const entries = (chat.view.value?.entries ?? []) as readonly Result[];
-			const done = entries.at(-1)?.kind === "pi.assistant" && entries.filter((entry) => entry.kind === "pi.tool-result").length === 5;
+			const done = entries.at(-1)?.kind === "pi.assistant" && entries.filter((entry) => entry.kind === "pi.tool-result").length === 4;
 			return done ? entries.filter((entry) => entry.kind === "pi.tool-result").map((entry) => entry.model![0]!) : undefined;
-		}, "five tool results and the answer");
+		}, "four tool results and the answer");
 		const textOf = (result: (typeof results)[number]) => result.content?.map((block) => block.text ?? "").join("") ?? "";
-		const [fetched, read, code, listed, refused] = results;
+		const [fetched, read, code, listed] = results;
 
-		assert.equal(requests.length, 1, "the refused site was never requested");
+		assert.equal(requests.length, 1);
 		assert.equal(requests[0]?.init?.credentials, "omit");
 		assert.match(textOf(fetched!), /HTTP 200 · application\/json · 17 bytes\nSaved the body to \/workspace\/items\.json\./);
 		assert.deepEqual(fetched!.details, { http: { status: 200, bytes: 17 } });
@@ -165,12 +163,6 @@ test("a model fetches into a file, Code Mode reads/writes/edits it, another site
 		assert.match(textOf(code!), /"summary":"Sum: 6"/);
 		assert.match(textOf(listed!), /items\.json {2}\(17 bytes\)/);
 		assert.match(textOf(listed!), /summary\.txt {2}\(6 bytes\)/);
-		assert.equal(refused!.isError, true);
-		assert.equal(textOf(refused!), `<harness>\n[error] ${NO_ACCESS} other.example: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.\n</harness>`);
-		assert.deepEqual(refused!.details, { access: { url: "https://other.example/" } });
-		const deniedEntry = chat.view.value?.entries.find((entry) => entry.model?.[0]?.role === "toolResult" && entry.model[0].isError);
-		assert.ok(ToolResultEntry.is(deniedEntry));
-		assert.equal(deniedEntry.data.diagnostics[0]?.code, "no_access");
 
 		assert.deepEqual(
 			(await chat.files(context)).map((file) => [file.path, file.size]),

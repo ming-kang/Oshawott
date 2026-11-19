@@ -111,7 +111,7 @@ for (const target of targets.length ? targets : Object.keys(bundles)) {
 		const name = file.startsWith("static/icons/") ? `icons/${file.split("/").at(-1)}` : file.split("/").at(-1);
 		await copyFile(join(root, file), join(out, name));
 	}
-	await writeFile(join(out, "manifest.json"), `${JSON.stringify(manifestFor(target, version, { dev }), null, 2)}\n`);
+	await writeFile(join(out, "manifest.json"), `${JSON.stringify(manifestFor(target, version), null, 2)}\n`);
 	await writeFile(join(out, "PANEL-NOTICES.txt"), await panelNotices(panelPackages));
 
 	const sizes = [];

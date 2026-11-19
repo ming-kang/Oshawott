@@ -56,8 +56,8 @@ export const ProviderSummary = obj({
 	auth: union([oneOf("api_key", "oauth"), nul()]),
 	/** Whether an API key can be entered for this provider. */
 	apiKey: bool(),
-	/** Account sign-in, when the provider has a flow a browser can complete; `origins` are the hosts it must reach. */
-	oauth: union([obj({ label: str(), origins: arr(str()) }), nul()]),
+	/** Account sign-in, when the provider has a flow a browser can complete. */
+	oauth: union([obj({ label: str() }), nul()]),
 	models: arr(ModelSummary),
 	refreshing: bool(),
 	discoveryError: union([str(), nul()]),
@@ -101,7 +101,7 @@ export const PREFERENCE_DEFAULTS: Readonly<Record<Preference, boolean>> = {
 	autoTitle: false, autoCompaction: true, autoRetry: true, confirmActions: false,
 };
 
-export const ApprovalDecision = oneOf("allow", "allow_chat", "deny");
+export const ApprovalDecision = oneOf("allow", "deny");
 export type ApprovalDecision = Static<typeof ApprovalDecision>;
 /** An action waiting for the user's yes or no: the tool, what it acts on (an element, a URL) and the site. */
 export const ApprovalView = obj({ id: str(), tool: str(), target: str(), site: str() });
@@ -139,7 +139,7 @@ export type ChatSummary = Static<typeof ChatSummary>;
 export const MAX_INSTRUCTIONS_CHARS = 100_000;
 
 export const Workspace = remote("oshawott.workspace", {
-	version: 9,
+	version: 10,
 	params: {},
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -198,7 +198,7 @@ export const PanelEntryQuery = obj({
 export type PanelEntryQuery = Static<typeof PanelEntryQuery>;
 
 export const Chat = remote("oshawott.chat", {
-	version: 7,
+	version: 8,
 	params: { id: int() },
 	hostAddress: () => EngineHost(),
 	variants: {
@@ -237,7 +237,6 @@ export const Chat = remote("oshawott.chat", {
 				cancelQueued: method(obj({ id: int() }), QueueCancelResult),
 				/** Continue an idle failed run: tries again from where it stopped, placing any inputs left queued. */
 				continueQueued: method(undefined, int()),
-				/** `allow_chat` also allows this chat's later actions without asking, until it is reset. */
 				decide: method(obj({ id: str(), decision: ApprovalDecision })),
 				abort: method(),
 				/** Cancel the old run and its queued inputs, then start a new context without deleting this chat's files. */

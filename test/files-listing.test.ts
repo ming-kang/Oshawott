@@ -3,11 +3,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import type { Principal } from "../src/contracts/hosts.ts";
 import { ChatFiles, type FileBackend } from "../src/engine/files.ts";
 import { IndexedDbFileBackend } from "../src/engine/files-idb.ts";
 import { filesExtension } from "../src/engine/files-tools.ts";
-import { BACKGROUND_CONTEXT, createHost } from "../src/lib/chord.ts";
+import { BACKGROUND_CONTEXT } from "../src/lib/chord.ts";
 import { settle } from "../src/lib/idb.ts";
 import { openFiles } from "./support/files.ts";
 
@@ -27,7 +26,6 @@ test("tree, ls and Panel listings share one read without changing their policies
 		clear: (chat) => backend.clear(chat),
 	};
 	const files = new ChatFiles(counted, 1, () => 42);
-	const host = createHost<Principal>({ onError: () => {} });
 	try {
 		for (const path of fixture) getOrThrow(await files.writeFile(path, "x", context));
 		const tree = getOrThrow(await files.listTree(".", context));
@@ -37,7 +35,7 @@ test("tree, ls and Panel listings share one read without changing their policies
 		assert.deepEqual(getOrThrow(await files.listTree("/", context)).map((entry) => entry.path), ["workspace", ...depthFirst.map((path) => `workspace/${path}`)]);
 
 		reads = 0;
-		const tool = filesExtension({ host, fetch }).tools!.find((tool) => tool.name === "ls")!;
+		const tool = filesExtension({ fetch }).tools!.find((tool) => tool.name === "ls")!;
 		const result = await tool.execute({}, { env: files } as unknown as ToolExecutionApi, context);
 		assert.deepEqual(result.structuredOutput, tree.map(({ path, kind, size }) => ({ path, kind, size })));
 		assert.equal(reads, 1, "ls does not open another transaction for every directory");
@@ -67,7 +65,6 @@ test("tree, ls and Panel listings share one read without changing their policies
 		assert.deepEqual(getOrThrow(await files.listFiles("unicode", { maxBytes: 11 }, context)), { entries: [], truncated: true });
 		assert.deepEqual(getOrThrow(await files.listFiles("unicode", { maxBytes: 12 }, context)), { entries: [{ path: "汉字.txt", kind: "file" }], truncated: false });
 	} finally {
-		await host.close(context);
 		backend.close();
 		await settle(indexedDB.deleteDatabase(name));
 	}
@@ -78,14 +75,9 @@ test("ls preserves its 1000-entry cap and rejects an environment outside this ex
 	await backend.transact(1, "readwrite", async (tx) => {
 		for (let i = 1000; i >= 0; i--) tx.put(`/workspace/${String(i).padStart(4, "0")}`, { kind: "file", size: 0, mtimeMs: 0 }, new Uint8Array());
 	});
-	const host = createHost<Principal>({ onError: () => {} });
-	try {
-		const tool = filesExtension({ host, fetch }).tools!.find((tool) => tool.name === "ls")!;
-		const result = await tool.execute({}, { env: new ChatFiles(backend, 1) } as unknown as ToolExecutionApi, context);
-		assert.equal((result.structuredOutput as unknown[]).length, 1000);
-		assert.match(result.output!.map((block) => block.type === "text" ? block.text : "").join(""), /Stopped at 1000 entries/);
-		await assert.rejects(tool.execute({}, {} as ToolExecutionApi, context), /no files/);
-	} finally {
-		await host.close(context);
-	}
+	const tool = filesExtension({ fetch }).tools!.find((tool) => tool.name === "ls")!;
+	const result = await tool.execute({}, { env: new ChatFiles(backend, 1) } as unknown as ToolExecutionApi, context);
+	assert.equal((result.structuredOutput as unknown[]).length, 1000);
+	assert.match(result.output!.map((block) => block.type === "text" ? block.text : "").join(""), /Stopped at 1000 entries/);
+	await assert.rejects(tool.execute({}, {} as ToolExecutionApi, context), /no files/);
 });

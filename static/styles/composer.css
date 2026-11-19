@@ -90,41 +90,15 @@
 	white-space: nowrap;
 }
 
-.tab-chip[data-access="unavailable"] {
+.tab-chip[data-available="false"] {
 	color: var(--text-3);
 }
 
-.tab-access {
+.tab-unavailable {
 	display: inline-flex;
 	align-items: center;
 	flex: none;
-	color: var(--success);
-}
-
-.tab-chip[data-access="unavailable"] .tab-access {
 	color: var(--warn);
-}
-
-.grant-btn {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--space-1);
-	flex: none;
-	height: 24px;
-	padding: 0 var(--space-2);
-	border: var(--border-width) solid color-mix(in srgb, var(--accent) 35%, transparent);
-	border-radius: var(--radius-s);
-	background: var(--accent-soft);
-	color: var(--accent);
-	font: var(--font-ui-secondary);
-	font-weight: var(--weight-medium);
-	transition: var(--transition-press);
-}
-
-@media (hover: hover) {
-	.grant-btn:hover {
-		background: color-mix(in srgb, var(--accent) 18%, transparent);
-	}
 }
 
 /* The tab a running task acts on, when the user is looking at another one. */
@@ -215,8 +189,13 @@
 }
 
 #model {
-	flex: 1;
+	flex: 0 1 auto;
 	max-width: 62%;
+	margin-right: auto;
+}
+
+.composer-bar :is(.send-btn, .send-mode-btn) {
+	margin-left: 0;
 }
 
 .model-btn.thinking-btn {

@@ -6,7 +6,7 @@ import { Transcript } from "../transcript.tsx";
 import { h as dom } from "../ui.ts";
 
 export type TranscriptFixtureActions = {
-	suggest(text: string): void; openSettings(): void; chooseModel(): void; allowed(site: string): void;
+	suggest(text: string): void; openSettings(): void; chooseModel(): void;
 	retry(): Promise<unknown>; readFile(path: string): Promise<Uint8Array>;
 };
 export type TranscriptFixtureState = { kind: "loading" } | { kind: "empty"; ready: boolean } | { kind: "conversation"; view: ConversationView; ready: boolean };
@@ -36,7 +36,6 @@ export class TranscriptFixture {
 			session: { opened: { readFile: ({ path }: { path: string }) => actions.readFile(path), continueQueued: actions.retry } },
 			openSettings: actions.openSettings, openModelMenu: actions.chooseModel,
 			send: (text?: string) => text === undefined ? Promise.resolve() : actions.suggest(text),
-			failureMessage: actions.allowed,
 		} as unknown as PanelController;
 		this.#app = createApp({ render: () => h(Transcript, { controller: this.controller }) });
 		this.#app.mount(this.element);

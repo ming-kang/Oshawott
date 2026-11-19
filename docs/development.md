@@ -2,7 +2,7 @@
 
 命令见 `package.json` 的 `scripts`，产物都在 `dist/` 下；打包、签名和发布见[分发](distribution.md)
 
-开发构建（`--dev`）额外包含演示模型、演示账号和面板自测，并申请 `<all_urls>` 权限，因此 `npm run package` 拒绝打包开发构建
+开发构建（`--dev`）额外包含演示模型、演示账号和面板自测，因此 `npm run package` 拒绝打包开发构建
 
 ## 测试
 

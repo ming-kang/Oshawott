@@ -241,7 +241,7 @@ const AssistantRow = defineComponent({
 		disabled: Boolean,
 	},
 	setup(props) {
-		const assistant = new AssistantView((site) => props.controller.failureMessage(site));
+		const assistant = new AssistantView();
 		const registered = new Set<string>();
 		watch(() => [props.item, props.forkFrom, props.disabled] as const, ([item]) => {
 			let message: AssistantMessage | undefined;
@@ -290,7 +290,7 @@ const AssistantRow = defineComponent({
 
 const ToolResultRow = defineComponent({
 	props: {
-		controller: { type: Object as PropType<PanelController>, required: true }, entry: { type: Object as PropType<EntryRecord>, required: true },
+		entry: { type: Object as PropType<EntryRecord>, required: true },
 		cards: { type: Object as PropType<Map<string, ToolCard>>, required: true },
 	},
 	setup(props) {
@@ -299,11 +299,11 @@ const ToolResultRow = defineComponent({
 		const text = textOf(message.content);
 		const diagnostics = ToolResultEntry.is(props.entry) ? props.entry.data?.diagnostics : undefined;
 		let orphan: ToolCard | undefined;
-		const element = h("div", { class: "msg assistant" }, h("div", { class: "tools" }));
+		const element = h("div", { class: "msg assistant", "data-tools-only": "" }, h("div", { class: "tools" }));
 		watch(() => props.cards.get(message.toolCallId), (card) => {
 			if (card) card.setResult(text, message.isError, message.details, diagnostics);
 			else if (!orphan) {
-				orphan = new ToolCard(message.toolName, {}, (site) => props.controller.failureMessage(site));
+				orphan = new ToolCard(message.toolName, {});
 				orphan.setResult(text, message.isError, message.details, diagnostics);
 				element.firstElementChild?.append(orphan.element);
 			}
@@ -408,7 +408,7 @@ export const Transcript = defineComponent({
 			const entry = item.entry;
 			if (entry.kind === "pi.user" || entry.kind === USER_ENTRY) return <UserRow controller={props.controller} entry={entry} key={item.key} />;
 			if (entry.kind === "pi.assistant") return <AssistantRow controller={props.controller} item={item} cards={cards} syncCards={syncCards} notice={notice} forkFrom={forkFrom} disabled={store.forking.value} key={item.key} />;
-			if (entry.kind === "pi.tool-result") return <ToolResultRow controller={props.controller} entry={entry} cards={cards} key={item.key} />;
+			if (entry.kind === "pi.tool-result") return <ToolResultRow entry={entry} cards={cards} key={item.key} />;
 			if (entry.kind === "pi.reset" || entry.kind === "pi.compaction") return <div class="divider" key={item.key}><span>{t(entry.kind === "pi.reset" ? "divider.reset" : "divider.compaction")}</span></div>;
 			return null;
 		};

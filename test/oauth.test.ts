@@ -134,7 +134,7 @@ test("a setup answers the method and domain questions; other questions reach the
 		asked.push(await interaction.prompt({ type: "select", message: "Region", options: [{ id: "eu", label: "EU" }] }));
 		return token(3);
 	};
-	const { sessions, view } = sessionsFor(account("acct", login), { setups: { acct: { origins: [], select: "copy_code", text: "" } } });
+	const { sessions, view } = sessionsFor(account("acct", login), { setups: { acct: { select: "copy_code", text: "" } } });
 	const id = sessions.start("acct");
 	const prompt = await until(() => view(id)?.prompt ?? undefined);
 	assert.deepEqual([prompt.kind, prompt.options], ["select", [{ id: "eu", label: "EU" }]]);
@@ -163,11 +163,11 @@ test("a panel signs in through the Engine, sees only the account's models, and s
 		loginLabel: "Sign in with Account",
 		filterModels: (list, credential) => credential?.type === "oauth" ? list.filter((model) => (credential.availableModelIds as string[]).includes(model.id)) : list,
 	}));
-	const { open, close } = await engineWith(models, credentials, { acct: { origins: ["https://auth.test/*"] } });
+	const { open, close } = await engineWith(models, credentials, { acct: {} });
 	const first = await open();
 	const summary = (workspace: typeof first.workspace) => workspace.providers.value.find((provider) => provider.id === "acct")!;
 	assert.deepEqual([summary(first.workspace).oauth, summary(first.workspace).apiKey, summary(first.workspace).auth],
-		[{ label: "Sign in with Account", origins: ["https://auth.test/*"] }, false, null]);
+		[{ label: "Sign in with Account" }, false, null]);
 	assert.equal(summary(first.workspace).models.length, 2);
 
 	const id = await first.workspace.startLogin({ provider: "acct" }, context);
@@ -234,7 +234,6 @@ test("only loopback-free sign-ins are registered, and the build bundles exactly 
 	const byId = new Map(providers.map((provider) => [provider.id, provider]));
 	assert.equal(byId.get("openai-codex")?.auth.apiKey, undefined, "Codex is sign-in only");
 	for (const id of ["openai", "openrouter"]) assert.ok(byId.get(id)?.auth.apiKey && !byId.get(id)?.auth.oauth, `${id} keeps its API key only`);
-	for (const setup of Object.values(BROWSER_OAUTH)) for (const origin of setup.origins) assert.match(origin, /^https:\/\/[^/]+\/\*$/);
 
 	// Each loader the replacement module defines must exist in the installed Pi-AI, with the export it reads.
 	const oauthDir = new URL("../node_modules/@earendil-works/pi-ai/dist/auth/oauth/", import.meta.url);

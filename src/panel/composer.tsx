@@ -5,7 +5,6 @@ import { AttachmentButton, AttachmentTray, Icon } from "./components.tsx";
 import type { PanelController } from "./controller.ts";
 import { t } from "./i18n/index.ts";
 import { modelName, supportedThinkingLevels, supportsVision } from "./models.ts";
-import { toast } from "./ui.ts";
 
 export const Composer = defineComponent({
 	props: { controller: { type: Object as PropType<PanelController>, required: true } },
@@ -34,9 +33,6 @@ export const Composer = defineComponent({
 			}
 		}, { immediate: true });
 
-		const grant = () => {
-			void controller.tabs.grant().then((granted) => toast(granted ? t("tab.granted") : t("tab.denied"), granted ? "info" : "error"));
-		};
 		const context = () => {
 			const tab = controller.tab.value;
 			const workingChip = working.value?.title ? (
@@ -45,20 +41,18 @@ export const Composer = defineComponent({
 					<span class="spinner" /><span class="name">{t("tab.working", working.value!.title!)}</span>
 				</button>
 			) : null;
-			if (!tab) return <><span class="tab-chip" data-access="unavailable"><Icon name="globe" size={13} /><span class="name">{t("tab.none")}</span></span>{workingChip}</>;
-			const accessLabel = tab.access === "granted" ? t("tab.granted") : t("tab.unavailable");
+			if (!tab) return <><span class="tab-chip" data-available="false"><Icon name="globe" size={13} /><span class="name">{t("tab.none")}</span></span>{workingChip}</>;
 			return (
 				<>
-					<span class="tab-chip" id="tab-chip" data-access={tab.access} title={tab.access === "unavailable" ? t("tab.unavailable") : tab.url}>
+					<span class="tab-chip" id="tab-chip" data-available={String(tab.available)} title={tab.available ? tab.url : t("tab.unavailable")}>
 						{tab.favIconUrl && !faviconFailed.value
 							? <img src={tab.favIconUrl} alt="" width={14} height={14} referrerpolicy="no-referrer" onError={() => { faviconFailed.value = true; }} />
 							: <Icon name="globe" size={13} />}
 						<span class="name">{tab.title}</span>
-						{tab.access === "granted" || tab.access === "unavailable" ? (
-							<span class="tab-access" title={accessLabel}><Icon name={tab.access === "granted" ? "check" : "alert"} size={12} /><span class="sr-only">{accessLabel}</span></span>
-						) : null}
+						{!tab.available && (
+							<span class="tab-unavailable" title={t("tab.unavailable")}><Icon name="alert" size={12} /><span class="sr-only">{t("tab.unavailable")}</span></span>
+						)}
 					</span>
-					{tab.access === "grantable" && <button class="grant-btn" id="grant" type="button" onClick={grant}><Icon name="lock" size={12} />{t("tab.grant")}</button>}
 					{workingChip}
 				</>
 			);

@@ -1,6 +1,5 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import type { FauxResponseFactory, OAuthCredential, Provider, ToolResultMessage } from "@earendil-works/pi-ai";
-import { NO_ACCESS } from "../contracts/browser.ts";
 
 const DEMO_PROVIDER = "demo";
 
@@ -98,15 +97,7 @@ function measureScript(path: string): string {
 }
 
 function fetchFailed(error: string, zh: boolean) {
-	const denied = error.includes(NO_ACCESS);
-	if (zh) {
-		return denied
-			? "我还不能访问这个网站。点上面卡片里的 **允许访问此站点**，然后再发一次。"
-			: `下载失败：${error}`;
-	}
-	return denied
-		? "I can't reach this site yet. Use **Allow this site** on the card above, then send again."
-		: `The download failed: ${error}`;
+	return zh ? `下载失败：${error}` : `The download failed: ${error}`;
 }
 
 function measured(text: string, zh: boolean) {

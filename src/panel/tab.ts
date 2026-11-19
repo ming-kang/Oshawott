@@ -1,15 +1,12 @@
-import { sitePattern } from "../platform/patterns.ts";
+import { isHttpUrl } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
-
-export type Access = "granted" | "grantable" | "unavailable";
 
 export interface TargetTab {
 	readonly id: number;
 	readonly title: string;
 	readonly url: string;
 	readonly favIconUrl?: string;
-	readonly access: Access;
-	readonly pattern?: string;
+	readonly available: boolean;
 }
 
 const own = (tab: TabInfo) => (tab.url ?? "").startsWith(ext.runtime.getURL(""));
@@ -21,17 +18,14 @@ async function pick(): Promise<TabInfo | undefined> {
 	return others.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0];
 }
 
-async function describe(tab: TabInfo): Promise<TargetTab> {
+function describe(tab: TabInfo): TargetTab {
 	const url = tab.url ?? "";
-	const pattern = sitePattern(url);
-	const access: Access = !pattern ? "unavailable" : (await ext.permissions.contains({ origins: [pattern] })) ? "granted" : "grantable";
 	return {
 		id: tab.id!,
 		title: tab.title || url,
 		url,
 		...(tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) ? { favIconUrl: tab.favIconUrl } : {}),
-		access,
-		...(pattern ? { pattern } : {}),
+		available: isHttpUrl(url),
 	};
 }
 
@@ -55,8 +49,6 @@ export class TabTracker {
 			if (tabId === this.#current?.id || change.status === "complete") refresh();
 		});
 		ext.tabs.onRemoved.addListener(refresh);
-		ext.permissions.onAdded?.addListener(refresh);
-		ext.permissions.onRemoved?.addListener(refresh);
 		addEventListener("focus", refresh);
 		refresh();
 	}
@@ -64,23 +56,9 @@ export class TabTracker {
 	async refresh() {
 		const ticket = ++this.#pending;
 		const tab = await pick().catch(() => undefined);
-		const next = tab?.id === undefined ? undefined : await describe(tab).catch(() => undefined);
+		const next = tab?.id === undefined ? undefined : describe(tab);
 		if (ticket !== this.#pending) return;
 		this.#current = next;
 		for (const listener of this.#listeners) listener(next);
-	}
-
-	/**
-	 * Asks for the current site's permission. Called straight from a click handler, before any await: Firefox grants
-	 * a permission request only within the user's gesture.
-	 */
-	grant(): Promise<boolean> {
-		const pattern = this.#current?.pattern;
-		if (!pattern) return Promise.resolve(false);
-		const asked = ext.permissions.request({ origins: [pattern] });
-		return asked.then((granted) => {
-			void this.refresh();
-			return granted;
-		});
 	}
 }

@@ -3,48 +3,28 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import type { ToolExecutionApi, ToolExecutionResult } from "@earendil-works/pi-durable";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
-import { NO_ACCESS } from "../src/contracts/browser.ts";
-import { BrokerHost, EngineHost, type Principal } from "../src/contracts/hosts.ts";
 import { ChatFiles, MAX_FILE_BYTES } from "../src/engine/files.ts";
 import { filesExtension, MAX_READ_CHARS, redirectGuesses } from "../src/engine/files-tools.ts";
-import { createHost, type Context } from "../src/lib/chord.ts";
+import { type Context } from "../src/lib/chord.ts";
 import { openFiles } from "./support/files.ts";
-import { context, fakeBrowser, linkTo, serveBrowser } from "./support/world.ts";
+import { context } from "./support/world.ts";
 
 type FetchCall = (args: Record<string, unknown>, ctx?: Context) => Promise<ToolExecutionResult>;
 
-async function withFetch(network: typeof fetch, use: (call: FetchCall, files: ChatFiles) => Promise<void>, allowed = (url: string) => new URL(url).hostname === "data.example") {
-	const broker = await serveBrowser(fakeBrowser({ hasAccess: async ({ url }) => allowed(url) }));
-	const host = createHost<Principal>({ address: EngineHost(), principal: { kind: "engine" }, onError: () => {} });
-	host.route(BrokerHost, { authorize: (principal) => principal.kind === "engine", resolve: async () => ({ link: linkTo(broker), principal: { kind: "broker" } }) }, context);
-	await host.load([], context);
+async function withFetch(network: typeof fetch, use: (call: FetchCall, files: ChatFiles) => Promise<void>) {
 	const files = new ChatFiles(await openFiles(), 1);
-	const tool = filesExtension({ host, fetch: network }).tools!.find((tool) => tool.name === "fetch")!;
+	const tool = filesExtension({ fetch: network }).tools!.find((tool) => tool.name === "fetch")!;
 	const call: FetchCall = (args, ctx = context) => tool.execute(args, { env: files } as unknown as ToolExecutionApi, ctx);
-	try {
-		await use(call, files);
-	} finally {
-		await host.close(context);
-		await broker.close(context);
-	}
+	await use(call, files);
 }
 
 const valueOf = (result: ToolExecutionResult) => result.structuredOutput as { bytes: number; body?: string; truncated?: boolean; savedTo?: string };
 
-test("fetch refuses invalid schemes and unauthorized sites before requesting or writing", async () => {
+test("fetch refuses invalid schemes before requesting or writing", async () => {
 	let requests = 0;
 	await withFetch(async () => { requests++; return new Response("never"); }, async (call, files) => {
-		const denied = await call({ url: "https://other.example:8443/private", saveTo: "private.txt" });
-		assert.equal(denied.isError, true);
-		assert.equal(denied.structuredOutput, undefined);
-		assert.deepEqual(denied.output, []);
-		assert.deepEqual(denied.details, { access: { url: "https://other.example:8443/private" } });
-		assert.deepEqual(denied.diagnostics, [{
-			severity: "error", code: "no_access",
-			message: `${NO_ACCESS} other.example:8443: the user has not allowed Oshawott on this site. They can allow it from this call in the panel; then try again.`,
-		}]);
-		await assert.rejects(call({ url: "file:///private.txt" }), /Only http and https/);
-		await assert.rejects(call({ url: "not a URL" }), /Not a URL/);
+		await assert.rejects(call({ url: "file:///private.txt", saveTo: "private.txt" }), /Only http and https/);
+		await assert.rejects(call({ url: "not a URL", saveTo: "private.txt" }), /Not a URL/);
 		assert.equal(requests, 0);
 		assert.equal(getOrThrow(await files.exists("private.txt", context)), false);
 	});
@@ -128,7 +108,7 @@ test("fetch rejects redirects instead of sending an unchecked request to a diffe
 			const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/redirect`;
 			await assert.rejects(call({ url }), /Only redirects to the https or www form/);
 			assert.equal(targetRequests, 0);
-		}, (url) => new URL(url).hostname === "127.0.0.1");
+		});
 	} finally {
 		server.closeAllConnections();
 		await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -136,49 +116,39 @@ test("fetch rejects redirects instead of sending an unchecked request to a diffe
 });
 
 test("read_text keeps full large single lines available to programs in bounded chunks", async () => {
-	const host = createHost<Principal>({ onError: () => {} });
 	const files = new ChatFiles(await openFiles(), 1);
-	const tool = filesExtension({ host, fetch }).tools!.find((tool) => tool.name === "read_text")!;
+	const tool = filesExtension({ fetch }).tools!.find((tool) => tool.name === "read_text")!;
 	const api = { env: files } as unknown as ToolExecutionApi;
 	const source = "x".repeat(MAX_READ_CHARS + 3) + "💧end";
 	getOrThrow(await files.writeFile("large.txt", `\ufeff${source}`, context));
-	try {
-		const first = await tool.execute({ path: "large.txt" }, api, context);
-		const chunk = first.structuredOutput as { text: string; nextOffset: number; totalChars: number; eof: boolean };
-		assert.equal(chunk.text.length, MAX_READ_CHARS);
-		assert.equal(chunk.eof, false);
-		assert.equal(chunk.totalChars, source.length);
-		const next = (await tool.execute({ path: "large.txt", offset: chunk.nextOffset }, api, context)).structuredOutput as typeof chunk;
-		assert.equal(chunk.text + next.text, source);
-		assert.equal(next.eof, true);
-		assert.deepEqual(tool.callers, ["tools"]);
-		assert.ok((first.output?.map((block) => block.type === "text" ? block.text : "").join("") ?? "").length < 1000, "the preview does not dump the full chunk");
-	} finally {
-		await host.close(context);
-	}
+	const first = await tool.execute({ path: "large.txt" }, api, context);
+	const chunk = first.structuredOutput as { text: string; nextOffset: number; totalChars: number; eof: boolean };
+	assert.equal(chunk.text.length, MAX_READ_CHARS);
+	assert.equal(chunk.eof, false);
+	assert.equal(chunk.totalChars, source.length);
+	const next = (await tool.execute({ path: "large.txt", offset: chunk.nextOffset }, api, context)).structuredOutput as typeof chunk;
+	assert.equal(chunk.text + next.text, source);
+	assert.equal(next.eof, true);
+	assert.deepEqual(tool.callers, ["tools"]);
+	assert.ok((first.output?.map((block) => block.type === "text" ? block.text : "").join("") ?? "").length < 1000, "the preview does not dump the full chunk");
 });
 
 test("read_text character chunks reassemble Unicode, strip BOM and support explicit encodings", async () => {
-	const host = createHost<Principal>({ onError: () => {} });
 	const files = new ChatFiles(await openFiles(), 1);
-	const tool = filesExtension({ host, fetch }).tools!.find((tool) => tool.name === "read_text")!;
+	const tool = filesExtension({ fetch }).tools!.find((tool) => tool.name === "read_text")!;
 	const api = { env: files } as unknown as ToolExecutionApi;
 	getOrThrow(await files.writeFile("unicode.txt", "\ufeffab💧汉字z", context));
 	getOrThrow(await files.writeFile("latin.txt", new Uint8Array([233]), context));
-	try {
-		const parts: string[] = [];
-		for (let offset = 0; ; ) {
-			const result = (await tool.execute({ path: "unicode.txt", offset, maxChars: 3 }, api, context)).structuredOutput as { text: string; nextOffset: number; eof: boolean };
-			parts.push(result.text);
-			if (result.eof) break;
-			offset = result.nextOffset;
-		}
-		assert.equal(parts.join(""), "ab💧汉字z");
-		assert.equal(((await tool.execute({ path: "latin.txt", encoding: "windows-1252" }, api, context)).structuredOutput as { text: string }).text, "é");
-		await assert.rejects(tool.execute({ path: "latin.txt" }, api, context));
-	} finally {
-		await host.close(context);
+	const parts: string[] = [];
+	for (let offset = 0; ; ) {
+		const result = (await tool.execute({ path: "unicode.txt", offset, maxChars: 3 }, api, context)).structuredOutput as { text: string; nextOffset: number; eof: boolean };
+		parts.push(result.text);
+		if (result.eof) break;
+		offset = result.nextOffset;
 	}
+	assert.equal(parts.join(""), "ab💧汉字z");
+	assert.equal(((await tool.execute({ path: "latin.txt", encoding: "windows-1252" }, api, context)).structuredOutput as { text: string }).text, "é");
+	await assert.rejects(tool.execute({ path: "latin.txt" }, api, context));
 });
 
 test("fetch follows a redirect only to the https or www form of the same address", async () => {
@@ -199,5 +169,5 @@ test("fetch follows a redirect only to the https or www form of the same address
 		const result = await call({ url: "http://example.com/docs" });
 		assert.match((result.output![0] as { text: string }).text, /found/);
 		assert.deepEqual(requested, ["http://example.com/docs", "https://example.com/docs", "https://example.com/docs/", "https://www.example.com/docs"]);
-	}, (url) => new URL(url).hostname.endsWith("example.com"));
+	});
 });
