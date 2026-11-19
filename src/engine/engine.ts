@@ -83,8 +83,20 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 	for (const extension of options.extensions ?? []) registry.install(extension);
 
 	let closing = false;
+	let wakeTimer: ReturnType<typeof setTimeout> | undefined;
 	const armWake = (wake: Wake) => {
 		if (closing) return;
+		// The alarm wakes the Engine after its document was stopped; while the document lives, a local timer resumes
+		// the harness instead, or sleeping tasks (retry backoffs) would wait for a wake that never comes.
+		if (wakeTimer !== undefined) {
+			clearTimeout(wakeTimer);
+			wakeTimer = undefined;
+		}
+		if (wake.at !== undefined)
+			wakeTimer = setTimeout(() => {
+				wakeTimer = undefined;
+				harness.resume();
+			}, Math.max(0, wake.at - now()));
 		void using(host, Browser, {}, context, (browser) => browser.armWake({ active: wake.active, at: wake.at }, context)).catch(
 			(error) => {
 				if (!closing) onError(error);
@@ -193,6 +205,7 @@ export async function startEngine(options: EngineOptions, context: Context): Pro
 		async close() {
 			// Links first: holders go `loading` and re-hold on the next Engine, instead of seeing their objects fail.
 			closing = true;
+			clearTimeout(wakeTimer);
 			await host.close(context);
 			loginObservation.detach();
 			logins.close();
