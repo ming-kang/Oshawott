@@ -193,7 +193,8 @@ const inspectBody = (_args: Record<string, unknown>, result?: ToolResult): ToolB
 	});
 	return {
 		label: inspected.url,
-		content: h("div", { class: "tool-view tv-inspect" }, ...elements),
+		content: h("div", { class: "tool-view tv-inspect" }, ...elements,
+			inspected.previewTruncated ? h("div", { class: "tv-note" }, t("tool.inspectPreview")) : null),
 		copyText: result.text,
 	};
 };

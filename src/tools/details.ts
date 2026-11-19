@@ -7,7 +7,7 @@ export const SNAPSHOT_PREVIEW_ELEMENTS = 40;
 
 export type ToolDetails =
 	| ({ kind: "page_snapshot"; elementCount: number; firstButtonRef?: string } & Pick<Static<typeof SnapshotResult>, "url" | "title" | "text" | "elements">)
-	| ({ kind: "page_inspect" } & Static<typeof InspectResult>)
+	| ({ kind: "page_inspect"; previewTruncated?: true } & Static<typeof InspectResult>)
 	| ({ kind: "page_wait" } & Pick<Static<typeof Done>, "ok" | "detail">)
 	| { kind: "tab"; tab: Tab }
 	| { kind: "tabs_list"; tabs: Tab[] }

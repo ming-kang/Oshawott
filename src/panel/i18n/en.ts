@@ -272,6 +272,7 @@ export const en = {
 	"tool.yes": "Yes",
 	"tool.raw": "Raw",
 	"tool.more": "{0} more",
+	"tool.inspectPreview": "Preview shortened. Switch to Raw for the tool output.",
 	"tool.wallTime": "Wall time {0} s",
 	"run.actions": "Ran {0} actions",
 	"run.failed": "{0} failed",

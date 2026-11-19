@@ -5,6 +5,7 @@ import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { type Tab } from "../src/contracts/browser.ts";
 import { Approvals, DECLINED } from "../src/engine/approvals.ts";
 import { ChatFiles, type FileBackend } from "../src/engine/files.ts";
+import { readToolDetails } from "../src/tools/details.ts";
 import { openFiles } from "./support/files.ts";
 import { until } from "./support/wait.ts";
 import { type BrowserMembers, connectPanel, context, fakeBrowser, linkTo, openEngine, type PageMembers, serveBrowser, servePage, useModel } from "./support/world.ts";
@@ -86,6 +87,38 @@ async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>
 }
 
 const tab = (tabId: number, host: string): Tab => ({ tabId, windowId: 1, url: `https://${host}/`, title: host, active: tabId === 7 });
+
+test("inspect stores bounded previews without further truncating the model output", async () => {
+	const elements = Array.from({ length: 20 }, (_, index) => ({
+		ref: `e${index + 1}`, tag: "article", visible: true, truncated: true,
+		attributes: { "data-large": "x".repeat(500), "data-label": `article-${index}` }, styles: { height: "100px" },
+		html: `<article>${index}:${"z".repeat(20_000)}`.slice(0, 20_000),
+	}));
+	const f = await fixture([tab(7, "example.com")], {
+		page: { page_inspect: async () => ({ url: "https://example.com/", matched: 21, truncated: true, elements }) },
+	});
+	try {
+		const result = await f.call("page_inspect", { selector: "article", maxElements: 20, maxHtml: 20_000 }, 7);
+		assert.equal(result.isError, false);
+		const output = result.content[0]?.text ?? "";
+		const serial = JSON.stringify(result.details);
+		const bytes = Buffer.byteLength(serial);
+		assert.ok(bytes < 12_000, `expected compact details, got ${bytes} bytes`);
+		assert.ok(output.includes(elements[0]!.html), "the first raw HTML block is not clipped by the preview limit");
+		assert.match(output, /"x{500}"/, "raw output still includes the oversized attribute");
+		const details = readToolDetails(result.details, "page_inspect");
+		assert.equal(details?.matched, 21);
+		assert.equal(details?.elements.length, 20);
+		assert.equal(details?.previewTruncated, true);
+		const last = details?.elements.at(-1);
+		assert.equal(last?.ref, "e20");
+		assert.deepEqual(last?.attributes, { "data-label": "article-19" });
+		assert.deepEqual(last?.styles, { height: "100px" });
+		assert.match(last?.html ?? "", /^<article>19:z+…$/);
+	} finally {
+		await f.close();
+	}
+});
 
 test("non-http(s) tabs refuse page tools", async () => {
 	const f = await fixture([{ tabId: 7, windowId: 1, url: "chrome://settings/", title: "Settings", active: true }]);
