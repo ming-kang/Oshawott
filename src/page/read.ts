@@ -14,6 +14,24 @@ const REDACTED = "[redacted]";
 
 const clean = (text: string) => text.replace(/\n{3,}/g, "\n\n");
 
+function componentText(root: ShadowRoot): string {
+	const range = root.ownerDocument.createRange();
+	const read = (node: Node): string => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			const parent = node.parentElement ?? root.host;
+			if (own(parent).getComputedStyle(parent).visibility !== "visible") return "";
+			range.selectNodeContents(node);
+			return range.getClientRects().length ? node.textContent ?? "" : "";
+		}
+		if (node.nodeType !== Node.ELEMENT_NODE) return "";
+		const element = node as Element;
+		if (element.matches("script, style, template, noscript")) return "";
+		if (own(element).getComputedStyle(element).display === "contents") return [...element.childNodes].map(read).join(" ");
+		return visible(element) ? textOf(element) : "";
+	};
+	return [...root.childNodes].map(read).join(" ");
+}
+
 /** The root's text plus what flat `innerText` misses: the text of same-origin frames and of page components. */
 function pageText(root: Element): string {
 	const main = clean(textOf(root));
@@ -30,8 +48,8 @@ function pageText(root: Element): string {
 			}
 		}
 		const shadow = shadowOf(each);
-		if (shadow && visible(each)) {
-			const text = squash([...shadow.children].filter(visible).map(textOf).join(" "));
+		if (shadow && (visible(each) || own(each).getComputedStyle(each).display === "contents")) {
+			const text = squash(componentText(shadow));
 			if (text && !flat.includes(text) && !components.includes(text)) components.push(text);
 		}
 	}

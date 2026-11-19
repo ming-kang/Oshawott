@@ -154,7 +154,9 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 			&& nested.text.includes('[Frame "Inner frame"]') && nested.text.includes("Frame words"),
 			nested.elements.map((each: Seen) => each.name).join("|"));
 		step("a snapshot excludes shadow styles and hidden content",
-			!["private-css", "Hidden shadow child", "Hidden shadow host"].some((text) => nested.text.includes(text)), nested.text);
+			!["private-css", "Hidden shadow child", "Hidden shadow host", "Hidden boxless child"].some((text) => nested.text.includes(text)), nested.text);
+		step("a snapshot includes visible text from boxless shadow hosts and children",
+			nested.text.includes("Boxless host words") && nested.text.includes("Boxless child words"), nested.text);
 
 		await page("page_click", { ref: deepRef("Shadow Open") });
 		await page("page_click", { ref: deepRef("Shadow Closed") });
