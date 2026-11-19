@@ -30,12 +30,17 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 				title: "Example Domain",
 				text: "This domain is for use in examples.",
 				truncated: false,
+				textOffset: 0,
+				totalChars: 37,
 				elements: [{ ref: "e1", role: "link", name: "More information" }],
+				elementsTruncated: false,
 			};
 		},
 		page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
 		page_click: done, page_type: done, page_scroll: done, page_select: done, page_press: done, page_hover: done, page_wait: done,
 		describe: async () => ({ role: "link", name: "More information" }),
+		settled: async () => ({ url: "https://example.com/", title: "Example Domain", opened: [] }),
+		viewport: async () => ({ width: 1280, height: 800, dpr: 1 }),
 	}, onError);
 
 	const tabResolves: number[] = [];
@@ -95,10 +100,14 @@ test("a panel's prompt runs a page tool on its tab and the answer reaches the pa
 		assert.deepEqual(snapshotMessage.details, { snapshot: { title: "Example Domain", elementCount: 1 } });
 		assert.equal(snapshotMessage.content[0]?.type, "text");
 		if (snapshotMessage.content[0]?.type === "text") {
-			assert.deepEqual(JSON.parse(snapshotMessage.content[0].text), {
-				url: "https://example.com/", title: "Example Domain", text: "This domain is for use in examples.",
-				truncated: false, elements: [{ ref: "e1", role: "link", name: "More information" }],
-			});
+			assert.equal(snapshotMessage.content[0].text, [
+				"Title: Example Domain",
+				"URL: https://example.com/",
+				"Elements (1):",
+				`[e1] link "More information"`,
+				"Text:",
+				"This domain is for use in examples.",
+			].join("\n"));
 		}
 	}
 	assert.ok(wakes.some((wake) => wake.active), "the Broker was asked for a recovery wakeup while the run was active");

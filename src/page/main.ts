@@ -3,7 +3,7 @@ import { PORTS, type Principal, TabHost } from "../contracts/hosts.ts";
 import { BACKGROUND_CONTEXT, createHost, defineFacet } from "../lib/chord.ts";
 import { type PortLink, portLink } from "../link/port-link.ts";
 import { ext } from "../platform/webext.ts";
-import { click, describe, hover, inspect, press, scroll, select, snapshot, type, wait } from "./dom.ts";
+import { click, describe, hover, inspect, press, scroll, select, settled, snapshot, type, viewport, wait } from "./dom.ts";
 
 declare global {
 	// Set by the Broker's first injection step, read here: a content script cannot learn its tab id by itself.
@@ -39,6 +39,8 @@ async function start(tabId: number) {
 								page_scroll: async (args) => scroll(args),
 								page_wait: (args) => wait(args),
 								describe: async (args) => describe(args),
+								settled: async () => settled(),
+								viewport: async () => viewport(),
 							},
 						};
 					});

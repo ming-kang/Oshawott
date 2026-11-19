@@ -34,12 +34,22 @@ test("the codemode result header parses into status, wall time and output", () =
 	assert.equal(parseCodemodeResult("Script sandbox failed: QuickJS died"), undefined);
 });
 
-test("the snapshot result needs its url, title and element records", () => {
-	const parsed = parseSnapshotResult(JSON.stringify({
-		url: "https://ex.com/", title: "T", text: "body",
-		elements: [{ ref: "e1", role: "button", name: "Go" }, { ref: "e2" }, { ref: "e3", role: "link", name: "", href: "#" }],
-	}));
-	assert.equal(parsed?.elements.length, 2);
-	assert.deepEqual(parsed?.elements[0], { ref: "e1", role: "button", name: "Go" });
+test("the snapshot result needs its url, title and element lines", () => {
+	const parsed = parseSnapshotResult([
+		"Title: T",
+		"URL: https://ex.com/",
+		"Elements (2):",
+		`[e1] button "Go" disabled`,
+		`[e2] link "" → https://ex.com/#`,
+		"Text:",
+		"body",
+	].join("\n"));
+	assert.equal(parsed?.title, "T");
+	assert.equal(parsed?.url, "https://ex.com/");
+	assert.equal(parsed?.text, "body");
+	assert.deepEqual(parsed?.elements, [
+		{ ref: "e1", role: "button", name: "Go" },
+		{ ref: "e2", role: "link", name: "" },
+	]);
 	assert.equal(parseSnapshotResult('{"title":"T","elements":[]}'), undefined);
 });

@@ -10,6 +10,12 @@ const HEARTBEAT_MS = 60_000;
 const DONE = Symbol("loaded");
 /** How long a navigation may take before the tools get the tab as it is. */
 const LOAD_TIMEOUT_MS = 15_000;
+/** How long after an action a navigation it caused may still begin loading. */
+const SETTLE_WINDOW_MS = 400;
+const GROUP_TITLE = "Oshawott";
+const GROUP_COLOR = "purple";
+/** Without storage.session: one id per broker lifetime, so closed tabs are still foreign after a restart. */
+let sessionId: string | undefined;
 
 function tabOf(tab: TabInfo): Tab {
 	return {
@@ -41,6 +47,66 @@ async function loaded(tabId: number, navigate: () => Promise<unknown>, started =
 		});
 	} finally {
 		clearTimeout(timer);
+		if (listener) ext.tabs.onUpdated.removeListener(listener);
+	}
+	return tabOf(await ext.tabs.get(tabId));
+}
+
+/** Puts the tab in `group` when it still exists, else in this extension's own group. Best-effort: returns undefined without. */
+async function groupTab(tabId: number, group: number | null | undefined, windowId: number | undefined): Promise<number | undefined> {
+	const groupApi = ext.tabs.group;
+	if (!groupApi) return undefined;
+	if (group !== null && group !== undefined) {
+		try {
+			return await groupApi.call(ext.tabs, { groupId: group, tabIds: [tabId] });
+		} catch {
+			// The stored group is gone: fall through to this extension's own group.
+		}
+	}
+	try {
+		const groupId = await groupApi.call(ext.tabs, {
+			tabIds: [tabId],
+			...(windowId === undefined ? {} : { createProperties: { windowId } }),
+		});
+		await ext.tabGroups?.update(groupId, { title: GROUP_TITLE, color: GROUP_COLOR }).catch(() => undefined);
+		return groupId;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * The tab after an action: waits briefly for a load the action may have started, then for its completion.
+ * One listener through both waits, so a `complete` can never slip into the gap between them.
+ */
+async function settleTab(tabId: number): Promise<Tab> {
+	let listener: Parameters<typeof ext.tabs.onUpdated.addListener>[0] | undefined;
+	let settleTimer: ReturnType<typeof setTimeout> | undefined;
+	let loadTimer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await new Promise<void>((resolve, reject) => {
+			let loading = false;
+			listener = (id, change) => {
+				if (id !== tabId) return;
+				if (change.status === "loading") loading = true;
+				// A finished load always settles the tab, whether we saw it start or not.
+				else if (change.status === "complete") resolve();
+			};
+			ext.tabs.onUpdated.addListener(listener);
+			settleTimer = setTimeout(() => {
+				if (!loading) resolve();
+			}, SETTLE_WINDOW_MS);
+			loadTimer = setTimeout(resolve, LOAD_TIMEOUT_MS);
+			ext.tabs.get(tabId).then(
+				(tab) => {
+					if (tab.status === "loading") loading = true;
+				},
+				reject,
+			);
+		});
+	} finally {
+		clearTimeout(settleTimer);
+		clearTimeout(loadTimer);
 		if (listener) ext.tabs.onUpdated.removeListener(listener);
 	}
 	return tabOf(await ext.tabs.get(tabId));
@@ -91,15 +157,17 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 									);
 									return tab ? tabOf(tab) : null;
 								},
-								openTab: async ({ url, active }) => {
+								openTab: async ({ url, active, group }) => {
 									const tab = await ext.tabs.create({ url, active: active ?? true });
+									const groupId = await groupTab(tab.id!, group, tab.windowId);
 									// Already loading: wait for that load, unless it finished before the listener was there.
-									return loaded(tab.id!, async () => {
+									const opened = await loaded(tab.id!, async () => {
 										if ((await ext.tabs.get(tab.id!)).status === "complete") throw DONE;
 									}, true).catch(async (error) => {
 										if (error !== DONE) throw error;
 										return tabOf(await ext.tabs.get(tab.id!));
 									});
+									return { ...opened, ...(groupId === undefined ? {} : { groupId }) };
 								},
 								navigateTab: ({ tabId, url, back }) =>
 									loaded(tabId, () => back || url === undefined ? ext.tabs.goBack(tabId) : ext.tabs.update(tabId, { url })),
@@ -107,6 +175,25 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 								closeTab: async ({ tabId }) => {
 									await ext.tabs.remove(tabId);
 									return null;
+								},
+								settle: async ({ tabId }) => settleTab(tabId),
+								capture: async ({ tabId }) => {
+									const tab = await ext.tabs.get(tabId);
+									if (!tab.active || tab.windowId === undefined) {
+										throw new Error(`Tab ${tabId} is not visible: bring it to the front with tab_activate first.`);
+									}
+									const capture = ext.tabs.captureVisibleTab;
+									if (!capture) throw new Error("This browser cannot capture screenshots.");
+									return { dataUrl: await capture.call(ext.tabs, tab.windowId, { format: "jpeg", quality: 85 }) };
+								},
+								session: async () => {
+									const store = ext.storage?.session;
+									if (!store) return sessionId ??= crypto.randomUUID();
+									const stored = await store.get("oshawott-session");
+									if (typeof stored["oshawott-session"] === "string") return stored["oshawott-session"];
+									const id = sessionId = crypto.randomUUID();
+									await store.set({ "oshawott-session": id });
+									return id;
 								},
 								attach: async ({ tabId }) => {
 									await injectPage(tabId);

@@ -71,24 +71,25 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 		step("page_inspect refuses an invalid selector", (await rejection("page_inspect", { selector: "[" })).includes("Invalid CSS selector"));
 
 		const first = await page("page_snapshot", {});
-		const stale = button(first, "Count");
+		const kept = button(first, "Count");
 		const second = await page("page_snapshot", {});
-		const staleError = await rejection("page_click", { ref: stale });
-		step("a new snapshot invalidates earlier refs", staleError.includes("earlier snapshot") && (await counter()).includes(">0<"), staleError);
+		await page("page_snapshot", { selector: "#scope" });
+		await page("page_click", { ref: kept });
+		step("later and narrower snapshots keep earlier refs", (await counter()).includes(">1<"));
 		const inspected = (await page("page_inspect", { selector: "#count", include: ["box"] })).elements[0].ref;
 		await page("page_click", { ref: inspected });
-		step("a ref from page_inspect works with the other page tools", (await counter()).includes(">1<"));
+		step("a ref from page_inspect works with the other page tools", (await counter()).includes(">2<"));
 		await page("page_click", { ref: button(second, "Hash") });
 		await page("page_click", { ref: button(second, "Count") });
-		step("a fragment change keeps refs", (await counter()).includes(">2<"));
+		step("a fragment change keeps refs", (await counter()).includes(">3<"));
 		const bounced = await page("page_snapshot", {});
 		await page("page_click", { ref: button(bounced, "Bounce") });
 		const bounceError = await rejection("page_click", { ref: button(bounced, "Count") });
-		step("leaving and returning to the URL still invalidates refs", bounceError.includes("navigated") && (await counter()).includes(">2<"), bounceError);
+		step("leaving and returning to the URL still invalidates refs", bounceError.includes("navigated") && (await counter()).includes(">3<"), bounceError);
 		const routed = await page("page_snapshot", {});
 		await page("page_click", { ref: button(routed, "Route") });
 		const routedError = await rejection("page_click", { ref: button(routed, "Count") });
-		step("same-document navigation invalidates refs", routedError.includes("navigated") && (await counter()).includes(">2<"), routedError);
+		step("same-document navigation invalidates refs", routedError.includes("navigated") && (await counter()).includes(">3<"), routedError);
 
 		const beforeLoad = button(await page("page_snapshot", {}), "Count");
 		await visit("/inspect");
@@ -128,6 +129,9 @@ export async function testPageTools(origin: string, call: PageCall): Promise<Ste
 		await page("page_press", { key: "Enter", ref: control(afterClicks, "Query").ref });
 		const actions = await logged();
 		step("hover, typed Enter and key presses reach the page", actions.includes("hover") && actions.includes("submit:otter") && actions.includes("key:a+shift") && actions.includes("submit:seal"), actions);
+
+		const secret = await page("page_type", { ref: control(afterClicks, "Secret").ref, text: "shh" });
+		step("page_type never returns what a password field holds", secret.value === undefined && !JSON.stringify(secret).includes("shh"), JSON.stringify(secret));
 
 		await page("page_type", { ref: control(afterClicks, "Rich").ref, text: "new text" });
 		const rich = (await page("page_inspect", { selector: "#rich", include: ["html"] })).elements[0].html as string;

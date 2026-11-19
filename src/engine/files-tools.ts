@@ -2,6 +2,8 @@ import { defineExtension, defineTool, type Extension, section, type ToolExecutio
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
 import { arr, bool, int, map, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
+import { hostOf } from "../platform/patterns.ts";
+import type { Approvals } from "./approvals.ts";
 import { ChatFiles, MAX_FILE_BYTES } from "./files.ts";
 
 const FETCH_TIMEOUT_MS = 60_000;
@@ -128,9 +130,11 @@ export function redirectGuesses(url: URL): string[] {
 
 export interface FilesToolsOptions {
 	readonly fetch: typeof fetch;
+	readonly approvals?: Approvals;
+	readonly confirmActions?: () => boolean;
 }
 
-function fetchTool({ fetch: request }: FilesToolsOptions) {
+function fetchTool({ fetch: request, approvals, confirmActions }: FilesToolsOptions) {
 	return defineTool({
 		name: "fetch",
 		description:
@@ -167,6 +171,9 @@ function fetchTool({ fetch: request }: FilesToolsOptions) {
 			}
 			if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http and https URLs can be fetched.");
 			const method = args.method ?? "GET";
+			if (method !== "GET" && method !== "HEAD" && approvals !== undefined && confirmActions?.()) {
+				await approvals.request({ chat: api.conversationId, tool: "fetch", target: `${method} ${url.href}`, site: hostOf(url.href) }, context.abortSignal);
+			}
 			const signal = AbortSignal.any([AbortSignal.timeout(FETCH_TIMEOUT_MS), ...(context.abortSignal ? [context.abortSignal] : [])]);
 			const attempt = (href: string) => request(href, {
 				method,

@@ -210,6 +210,7 @@ export const zh: Record<Key, string> = {
 	"tool.output": "输出",
 	"tool.snapshot": "读取页面",
 	"tool.inspect": "检查元素",
+	"tool.screenshot": "截图",
 	"tool.click": "点击",
 	"tool.type": "输入",
 	"tool.scroll": "滚动",

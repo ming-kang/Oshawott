@@ -23,7 +23,7 @@ const refs = new RefTable<Element>();
 // Same-document navigations between tool calls (Navigation API where the browser has it, and history traversal).
 const observe = () => refs.observe(location.href);
 (globalThis as { navigation?: EventTarget }).navigation?.addEventListener("currententrychange", observe);
-addEventListener("popstate", observe);
+globalThis.addEventListener?.("popstate", observe);
 const ref = (target: Element) => refs.add(target, location.href);
 const element = (name: string) => refs.resolve(name, location.href);
 
@@ -189,24 +189,31 @@ function structureOf(root: Element): Static<typeof Structure> {
 	};
 }
 
-export function snapshot({ maxChars = 20_000, structure, ...scope }: Args<"page_snapshot">): Static<typeof SnapshotResult> {
+export function snapshot({ maxChars = 20_000, structure, textOffset = 0, ...scope }: Args<"page_snapshot">): Static<typeof SnapshotResult> {
 	const body = document.body ?? document.documentElement;
 	const [root = body] = target(scope, body);
-	refs.begin(location.href);
+	refs.observe(location.href);
 	const elements = [];
+	let elementsTruncated = false;
 	for (const candidate of within(root, INTERACTIVE)) {
 		if (!visible(candidate)) continue;
+		if (elements.length >= LIMITS.snapshotElements) {
+			elementsTruncated = true;
+			break;
+		}
 		elements.push({ ref: ref(candidate), role: roleOf(candidate), name: nameOf(candidate), ...stateOf(candidate) });
-		if (elements.length >= LIMITS.snapshotElements) break;
 	}
 	const text = textOf(root).replace(/\n{3,}/g, "\n\n");
-	const [shown, truncated] = cut(text, maxChars);
+	const [shown, truncated] = cut(text.slice(textOffset), maxChars);
 	return {
 		url: clip(location.href, LIMITS.url)[0],
 		title: clip(document.title, LIMITS.title)[0],
 		text: shown,
 		truncated,
+		textOffset,
+		totalChars: text.length,
 		elements,
+		elementsTruncated,
 		...(structure ? { structure: structureOf(root) } : {}),
 	};
 }
@@ -288,6 +295,33 @@ export function describe({ ref }: { ref: string }) {
 	return { role: roleOf(target), name: nameOf(target) };
 }
 
+const DIALOGS = "dialog[open], [role=dialog], [role=alertdialog]";
+/** Dialogs visible when the last action began; `settled` reports what has opened since. */
+let dialogsBefore: ReadonlySet<Element> = new Set();
+const openDialogs = () => matching(DIALOGS).filter(visible);
+const recordDialogs = () => {
+	dialogsBefore = new Set(openDialogs());
+};
+
+function dialogName(dialog: Element): string {
+	const labelled = dialog.getAttribute("aria-label")
+		?? dialog.querySelector("h1, h2, h3, h4, h5, h6, [role=heading]")?.textContent;
+	return clip(squash(labelled ?? ""), LIMITS.name)[0] || nameOf(dialog);
+}
+
+/** The state after the last action: where the page is and which dialogs it opened. */
+export function settled() {
+	return {
+		url: clip(location.href, LIMITS.url)[0],
+		title: clip(document.title, LIMITS.title)[0],
+		opened: [...new Set(openDialogs().filter((dialog) => !dialogsBefore.has(dialog)).map(dialogName))],
+	};
+}
+
+export function viewport() {
+	return { width: innerWidth, height: innerHeight, dpr: devicePixelRatio };
+}
+
 const label = (target: Element) => `${roleOf(target)} "${nameOf(target)}"`;
 
 function center(target: Element) {
@@ -311,6 +345,7 @@ function point(target: Element, kinds: readonly string[], buttons = 0) {
 const HOVER = ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"];
 
 export function hover({ ref }: Args<"page_hover">) {
+	recordDialogs();
 	const target = element(ref);
 	target.scrollIntoView({ block: "center", inline: "nearest" });
 	point(target, HOVER);
@@ -318,6 +353,7 @@ export function hover({ ref }: Args<"page_hover">) {
 }
 
 export function click({ ref }: Args<"page_click">) {
+	recordDialogs();
 	const target = element(ref) as HTMLElement;
 	if (isDisabled(target)) throw new Error(`${label(target)} is disabled.`);
 	target.scrollIntoView({ block: "center", inline: "nearest" });
@@ -358,6 +394,7 @@ function activate(target: Element, name: string) {
 }
 
 export function press({ key: name, ref, modifiers = [] }: Args<"page_press">) {
+	recordDialogs();
 	const target = ref !== undefined ? element(ref) : document.activeElement ?? document.body;
 	if (ref !== undefined && target instanceof HTMLElement) target.focus({ preventScroll: true });
 	const pressed = name === "Space" ? " " : name;
@@ -367,7 +404,23 @@ export function press({ key: name, ref, modifiers = [] }: Args<"page_press">) {
 
 const UNTYPABLE = new Set(["checkbox", "radio", "file", "submit", "button", "reset", "image", "range", "color", "hidden"]);
 
+/** What a field holds after an action: its value, its editable text or its selected option's text. */
+function fieldValue(target: Element): string {
+	return target instanceof HTMLSelectElement ? (target.selectedOptions[0]?.text ?? "")
+		: target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ? target.value
+		: target instanceof HTMLElement && target.isContentEditable ? textOf(target)
+		: "";
+}
+
+/** A field's value after an action, and a note when the page did not keep what was given. */
+export function readback(actual: string, requested: string): { value: string; note?: string } {
+	const [value] = clip(squash(actual), LIMITS.name);
+	if (squash(actual) === squash(requested)) return { value };
+	return { value, note: `The field now holds "${value}": the page may have reformatted or rejected it.` };
+}
+
 export function type({ ref, text, submit }: Args<"page_type">) {
+	recordDialogs();
 	const target = element(ref) as HTMLElement;
 	if (target instanceof HTMLSelectElement) throw new Error(`${label(target)} is a dropdown: choose an option with page_select.`);
 	if (target instanceof HTMLInputElement && UNTYPABLE.has(target.type)) throw new Error(`${label(target)} takes no text: use page_click.`);
@@ -388,11 +441,19 @@ export function type({ ref, text, submit }: Args<"page_type">) {
 			target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 		}
 	} else throw new Error(`${label(target)} is not a text field.`);
+	// Read back before the Enter: a form that clears the field on submit must not read as a rejection.
+	// A password field reports nothing: what was typed into it must not reach the model.
+	const back = target instanceof HTMLInputElement && target.type === "password" ? undefined : readback(fieldValue(target), text);
 	if (submit && key(target, "Enter")) activate(target, "Enter");
-	return { ok: true, detail: `Typed into ${label(target)}.` };
+	return {
+		ok: true,
+		detail: `Typed into ${label(target)}.${back?.note ? ` ${back.note}` : ""}`,
+		...(back === undefined ? {} : { value: back.value }),
+	};
 }
 
 export function select({ ref, option }: Args<"page_select">) {
+	recordDialogs();
 	const target = element(ref);
 	if (!(target instanceof HTMLSelectElement)) throw new Error(`${label(target)} is not a <select>: open it with page_click and click the option.`);
 	if (isDisabled(target)) throw new Error(`${label(target)} is disabled.`);
@@ -408,7 +469,8 @@ export function select({ ref, option }: Args<"page_select">) {
 	found.selected = true;
 	target.dispatchEvent(new Event("input", { bubbles: true }));
 	target.dispatchEvent(new Event("change", { bubbles: true }));
-	return { ok: true, detail: `Selected "${squash(found.text)}" in ${label(target)}.` };
+	const back = readback(fieldValue(target), found.text);
+	return { ok: true, detail: `Selected "${squash(found.text)}" in ${label(target)}.${back.note ? ` ${back.note}` : ""}`, value: back.value };
 }
 
 export function scroll({ ref, pixels }: Args<"page_scroll">) {

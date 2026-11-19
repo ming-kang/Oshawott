@@ -48,7 +48,12 @@ export const SnapshotResult = obj({
 	title: str(),
 	text: str(),
 	truncated: bool(),
+	/** Where `text` starts in the page text, and its full length, so a cut text can be continued. */
+	textOffset: int(),
+	totalChars: int(),
 	elements: arr(Element),
+	/** True when `elements` reached the cap and more interactive elements exist. */
+	elementsTruncated: bool(),
 	structure: opt(Structure),
 });
 
@@ -75,27 +80,36 @@ export const InspectResult = obj({
 export const MODIFIERS = ["Alt", "Control", "Meta", "Shift"] as const;
 export const WAIT = { default: 5_000, max: 30_000 } as const;
 
-const Done = obj({ ok: bool(), detail: opt(str()) });
+const Done = obj({
+	ok: bool(),
+	detail: opt(str()),
+	/** The field's actual value after page_type or page_select, which may differ from what was given. */
+	value: opt(str()),
+	/** The page state the action's receipt observed, when the Engine could read it. */
+	page: opt(obj({ url: str(), title: str(), navigated: bool(), opened: arr(str()) })),
+});
 
 export const pageTools = {
 	page_snapshot: spec({
 		description:
 			"Read the page: its URL, title, visible text, and the interactive elements with a `ref` each. " +
-			"Refs stay valid until the next snapshot or a navigation. `ref` or `selector` (its first match) limits the " +
-			"snapshot to that element's subtree; `structure` adds the visible tables and lists as data. A selector that " +
-			"matches nothing is an error.",
+			"Refs stay valid for the whole page until it navigates, and a scoped snapshot never invalidates them. `ref` " +
+			"or `selector` (its first match) limits the snapshot to that element's subtree; `structure` adds the visible " +
+			"tables and lists as data; `textOffset` continues a cut page text from that character offset. A selector " +
+			"that matches nothing is an error.",
 		args: {
 			maxChars: opt(int({ min: 200, max: 200_000 })),
 			ref: opt(str()),
 			selector: opt(str()),
 			structure: opt(bool()),
+			textOffset: opt(int({ min: 0 })),
 		},
 		result: SnapshotResult,
 		replay: "safe",
 	}),
 	page_inspect: spec({
 		description:
-			"Inspect elements by a `ref` from the latest snapshot or by a CSS `selector`: their outer HTML, attributes, " +
+			"Inspect elements by a `ref` from a snapshot or by a CSS `selector`: their outer HTML, attributes, " +
 			"computed styles and bounding box. `include` picks parts (default all); `styles` names CSS properties (default " +
 			"common layout and visibility ones). Each element gets a `ref` usable by the other page tools. A selector that " +
 			"matches nothing is an error.",
@@ -113,7 +127,8 @@ export const pageTools = {
 	page_click: spec({
 		description:
 			"Click the element with this `ref`, as a pointer would: it is scrolled into view, pressed and released. " +
-			"Use it for buttons, links, checkboxes, radios, tabs and menu items; take a new snapshot afterwards to see the effect.",
+			"Use it for buttons, links, checkboxes, radios, tabs and menu items. The result reports a navigation or an " +
+			"opened dialog when the click caused one; take a new snapshot when refs went stale or you need the new page.",
 		args: { ref: str() },
 		result: Done,
 		replay: "unsafe",
@@ -121,13 +136,16 @@ export const pageTools = {
 	page_type: spec({
 		description:
 			"Type text into the text field or editable element with this `ref`, replacing its content; `submit` presses " +
-			"Enter after it. Not for dropdowns (page_select) or checkboxes (page_click).",
+			"Enter after it. Not for dropdowns (page_select) or checkboxes (page_click). The result reports the value " +
+			"the field actually holds, which the page may have reformatted or rejected.",
 		args: { ref: str(), text: str(), submit: opt(bool()) },
 		result: Done,
 		replay: "unsafe",
 	}),
 	page_select: spec({
-		description: "Choose an option of the `<select>` with this `ref`, by the option's visible label or its value.",
+		description:
+			"Choose an option of the `<select>` with this `ref`, by the option's visible label or its value. " +
+			"The result reports the option actually selected.",
 		args: { ref: str(), option: str() },
 		result: Done,
 		replay: "unsafe",

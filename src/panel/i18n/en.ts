@@ -208,6 +208,7 @@ export const en = {
 	"tool.output": "Output",
 	"tool.snapshot": "Read the page",
 	"tool.inspect": "Inspect elements",
+	"tool.screenshot": "Take a screenshot",
 	"tool.click": "Click",
 	"tool.type": "Type",
 	"tool.scroll": "Scroll",

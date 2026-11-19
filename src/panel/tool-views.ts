@@ -1,6 +1,7 @@
 import type { ToolDiagnostic } from "@earendil-works/pi-durable";
 import { formatBytes } from "../lib/bytes.ts";
 import { hostOf } from "../platform/patterns.ts";
+import { type ParsedSnapshot, parseSnapshot } from "../tools/render.ts";
 import { languageForPath } from "./file-preview.ts";
 import { t } from "./i18n/index.ts";
 import { codeBlock } from "./tool-highlight.ts";
@@ -131,25 +132,8 @@ const prettyJson = (text: string): string | undefined => {
 	}
 };
 
-export interface SnapshotResultView {
-	url: string;
-	title: string;
-	text: string;
-	elements: { ref: string; role: string; name: string }[];
-}
-
-/** The `page_snapshot` result is its `SnapshotResult` serialized as JSON for the model. */
-export function parseSnapshotResult(text: string): SnapshotResultView | undefined {
-	const data = parseJsonRecord(text);
-	if (!data || typeof data.url !== "string" || typeof data.title !== "string" || !Array.isArray(data.elements)) return undefined;
-	const elements = data.elements.flatMap((entry) => {
-		const element = record(entry);
-		return element && typeof element.ref === "string" && typeof element.role === "string" && typeof element.name === "string"
-			? [{ ref: element.ref, role: element.role, name: element.name }]
-			: [];
-	});
-	return { url: data.url, title: data.title, text: typeof data.text === "string" ? data.text : "", elements };
-}
+export type SnapshotResultView = ParsedSnapshot;
+export const parseSnapshotResult = parseSnapshot;
 
 /** The `codemode` result header from Durable's `formatResult`: status line, wall time, then the output. */
 export function parseCodemodeResult(text: string): { ok: boolean; seconds: string; output: string } | undefined {
@@ -221,35 +205,43 @@ const snapshotBody = (_args: Record<string, unknown>, result?: ToolResult): Tool
 	return { label: snapshot.url || undefined, content, copyText: result.text };
 };
 
+/** One block per element in the `page_inspect` result's compact text; blocks are separated by a blank line. */
 const inspectBody = (_args: Record<string, unknown>, result?: ToolResult): ToolBodyView | undefined => {
 	if (!result || result.isError) return undefined;
-	const data = parseJsonRecord(result.text);
-	if (!data || !Array.isArray(data.elements)) return undefined;
-	const elements = data.elements.flatMap((entry) => {
-		const el = record(entry);
-		if (!el || typeof el.ref !== "string" || typeof el.tag !== "string") return [];
-		const box = record(el.box);
-		const attrs = record(el.attributes);
-		const styles = record(el.styles);
-		const attrText = attrs ? Object.entries(attrs).map(([k, v]) => `${k}=${JSON.stringify(String(v))}`).join(" ") : undefined;
-		const styleText = styles ? Object.entries(styles).map(([k, v]) => `${k}: ${String(v)}`).join("; ") : undefined;
-		const boxText = box && typeof box.width === "number" && typeof box.height === "number"
-			? `${Math.round(box.width)}×${Math.round(box.height)} (${Math.round(Number(box.x ?? 0))}, ${Math.round(Number(box.y ?? 0))})`
-			: undefined;
+	const blocks = result.text.split("\n\n");
+	const header = blocks[0]?.split("\n") ?? [];
+	if (!header[0]?.startsWith("URL: ") || !header[1]?.startsWith("Matched: ")) return undefined;
+	const elements = blocks.slice(1).flatMap((block) => {
+		const lines = block.split("\n");
+		const head = /^\[([^\]]+)\] (\S+) (visible|hidden)$/.exec(lines[0] ?? "");
+		if (!head) return [];
+		const section = (name: string, join: string) => {
+			const at = lines.indexOf(name);
+			if (at < 0) return undefined;
+			const items: string[] = [];
+			for (const line of lines.slice(at + 1)) {
+				if (!line.startsWith("  ")) break;
+				items.push(line.trim());
+			}
+			return items.length ? items.join(join) : undefined;
+		};
+		const boxText = lines.find((line) => line.startsWith("Box: "))?.slice(5);
+		const htmlAt = lines.findIndex((line) => line.startsWith("HTML — "));
+		const html = htmlAt < 0 ? undefined : lines.slice(htmlAt + 1).filter((line) => line !== "[Truncated.]").join("\n");
 		return [h("div", { class: "tv-inspect-item" },
 			h("div", { class: "tv-head" },
-				h("span", { class: "tv-tag" }, `<${el.tag}>`),
-				h("span", { class: "tv-ref" }, el.ref),
-				el.visible === false ? h("span", { class: "tv-chip" }, t("tool.hidden")) : null,
+				h("span", { class: "tv-tag" }, `<${head[2]}>`),
+				h("span", { class: "tv-ref" }, head[1]),
+				head[3] === "hidden" ? h("span", { class: "tv-chip" }, t("tool.hidden")) : null,
 				boxText ? h("span", { class: "tv-meta mono" }, boxText) : null,
 			),
-			kvRows([["attr", attrText, true], ["style", styleText, true]]),
-			typeof el.html === "string" && el.html ? codeBlock(clampedText(el.html), "xml", "tool-code") : null,
+			kvRows([["attr", section("Attributes:", " "), true], ["style", section("Styles:", "; "), true]]),
+			html ? codeBlock(clampedText(html), "xml", "tool-code") : null,
 		)];
 	});
 	if (!elements.length) return undefined;
 	return {
-		label: typeof data.url === "string" && data.url ? data.url : undefined,
+		label: header[0].slice(5),
 		content: h("div", { class: "tool-view tv-inspect" }, ...elements),
 		copyText: result.text,
 	};
@@ -477,6 +469,14 @@ const BUILTIN_VIEWS: readonly ToolView[] = [
 	defineToolView({
 		name: "page_inspect", icon: "code", label: t("tool.inspect"),
 		argsMeta: refOrSelectorMeta, resultMeta: inspectResultMeta, body: inspectBody,
+	}),
+	defineToolView({
+		name: "page_screenshot", icon: "camera", label: t("tool.screenshot"),
+		argsMeta: (args) => Array.isArray(args.region) ? `[${args.region.join(", ")}]` : "",
+		resultMeta: (details) => {
+			const shot = record(record(details)?.screenshot);
+			return shot && count(shot.width) && count(shot.height) ? `${shot.width}×${shot.height}` : undefined;
+		},
 	}),
 	defineToolView({
 		name: "page_click", icon: "pointer", label: t("tool.click"),

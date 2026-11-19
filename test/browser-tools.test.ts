@@ -4,12 +4,12 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, InMemor
 import { type Tab } from "../src/contracts/browser.ts";
 import { Approvals, DECLINED } from "../src/engine/approvals.ts";
 import { until } from "./support/wait.ts";
-import { connectPanel, context, fakeBrowser, linkTo, openEngine, serveBrowser, servePage, useModel } from "./support/world.ts";
+import { type BrowserMembers, connectPanel, context, fakeBrowser, linkTo, openEngine, type PageMembers, serveBrowser, servePage, useModel } from "./support/world.ts";
 
 type ToolResult = { role: "toolResult"; toolName: string; isError: boolean; details?: unknown; content: { type: string; text?: string }[] };
 
 /** An Engine with a scripted model, a browser of `tabs` (the first is active) and one page that counts its clicks. */
-async function fixture(tabs: Tab[]) {
+async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>; page?: Partial<PageMembers>; fetch?: typeof fetch } = {}) {
 	const opened: string[] = [];
 	const clicks: number[] = [];
 	const broker = await serveBrowser(fakeBrowser({
@@ -20,10 +20,16 @@ async function fixture(tabs: Tab[]) {
 			opened.push(url);
 			return { tabId: 50, windowId: 1, url, title: "Opened", active: true };
 		},
+		settle: async ({ tabId }) => {
+			const found = tabs.find((tab) => tab.tabId === tabId);
+			if (!found) throw new Error(`tab ${tabId} gone`);
+			return found;
+		},
+		...options.browser,
 	}));
 	const done = async () => ({ ok: true });
 	const page = (tabId: number) => servePage(tabId, {
-		page_snapshot: async () => ({ url: "https://example.com/", title: "Example", text: "", truncated: false, elements: [] }),
+		page_snapshot: async () => ({ url: "https://example.com/", title: "Example", text: "", truncated: false, textOffset: 0, totalChars: 0, elements: [], elementsTruncated: false }),
 		page_inspect: async () => ({ url: "https://example.com/", matched: 0, truncated: false, elements: [] }),
 		page_click: async () => {
 			clicks.push(tabId);
@@ -31,11 +37,14 @@ async function fixture(tabs: Tab[]) {
 		},
 		page_type: done, page_select: done, page_press: done, page_hover: done, page_scroll: done, page_wait: done,
 		describe: async () => ({ role: "button", name: "Buy now" }),
+		settled: async () => ({ url: "https://example.com/", title: "Example", opened: [] }),
+		viewport: async () => ({ width: 1280, height: 800, dpr: 1 }),
+		...options.page,
 	});
 	const faux = fauxProvider({ models: [{ id: "faux-1", name: "Faux" }] });
 	const models = createModels({ credentials: new InMemoryCredentialStore() });
 	models.setProvider(faux.provider);
-	const engine = await openEngine(broker, { models, tab: async (tabId) => linkTo(await page(tabId)) });
+	const engine = await openEngine(broker, { models, tab: async (tabId) => linkTo(await page(tabId)), ...(options.fetch ? { fetch: options.fetch } : {}) });
 	const panel = await connectPanel(engine);
 	const { workspace } = panel;
 	await useModel(workspace, faux);
@@ -55,8 +64,14 @@ async function fixture(tabs: Tab[]) {
 		const results = (chat.view.value?.entries ?? []).filter((entry) => entry.kind === "pi.tool-result");
 		return results.at(-1)!.model![0] as unknown as ToolResult;
 	};
+	/** Waits for the pending approval and answers it. */
+	const decide = async (decision: "allow" | "deny", check?: (asked: { tool: string; target: string; site: string }) => void) => {
+		const [asked] = await until(() => chat.approvals.value.length ? chat.approvals.value : undefined, "the approval request");
+		check?.(asked!);
+		await chat.decide({ id: asked!.id, decision }, context);
+	};
 	return {
-		workspace, chat, call, clicks, opened,
+		workspace, chat, call, clicks, opened, decide,
 		close: async () => {
 			await panel.close();
 			await engine.close();
@@ -117,6 +132,171 @@ test("with confirmation on, unsafe page actions wait for allow/deny and refusals
 		assert.deepEqual(f.clicks, [7, 7]);
 		// Reading a page never asks.
 		assert.equal((await f.call("page_snapshot", {}, 7)).isError, false);
+	} finally {
+		await f.close();
+	}
+});
+
+test("an action reports a navigation it caused and a receipt failure never fails the action", async () => {
+	const moved = tab(7, "elsewhere.example");
+	// The click navigates: the settle returns the new URL, so the result says where it went.
+	const navigating = await fixture([tab(7, "example.com")], { browser: { settle: async () => moved } });
+	try {
+		const result = await navigating.call("page_click", { ref: "e1" }, 7);
+		assert.equal(result.isError, false);
+		assert.match(JSON.stringify(result.content), /Navigated to https:\/\/elsewhere\.example\//);
+		assert.deepEqual(navigating.clicks, [7]);
+	} finally {
+		await navigating.close();
+	}
+	const broken = await fixture([tab(7, "example.com")], {
+		browser: { settle: async () => { throw new Error("tab gone mid-navigation"); } },
+	});
+	try {
+		const result = await broken.call("page_click", { ref: "e1" }, 7);
+		assert.equal(result.isError, false);
+		assert.deepEqual(broken.clicks, [7]);
+	} finally {
+		await broken.close();
+	}
+});
+
+test("a user move of the target tab to another origin is noted once; the agent's own moves are silent", async () => {
+	const target = tab(7, "example.com");
+	const f = await fixture([target], {
+		browser: {
+			navigateTab: async ({ tabId, url }) => {
+				if (url !== undefined) {
+					target.url = url;
+					target.title = new URL(url).host;
+				}
+				return { ...target };
+			},
+		},
+	});
+	try {
+		// First call binds the origin without noting anything.
+		assert.equal((await f.call("page_snapshot", {}, 7)).isError, false);
+		target.url = "https://other.example/page";
+		target.title = "other.example";
+		const noted = await f.call("page_snapshot", {});
+		assert.match(JSON.stringify(noted.content), /the target tab is now on https:\/\/other\.example \(it was https:\/\/example\.com\)/);
+		const again = await f.call("page_snapshot", {});
+		assert.doesNotMatch(JSON.stringify(again.content), /the target tab is now on/);
+		// The agent's own navigation re-binds the origin: no note afterwards.
+		assert.equal((await f.call("tab_navigate", { url: "https://agent.example/" })).isError, false);
+		const quiet = await f.call("page_snapshot", {});
+		assert.doesNotMatch(JSON.stringify(quiet.content), /the target tab is now on/);
+	} finally {
+		await f.close();
+	}
+});
+
+test("navigating a named tab that is not the target leaves the chat's origin binding alone", async () => {
+	const target = tab(7, "example.com");
+	const other = tab(8, "other.example");
+	const f = await fixture([target, other], {
+		browser: {
+			navigateTab: async ({ tabId, url }) => {
+				const moved = [target, other].find((each) => each.tabId === tabId)!;
+				if (url !== undefined) {
+					moved.url = url;
+					moved.title = new URL(url).host;
+				}
+				return { ...moved };
+			},
+		},
+	});
+	try {
+		// The target's origin binds silently on first use.
+		assert.equal((await f.call("page_snapshot", {}, 7)).isError, false);
+		// Writing another tab's origin into the binding would warn falsely on the next target call.
+		assert.equal((await f.call("tab_navigate", { tabId: 8, url: "https://elsewhere.example/" })).isError, false);
+		const next = await f.call("page_snapshot", {});
+		assert.doesNotMatch(JSON.stringify(next.content), /the target tab is now on/);
+	} finally {
+		await f.close();
+	}
+});
+
+test("closing a foreign tab always asks; a tab this chat opened follows the confirmation switch", async () => {
+	const closed: number[] = [];
+	const foreign = tab(7, "example.com");
+	const extra: Tab[] = [];
+	const f = await fixture([foreign], {
+		browser: {
+			getTab: async ({ tabId }) => [foreign, ...extra].find((each) => each.tabId === tabId) ?? null,
+			openTab: async ({ url }) => {
+				const next = { tabId: 50 + extra.length, windowId: 1, url, title: "Opened", active: true };
+				extra.push(next);
+				return next;
+			},
+			closeTab: async ({ tabId }) => {
+				closed.push(tabId);
+				return null;
+			},
+		},
+	});
+	try {
+		// confirmActions stays off, and still asks: tab 7 is not this chat's.
+		await f.call("tab_close", { tabId: 7 }, 7, () => f.decide("allow"));
+		assert.deepEqual(closed, [7]);
+		// Tab 50 this chat opened (session matches) is closed without asking.
+		assert.equal((await f.call("tab_open", { url: "https://new.example/" })).isError, false);
+		assert.equal((await f.call("tab_close", { tabId: 50 })).isError, false);
+		assert.deepEqual(f.chat.approvals.value.length, 0);
+		assert.deepEqual(closed, [7, 50]);
+	} finally {
+		await f.close();
+	}
+});
+
+test("a tab opened in an earlier browser session counts as foreign", async () => {
+	const closed: number[] = [];
+	const foreign = tab(7, "example.com");
+	const extra: Tab[] = [];
+	const state = { session: "one" };
+	const f = await fixture([foreign], {
+		browser: {
+			getTab: async ({ tabId }) => [foreign, ...extra].find((each) => each.tabId === tabId) ?? null,
+			openTab: async ({ url }) => {
+				const next = { tabId: 50 + extra.length, windowId: 1, url, title: "Opened", active: true };
+				extra.push(next);
+				return next;
+			},
+			closeTab: async ({ tabId }) => {
+				closed.push(tabId);
+				return null;
+			},
+			session: async () => state.session,
+		},
+	});
+	try {
+		assert.equal((await f.call("tab_open", { url: "https://new.example/" })).isError, false);
+		// The browser restarted: the stored session id no longer matches, so the tab is foreign again.
+		state.session = "two";
+		await f.call("tab_close", { tabId: 50 }, undefined, () => f.decide("allow"));
+		assert.deepEqual(closed, [50]);
+	} finally {
+		await f.close();
+	}
+});
+
+test("fetch asks before a non-GET request only when confirmation is on", async () => {
+	const f = await fixture([tab(7, "example.com")], { fetch: async () => new Response("ok", { status: 200 }) });
+	try {
+		assert.equal((await f.call("fetch", { url: "https://api.example/data", method: "POST" })).isError, false);
+		await f.workspace.setPreference({ key: "confirmActions", enabled: true }, context);
+		await until(() => f.workspace.confirmActions.value || undefined, "the preference");
+		// GET and HEAD are reads: they never ask for themselves.
+		assert.equal((await f.call("fetch", { url: "https://api.example/data" })).isError, false);
+		assert.equal((await f.call("fetch", { url: "https://api.example/data", method: "HEAD" })).isError, false);
+		await f.call("fetch", { url: "https://api.example/data", method: "POST" }, undefined, () =>
+			f.decide("allow", (asked) => {
+				assert.equal(asked.tool, "fetch");
+				assert.equal(asked.target, "POST https://api.example/data");
+				assert.equal(asked.site, "api.example");
+			}));
 	} finally {
 		await f.close();
 	}

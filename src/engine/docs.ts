@@ -75,7 +75,17 @@ export const AttachmentDeletesDoc = defineDoc<{ pending: AttachmentDelete[] }>({
 	checkpointWhen: () => true,
 });
 
-export const TargetDoc = defineDoc<{ tabId: number | null }>({
+export type TargetState = {
+	tabId: number | null;
+	/** The origin the target was bound to; a tool call seeing another origin re-binds and notes it once. */
+	origin?: string;
+	/** Tabs this chat opened, each with the broker session it was opened under. Absent in older documents. */
+	opened?: { tabId: number; session: string }[];
+	/** The tab group this chat's opened tabs join; absent in older documents and where grouping is unavailable. */
+	groupId?: number;
+};
+
+export const TargetDoc = defineDoc<TargetState>({
 	kind: "oshawott.target",
 	version: 1,
 	scope: "conversation",

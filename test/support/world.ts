@@ -32,6 +32,7 @@ export function fakeBrowser(overrides: Partial<BrowserMembers> = {}): BrowserMem
 	return {
 		listTabs: async () => [], activeTab: async () => null, getTab: async () => null,
 		openTab: unused, navigateTab: unused, activateTab: unused, closeTab: async () => null,
+		settle: unused, capture: unused, session: async () => "test-session",
 		attach: async () => null, armWake: async () => null,
 		...overrides,
 	};

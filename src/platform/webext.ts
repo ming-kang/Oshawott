@@ -56,9 +56,23 @@ export interface WebExt {
 		goBack(tabId: number): Promise<void>;
 		update(tabId: number, properties: { url?: string; active?: boolean }): Promise<TabInfo>;
 		remove(tabId: number): Promise<void>;
+		captureVisibleTab?(windowId: number, options: { format?: string; quality?: number }): Promise<string>;
+		/** Tab groups; absent where the browser does not have them. */
+		group?(options: { groupId?: number; tabIds: number | number[]; createProperties?: { windowId?: number } }): Promise<number>;
 		readonly onRemoved: WebExtEvent<(tabId: number) => void>;
 		readonly onActivated: WebExtEvent<(info: { tabId: number; windowId: number }) => void>;
 		readonly onUpdated: WebExtEvent<(tabId: number, change: { status?: string }, tab: TabInfo) => void>;
+	};
+	/** Tab group metadata; absent where `tabs.group` is. */
+	readonly tabGroups?: {
+		update(groupId: number, properties: { title?: string; color?: string }): Promise<unknown>;
+	};
+	readonly storage?: {
+		/** In-memory per browser session: survives extension restarts, not browser restarts. */
+		readonly session: {
+			get(keys: string): Promise<Record<string, unknown>>;
+			set(items: Record<string, unknown>): Promise<void>;
+		};
 	};
 	readonly scripting: {
 		executeScript(injection: {

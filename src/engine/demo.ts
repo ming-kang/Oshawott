@@ -1,24 +1,23 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import type { FauxResponseFactory, OAuthCredential, Provider, ToolResultMessage } from "@earendil-works/pi-ai";
+import { type ParsedSnapshot, parseSnapshot } from "../tools/render.ts";
 
 const DEMO_PROVIDER = "demo";
-
-type Snapshot = { url?: string; title?: string; text?: string; elements?: { ref: string; role: string; name: string }[] };
 
 const CJK = /\p{Script=Han}/u;
 
 const textOf = (result: ToolResultMessage) => result.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
-function answer(snapshot: Snapshot | undefined, error: string | undefined, zh: boolean) {
+function answer(snapshot: ParsedSnapshot | undefined, error: string | undefined, zh: boolean) {
 	if (!snapshot) return zh ? `没能读取页面：${error ?? "没有结果"}。` : `I could not read the page: ${error ?? "no result"}.`;
-	const elements = snapshot.elements ?? [];
+	const elements = snapshot.elements;
 	const rows = elements
 		.slice(0, 5)
 		.map((e) => `| \`${e.ref}\` | ${e.role} | ${e.name.replace(/\|/g, "\\|") || "—"} |`)
 		.join("\n");
-	const text = snapshot.text ?? "";
+	const text = snapshot.text;
 	const size = zh ? `${[...text.replace(/\s+/g, "")].length} 个字符` : `${text.split(/\s+/).filter(Boolean).length} words`;
-	const host = new URL(snapshot.url ?? "about:blank").host || (zh ? "这个页面" : "this page");
+	const host = new URL(snapshot.url).host || (zh ? "这个页面" : "this page");
 	const click = JSON.stringify({ tool: "page_click", args: { ref: elements[0]?.ref ?? "e1" } }, null, 2);
 	return (
 		zh
@@ -177,17 +176,12 @@ export function demoProvider() {
 			return fauxAssistantMessage(last.isError ? (zh ? `没有点击：${text}` : `I did not click: ${text}`) : (zh ? "点好了。" : "Clicked."));
 		}
 		if (last?.role === "toolResult" && last.toolName === "page_snapshot" && clicking && !last.isError) {
-			const button = (JSON.parse(textOf(last)) as Snapshot).elements?.find((element) => element.role === "button");
+			const button = parseSnapshot(textOf(last))?.elements.find((element) => element.role === "button");
 			if (button) return fauxAssistantMessage([fauxToolCall("page_click", { ref: button.ref })], { stopReason: "toolUse" });
 		}
 		if (last?.role === "toolResult") {
 			const text = textOf(last);
-			let snapshot: Snapshot | undefined;
-			try {
-				snapshot = last.isError ? undefined : (JSON.parse(text) as Snapshot);
-			} catch {
-				snapshot = undefined;
-			}
+			const snapshot = last.isError ? undefined : parseSnapshot(text);
 			return fauxAssistantMessage(answer(snapshot, last.isError ? text : undefined, zh));
 		}
 		return fauxAssistantMessage(

@@ -94,7 +94,12 @@ export function serveChat(host: FacetHost<Principal>, services: FacetServices) {
 							requireContentVision(services.models, agent.model ?? workspace.defaultModel, input.content);
 							const submitted = await target.submit(tx, { type: "input", ...input, requestId, ...(whenBusy ? { whenBusy } : {}) });
 							admitted = true;
-							if (tabId !== undefined) (await tx.doc(TargetDoc, target.id)).tabId = tabId;
+							if (tabId !== undefined) {
+								// A new user message re-binds the tab: the next tool call binds its current origin.
+								const doc = await tx.doc(TargetDoc, target.id);
+								doc.tabId = tabId;
+								doc.origin = undefined;
+							}
 							summary.updatedAt = services.now();
 							const fallback = titleOf(text || prepared.map((item) => item.name).join(", "));
 							if (!summary.fallbackTitle && fallback) summary.fallbackTitle = fallback;

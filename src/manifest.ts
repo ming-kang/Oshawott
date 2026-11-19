@@ -20,7 +20,7 @@ export function manifestFor(target: Target, version: string): Record<string, unk
 		description: "A durable AI agent for your browser, built on Pi Durable.",
 		icons: ICONS,
 		action: { default_title: "Oshawott", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
-		permissions: ["tabs", "scripting", "alarms"],
+		permissions: ["tabs", "tabGroups", "scripting", "alarms", "storage"],
 		host_permissions: ["<all_urls>"],
 		// QuickJS (code mode) is WebAssembly.
 		content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },

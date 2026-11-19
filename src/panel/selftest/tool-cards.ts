@@ -15,7 +15,7 @@ export async function testToolCards() {
 	const malformedHttpIgnored = metaOf(fetched) === "args.example/items.json";
 
 	const snapshot = new ToolCard("page_snapshot", {});
-	const snapshotText = JSON.stringify({ title: "Output title", elements: [] });
+	const snapshotText = "Title: Output title\nURL: https://example.com/\nElements (0):\nText:\n";
 	snapshot.setResult(snapshotText, false, { snapshot: { title: "UI title", elementCount: 3 } });
 	const snapshotMeta = metaOf(snapshot);
 	snapshot.setResult(snapshotText, false);
