@@ -136,6 +136,10 @@
 }
 
 .tool-body {
+	max-height: 280px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--line-strong) transparent;
 	margin: 2px 0 8px 7px;
 	padding-left: 14px;
 	border-left: 1.5px solid var(--line-strong);

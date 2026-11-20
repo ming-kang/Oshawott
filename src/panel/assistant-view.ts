@@ -58,7 +58,10 @@ export class AssistantView {
 				part.element.toggleAttribute("data-live", thinking);
 				const label = t(thinking ? "thinking.live" : "thinking.title");
 				if (part.label.textContent !== label) part.label.textContent = label;
+				const body = part.markdown.element;
+				const follow = part.element.open && body.scrollHeight - body.scrollTop - body.clientHeight < 2;
 				part.markdown.update(block.thinking, thinking);
+				if (follow) body.scrollTop = body.scrollHeight;
 				nodes.push(part.element);
 			} else if (part.type === "text" && block.type === "text") {
 				hasNonTool = true;
