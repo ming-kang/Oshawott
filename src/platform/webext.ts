@@ -34,6 +34,12 @@ export interface TabInfo {
 }
 
 export interface WebExt {
+	readonly permissions: {
+		contains(permissions: { origins: string[] }): Promise<boolean>;
+		request(permissions: { origins: string[] }): Promise<boolean>;
+		readonly onAdded: WebExtEvent<(permissions: { origins?: string[]; permissions?: string[] }) => void>;
+		readonly onRemoved: WebExtEvent<(permissions: { origins?: string[]; permissions?: string[] }) => void>;
+	};
 	readonly runtime: {
 		readonly id: string;
 		readonly lastError?: { readonly message?: string };

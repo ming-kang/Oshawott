@@ -12,11 +12,14 @@ interface FakeTab { id: number; windowId: number; status: string; url: string; t
 
 const listeners = new Set<ChangeListener>();
 const tabs = new Map<number, FakeTab>();
+let injectionError: string | undefined;
+let injections = 0;
 const fire = (tabId: number, status: string) => {
 	for (const listener of [...listeners]) listener(tabId, { status });
 };
 
 (globalThis as { browser?: unknown }).browser = {
+	scripting: { executeScript: async () => { injections++; if (injectionError) throw new Error(injectionError); } },
 	tabs: {
 		get: async (tabId: number) => {
 			const tab = tabs.get(tabId);
@@ -47,6 +50,7 @@ async function client() {
 	await host.load([], context);
 	const browser = await host.get(Browser, {}, context);
 	return {
+		attach: (tabId: number) => browser.attach({ tabId }, context),
 		settle: (tabId: number) => browser.settle({ tabId }, context),
 		close: async () => {
 			browser.release();
@@ -71,6 +75,28 @@ test("settle returns once the load an action started completes, not at the load 
 		const elapsed = performance.now() - at;
 		assert.ok(elapsed < 5_000, `settle on a navigating tab took ${Math.round(elapsed)}ms`);
 	} finally {
+		await close();
+	}
+});
+
+test("attach explains revoked site access without hiding unrelated injection failures", async () => {
+	const { attach, close } = await client();
+	try {
+		for (const message of [
+			"Missing host permission for the tab",
+			'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
+		]) {
+			injectionError = message;
+			await assert.rejects(attach(7), /Ask the user to click 'Allow site access' in the Oshawott panel, then retry/);
+		}
+		injectionError = "Cannot access a chrome:// URL";
+		await assert.rejects(attach(7), /Cannot access a chrome:\/\/ URL/);
+		injectionError = undefined;
+		injections = 0;
+		await attach(7);
+		assert.equal(injections, 2);
+	} finally {
+		injectionError = undefined;
 		await close();
 	}
 });

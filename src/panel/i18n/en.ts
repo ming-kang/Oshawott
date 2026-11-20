@@ -1,4 +1,7 @@
 export const en = {
+	"siteAccess.description": "Page tools need access to websites. Allow site access to read and interact with pages.",
+	"siteAccess.allow": "Allow site access",
+	"siteAccess.error": "Could not request site access. Please try again or check the extension's permissions in your browser settings.",
 	"chat.untitled": "New chat",
 	"chat.list": "Chats",
 	"chat.new": "New chat",

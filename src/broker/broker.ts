@@ -113,14 +113,22 @@ async function settleTab(tabId: number): Promise<Tab> {
 }
 
 export async function injectPage(tabId: number) {
-	await ext.scripting.executeScript({
-		target: { tabId },
-		func: ((id: number) => {
-			(globalThis as { __oshawottTabId?: number }).__oshawottTabId = id;
-		}) as (...args: never[]) => unknown,
-		args: [tabId],
-	});
-	await ext.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
+	try {
+		await ext.scripting.executeScript({
+			target: { tabId },
+			func: ((id: number) => {
+				(globalThis as { __oshawottTabId?: number }).__oshawottTabId = id;
+			}) as (...args: never[]) => unknown,
+			args: [tabId],
+		});
+		await ext.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (/Missing host permission for the tab|Cannot access contents of the page|must request permission to access (?:this|the respective) host/i.test(message)) {
+			throw new Error("Oshawott has no access to this site. Ask the user to click 'Allow site access' in the Oshawott panel, then retry.", { cause: error });
+		}
+		throw error;
+	}
 }
 
 export async function armWake({ active, at }: { active: boolean; at?: number | undefined }) {

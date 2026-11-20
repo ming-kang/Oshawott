@@ -1,6 +1,9 @@
 import type { Key } from "./en.ts";
 
 export const zh: Record<Key, string> = {
+	"siteAccess.description": "网页工具需要网站访问权限。请允许网站访问，以读取网页并与之交互。",
+	"siteAccess.allow": "允许网站访问",
+	"siteAccess.error": "无法请求网站访问权限。请重试，或在浏览器设置中检查扩展的权限。",
 	"chat.untitled": "新对话",
 	"chat.list": "对话",
 	"chat.new": "新对话",
