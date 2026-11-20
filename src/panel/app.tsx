@@ -138,6 +138,13 @@ export const PanelApp = defineComponent({
 				</header>
 				<main class="main">
 					{store.reconnecting.value && <div class="banner" role="status"><span class="spinner" />{t("reconnecting")}</div>}
+					{!siteAccess.granted.value && <div class="site-access notice" data-tone="warn" role="status">
+						<span class="notice-icon"><Icon name="alert" size={16} /></span>
+						<div class="notice-body"><div>{t("siteAccess.description")}</div>
+							{siteAccess.error.value && <div class="notice-detail">{t("siteAccess.error")}</div>}
+							<button class="btn" type="button" disabled={siteAccess.requesting.value} onClick={() => siteAccess.request()}>{t("siteAccess.allow")}</button>
+						</div>
+					</div>}
 					<div class="scroller" id="scroller" ref={scroller} onScroll={() => {
 						const element = scroller.value;
 						if (element) {
@@ -147,13 +154,6 @@ export const PanelApp = defineComponent({
 						}
 						document.body.toggleAttribute("data-scrolled", (scroller.value?.scrollTop ?? 0) > 2);
 					}}>
-						{!siteAccess.granted.value && <div class="site-access notice" data-tone="warn" role="status">
-							<span class="notice-icon"><Icon name="alert" size={16} /></span>
-							<div class="notice-body"><div>{t("siteAccess.description")}</div>
-								{siteAccess.error.value && <div class="notice-detail">{t("siteAccess.error")}</div>}
-								<button class="btn" type="button" disabled={siteAccess.requesting.value} onClick={() => siteAccess.request()}>{t("siteAccess.allow")}</button>
-							</div>
-						</div>}
 						<Transcript controller={controller} key={store.conversationKey.value} />
 					</div>
 					<button class="jump" type="button" hidden={!jump.value} onClick={() => toBottom(true)}><Icon name="down" size={14} />{t("jump")}</button>
