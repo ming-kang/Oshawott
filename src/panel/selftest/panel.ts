@@ -70,10 +70,10 @@ export async function testPanel(source: Source, origin?: string) {
 	step("removing a built-in key hides its row", true);
 	const defaultDelivery = source.busyMode.value === "steer" && document.querySelector('#settings-delivery [data-value="steer"]')?.getAttribute("aria-checked") === "true";
 	click('#settings-delivery [data-value="followUp"]');
-	await until(() => source.busyMode.value === "followUp" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "followUp");
-	step("delivery defaults to Steer and Settings updates the composer preference", defaultDelivery && document.querySelector('#settings-delivery [data-value="followUp"]')?.getAttribute("aria-checked") === "true");
+	await until(() => source.busyMode.value === "followUp");
+	step("delivery defaults to Steer and Settings updates the busy-mode preference", defaultDelivery && document.querySelector('#settings-delivery [data-value="followUp"]')?.getAttribute("aria-checked") === "true");
 	click('#settings-delivery [data-value="steer"]');
-	await until(() => source.busyMode.value === "steer" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "steer");
+	await until(() => source.busyMode.value === "steer");
 	const defaultTitlePreference = source.autoTitle.value === false && !document.querySelector<HTMLInputElement>("#settings-autoTitle")?.checked;
 	click("#settings-autoTitle");
 	await until(() => source.autoTitle.value && document.querySelector<HTMLInputElement>("#settings-autoTitle")?.checked === true);
@@ -138,18 +138,7 @@ export async function testPanel(source: Source, origin?: string) {
 	click("#settings-back");
 	await until(() => !document.querySelector("#settings"));
 
-	// Exercise the menu action independently of its busy-only visibility: both controls own the same durable preference.
-	click("#send-mode");
-	await until(() => document.querySelector(".send-mode-menu"));
-	click('.send-mode-menu [data-mode="followUp"]');
-	await until(() => source.busyMode.value === "followUp" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "followUp");
-	click("#settings-toggle");
-	await until(() => document.querySelector("#settings"));
-	step("the composer delivery menu updates the same preference shown in Settings", document.querySelector('#settings-delivery [data-value="followUp"]')?.getAttribute("aria-checked") === "true");
-	click('#settings-delivery [data-value="steer"]');
-	await until(() => source.busyMode.value === "steer" && document.querySelector<HTMLElement>("#send-mode")?.dataset.mode === "steer");
-	click("#settings-back");
-	await until(() => !document.querySelector("#settings"));
+	step("the composer has no delivery toggle", !document.querySelector("#send-mode"));
 
 	click("#chats-toggle");
 	await until(() => document.querySelector("#chat-drawer")?.contains(document.activeElement));

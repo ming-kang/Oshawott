@@ -1,8 +1,7 @@
-import { createApp, defineComponent, h as vueH, nextTick, shallowRef } from "vue";
+import { createApp, defineComponent, h as vueH, nextTick } from "vue";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type RunFailure, type SubmissionId, type TaskId } from "@earendil-works/pi-durable";
-import type { BusyMode } from "../../contracts/chat.ts";
-import { SendModeMenu, StopConfirmMenu } from "../menus.tsx";
+import { StopConfirmMenu } from "../menus.tsx";
 import { Overlays } from "../overlay.ts";
 import { OverlayHost } from "../overlay-host.tsx";
 import type { PanelController } from "../controller.ts";
@@ -186,23 +185,7 @@ export async function testVueComponents(fixture: HTMLElement, step: Step, escape
 		step("switching chats clears the inbox projection", queue.count === 0 && queue.hidden);
 		queue.dispose();
 
-		let picked = "";
-		const menuController = {
-			store: { busyMode: shallowRef<BusyMode>("followUp") }, overlays: { close: () => {} }, composer: { focus: () => {} },
-			session: { setBusyMode: async (mode: BusyMode) => { picked = mode; } },
-		} as unknown as PanelController;
-		const menuHost = h("div");
-		fixture.append(menuHost);
-		const menuApp = createApp({ render: () => vueH(SendModeMenu, { controller: menuController }) });
-		menuApp.mount(menuHost);
-		await nextTick();
-		menuHost.firstElementChild!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-		const keyboardMode = (document.activeElement as HTMLElement)?.dataset.mode;
-		(document.activeElement as HTMLButtonElement).click();
-		await nextTick();
-		const radio = menuHost.querySelector('[data-mode="steer"]')?.getAttribute("aria-checked");
-		step("delivery menu supports arrow keys and radio state", keyboardMode === "steer" && picked === "steer" && radio === "false", JSON.stringify({ keyboardMode, picked, radio }));
-		menuApp.unmount();
+		const menuController = { overlays: { close: () => {} } } as unknown as PanelController;
 
 		let stopConfirmed = false;
 		const stopHost = h("div");
@@ -215,10 +198,9 @@ export async function testVueComponents(fixture: HTMLElement, step: Step, escape
 		step("stop confirmation uses overlay controls with safe initial focus", safeFocus && stopConfirmed);
 		stopApp.unmount();
 
-		const modeButton = h("button", { class: "send-mode-btn", type: "button" });
 		const sendButton = h("button", { class: "send-btn", type: "button" });
-		fixture.append(h("div", { class: "composer-bar" }, h("button", { class: "send-btn stop-btn", type: "button" }), modeButton, sendButton));
-		step("visible stop and delivery controls do not split the remaining space", getComputedStyle(modeButton).marginLeft === "0px" && getComputedStyle(sendButton).marginLeft === "0px");
+		fixture.append(h("div", { class: "composer-bar" }, h("button", { class: "send-btn stop-btn", type: "button" }), sendButton));
+		step("visible stop and send controls do not split the remaining space", getComputedStyle(sendButton).marginLeft === "0px");
 	} finally {
 		overlays.close(false);
 		app.unmount();

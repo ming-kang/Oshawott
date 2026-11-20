@@ -109,12 +109,6 @@ export class ChatSession {
 		});
 	}
 
-	async setBusyMode(mode: BusyMode) {
-		const workspace = this.#workspace;
-		if (!workspace) throw new Error("The workspace is not ready.");
-		await workspace.setBusyMode(mode, BACKGROUND_CONTEXT);
-	}
-
 	get opened(): ChatRef {
 		if (!this.chat) throw new Error("The chat is not open.");
 		return this.chat;
