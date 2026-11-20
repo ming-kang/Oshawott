@@ -88,6 +88,30 @@ async function fixture(tabs: Tab[], options: { browser?: Partial<BrowserMembers>
 
 const tab = (tabId: number, host: string): Tab => ({ tabId, windowId: 1, url: `https://${host}/`, title: host, active: tabId === 7 });
 
+test("a blocked page read waits for site access and resumes the same tool call", async () => {
+	let grant!: () => void;
+	const permission = new Promise<void>(resolve => { grant = resolve; });
+	let waiting = false;
+	let reads = 0;
+	const f = await fixture([tab(7, "example.com")], {
+		browser: { siteAccess: async () => { waiting = true; await permission; return null; } },
+		page: { page_snapshot: async () => {
+			reads++;
+			return { url: "https://example.com/", title: "Example", text: "Granted page", truncated: false, textOffset: 0, totalChars: 12, elements: [], elementsTruncated: false };
+		} },
+	});
+	try {
+		const result = await f.call("page_snapshot", {}, 7, async () => {
+			await until(() => waiting ? true : undefined, "the site access check");
+			assert.equal(reads, 0);
+			grant();
+		});
+		assert.equal(result.isError, false);
+		assert.match(JSON.stringify(result.content), /Granted page/);
+		assert.equal(reads, 1);
+	} finally { grant(); await f.close(); }
+});
+
 test("inspect stores bounded previews without further truncating the model output", async () => {
 	const elements = Array.from({ length: 20 }, (_, index) => ({
 		ref: `e${index + 1}`, tag: "article", visible: true, truncated: true,

@@ -13,7 +13,7 @@ export const TabSchema = obj({
 export type Tab = Static<typeof TabSchema>;
 
 export const Browser = remote("oshawott.browser", {
-	version: 5,
+	version: 6,
 	params: {},
 	hostAddress: () => BrokerHost(),
 	variants: {
@@ -42,6 +42,7 @@ export const Browser = remote("oshawott.browser", {
 				 * its Port and the Engine's route to `TabHost({ tabId })` completes.
 				 */
 				attach: method(obj({ tabId: int() })),
+				siteAccess: method(obj({ tabId: int() })),
 				/**
 				 * Arms the Engine's wakeup from Durable's `Wake` (`onWake`): an alarm at `at`, a recovery heartbeat while
 				 * `active`, none when both are absent. The alarm brings the Engine back, which reopens and resumes.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Browser } from "../src/contracts/browser.ts";
 import type { Principal } from "../src/contracts/hosts.ts";
-import { BACKGROUND_CONTEXT, createHost, memoryLinkPair } from "../src/lib/chord.ts";
+import { BACKGROUND_CONTEXT, createHost, memoryLinkPair, withAbortSignal, type Context } from "../src/lib/chord.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -12,6 +12,9 @@ interface FakeTab { id: number; windowId: number; status: string; url: string; t
 
 const listeners = new Set<ChangeListener>();
 const tabs = new Map<number, FakeTab>();
+const permissionListeners = new Set<() => void>();
+let siteGranted = true;
+let checkedOrigins: string[][] = [];
 let injectionError: string | undefined;
 let injections = 0;
 const fire = (tabId: number, status: string) => {
@@ -19,6 +22,13 @@ const fire = (tabId: number, status: string) => {
 };
 
 (globalThis as { browser?: unknown }).browser = {
+	permissions: {
+		contains: async ({ origins }: { origins: string[] }) => { checkedOrigins.push(origins); return siteGranted; },
+		onAdded: {
+			addListener: (listener: () => void) => permissionListeners.add(listener),
+			removeListener: (listener: () => void) => permissionListeners.delete(listener),
+		},
+	},
 	scripting: { executeScript: async () => { injections++; if (injectionError) throw new Error(injectionError); } },
 	tabs: {
 		get: async (tabId: number) => {
@@ -50,6 +60,7 @@ async function client() {
 	await host.load([], context);
 	const browser = await host.get(Browser, {}, context);
 	return {
+		siteAccess: (tabId: number, ctx: Context = context) => browser.siteAccess({ tabId }, ctx),
 		attach: (tabId: number) => browser.attach({ tabId }, context),
 		settle: (tabId: number) => browser.settle({ tabId }, context),
 		close: async () => {
@@ -59,6 +70,59 @@ async function client() {
 		},
 	};
 }
+
+test("site access checks the tab origin once when granted and skips non-http tabs", async () => {
+	const { siteAccess, close } = await client();
+	try {
+		tabs.set(7, tab(7));
+		checkedOrigins = [];
+		await siteAccess(7);
+		assert.deepEqual(checkedOrigins, [["https://example.com/*"]]);
+		tabs.set(8, { ...tab(8), url: "about:blank" });
+		await siteAccess(8);
+		assert.equal(checkedOrigins.length, 1);
+		assert.equal(permissionListeners.size, 0);
+		await assert.rejects(siteAccess(999), /No tab 999/);
+		assert.equal(permissionListeners.size, 0);
+	} finally { await close(); }
+});
+
+test("site access waits for a grant, then continues the same call and removes listeners", async () => {
+	const { siteAccess, close } = await client();
+	try {
+		tabs.set(7, tab(7));
+		siteGranted = false;
+		let completed = false;
+		const pending = siteAccess(7).then(() => { completed = true; });
+		await new Promise(resolve => setTimeout(resolve, 20));
+		assert.equal(completed, false);
+		assert.equal(permissionListeners.size, 1);
+		for (const listener of permissionListeners) listener();
+		await new Promise(resolve => setTimeout(resolve, 20));
+		assert.equal(completed, false);
+		siteGranted = true;
+		for (const listener of permissionListeners) listener();
+		await pending;
+		assert.equal(permissionListeners.size, 0);
+	} finally { siteGranted = true; await close(); }
+});
+
+test("stopping a site access wait rejects and removes its listener", async () => {
+	const { siteAccess, close } = await client();
+	try {
+		tabs.set(7, tab(7));
+		siteGranted = false;
+		const controller = new AbortController();
+		const pending = siteAccess(7, withAbortSignal(controller.signal, context));
+		const rejected = assert.rejects(pending);
+		await new Promise(resolve => setTimeout(resolve, 20));
+		assert.equal(permissionListeners.size, 1);
+		controller.abort();
+		await rejected;
+		await new Promise(resolve => setTimeout(resolve, 20));
+		assert.equal(permissionListeners.size, 0);
+	} finally { siteGranted = true; await close(); }
+});
 
 test("settle returns once the load an action started completes, not at the load timeout", async () => {
 	const { settle, close } = await client();
