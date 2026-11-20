@@ -99,6 +99,13 @@ test("panel send requests missing site access synchronously without waiting, but
 		controller.session.attachWorkspace(panel.workspace);
 		void controller.start();
 		await starting.promise;
+		for (const empty of ["", " \n\t "]) {
+			controller.composer.text = empty;
+			const sending = controller.send();
+			assert.equal(requests, 0, "empty sends must not request permission");
+			await sending;
+			assert.equal(controller.session.id, undefined);
+		}
 		for (const mode of ["pending", "granted", "rejected"]) {
 			granted = mode === "granted";
 			for (const listener of listeners) listener();

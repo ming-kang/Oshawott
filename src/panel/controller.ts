@@ -127,16 +127,17 @@ export class PanelController {
 	}
 
 	async send(given?: string) {
+		const raw = given ?? this.composer.text;
+		const text = raw.trim();
+		const files = this.composer.pending();
+		if ((!text && !files.length) || this.store.sending.value || !this.session.workspace) return;
 		if (!this.#siteAccessGranted) {
 			void ext.permissions.request({ origins: ["<all_urls>"] }).then((granted) => {
 				this.#siteAccessGranted = granted;
 			}).catch(() => {});
 		}
 		if (this.session.configuring) await this.session.configuring;
-		const raw = given ?? this.composer.text;
-		const text = raw.trim();
-		const files = this.composer.pending();
-		if ((!text && !files.length) || this.store.sending.value || !this.session.workspace) return;
+		if (this.store.sending.value || !this.session.workspace) return;
 		const delivery = this.session.busyMode;
 		if (!this.session.connected.length) {
 			if (given) this.composer.text = given;
