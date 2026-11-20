@@ -73,9 +73,31 @@ export async function testMarkdown(origin?: string) {
 		const toolBody = card.element.querySelector<HTMLElement>(".tool-body")!;
 		await frames();
 		step("expanded tool details are capped and scroll internally", toolBody.clientHeight <= 300 && toolBody.scrollHeight > toolBody.clientHeight);
+		const noInnerVerticalScroll = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(".tool-code, .tool-raw-pre, .tv-preview, .tv-diff")]
+			.every((node) => node.scrollHeight <= node.clientHeight + 1);
+		step("tool arguments and results have no nested vertical scrolling", noInnerVerticalScroll(toolBody));
+		const argsPre = toolBody.querySelector<HTMLElement>(".tool-code")!;
+		argsPre.scrollLeft = 40;
+		step("long tool code lines still scroll horizontally", argsPre.scrollLeft > 0);
+		toolBody.scrollTop = toolBody.scrollHeight;
+		const resultPre = toolBody.querySelector<HTMLElement>(".tool-raw-pre")!;
+		step("the tool body scroll reaches the end of the result", resultPre.getBoundingClientRect().bottom <= toolBody.getBoundingClientRect().bottom + 1);
 		card.setResult("Error detail\n".repeat(120), true);
 		step("tool errors retain the detail height cap", toolBody.clientHeight <= 300 && toolBody.scrollHeight > toolBody.clientHeight);
+		step("tool errors have no nested vertical scrolling", noInnerVerticalScroll(toolBody));
 		card.element.remove();
+		const fetchCard = new ToolCard("fetch", { url: "https://example.com" });
+		fetchCard.setResult("Downloaded", false, { kind: "fetch", http: { status: 200, bytes: 1300 }, headline: "Downloaded", preview: "Preview line\n".repeat(100) });
+		const editCard = new ToolCard("edit", { path: "notes.md", edits: [{ oldText: "Old line\n".repeat(100), newText: "New line\n".repeat(100) }] });
+		for (const [richCard, selector] of [[fetchCard, ".tv-preview"], [editCard, ".tv-diff"]] as const) {
+			fixture.append(richCard.element);
+			richCard.element.open = true;
+			await frames();
+			const richBody = richCard.element.querySelector<HTMLElement>(".tool-body")!;
+			step(`${selector} uses only the tool body's vertical scroll`, Boolean(richBody.querySelector(selector))
+				&& richBody.scrollHeight > richBody.clientHeight && noInnerVerticalScroll(richBody));
+			richCard.element.remove();
+		}
 		navigator.clipboard.writeText = async (text) => { copied = text; };
 		const source = `A stable paragraph.\n\n\`\`\`ts\nconst result = "${"otter".repeat(30)}";`;
 		const message = (text: string, thinking = "Reading the page.") => fauxAssistantMessage([fauxThinking(thinking), fauxText(text)], { timestamp: 1700000000000 });

@@ -243,10 +243,9 @@
 .tool-code,
 .tool-raw-pre,
 .tool-view .tv-preview {
-	max-height: 240px;
 	margin: 0;
 	padding: var(--space-2);
-	overflow: auto;
+	overflow-x: auto;
 	border: 0;
 	border-radius: 0;
 	background: transparent;
@@ -301,10 +300,6 @@
 .tv-stack > .tool-view .tv-preview,
 .tv-inspect-item .tool-code {
 	padding: var(--space-1) 0 0;
-}
-
-.tool-view .tv-preview {
-	max-height: 180px;
 }
 
 .tv-title {
@@ -497,8 +492,7 @@
 }
 
 .tv-diff {
-	max-height: 240px;
-	overflow: auto;
+	overflow-x: auto;
 	padding: var(--space-1) 0;
 	font: var(--font-mono-sm);
 	line-height: var(--leading-normal);
