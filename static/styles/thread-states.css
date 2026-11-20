@@ -43,19 +43,8 @@
 	animation: rise var(--duration-slow) var(--ease);
 }
 
-.main:has(.site-access) {
-	display: flex;
-	flex-direction: column;
-}
-
-.main:has(.site-access) .scroller {
-	flex: 1;
-	min-height: 0;
-}
-
 .site-access.notice {
 	margin: 8px 12px;
-	flex-shrink: 0;
 }
 
 .site-access .btn {

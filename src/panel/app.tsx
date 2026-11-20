@@ -7,7 +7,7 @@ import { MessageQueue } from "./queue.tsx";
 import { OverlayHost } from "./overlay-host.tsx";
 import { Transcript } from "./transcript.tsx";
 import { t } from "./i18n/index.ts";
-import { ext } from "../platform/webext.ts";
+import { SiteAccess } from "./site-access.ts";
 
 export const PanelApp = defineComponent({
 	props: { controller: { type: Object as PropType<PanelController>, required: true } },
@@ -17,21 +17,7 @@ export const PanelApp = defineComponent({
 		const scroller = controller.scroller;
 		const dock = composer.dock;
 		const jump = shallowRef(false);
-		const siteAccess = shallowRef(true);
-		const accessError = shallowRef(false);
-		const requestingAccess = shallowRef(false);
-		const refreshAccess = () => {
-			void ext.permissions.contains({ origins: ["<all_urls>"] }).then((granted) => { siteAccess.value = granted; }).catch(() => { accessError.value = true; });
-		};
-		const requestAccess = () => {
-			const pending = ext.permissions.request({ origins: ["<all_urls>"] });
-			requestingAccess.value = true;
-			accessError.value = false;
-			void pending.then((granted) => { siteAccess.value = granted; }).catch(() => { accessError.value = true; }).finally(() => { requestingAccess.value = false; });
-		};
-		ext.permissions.onAdded.addListener(refreshAccess);
-		ext.permissions.onRemoved.addListener(refreshAccess);
-		refreshAccess();
+		const siteAccess = new SiteAccess();
 		let followBottom = true;
 		// A smooth toBottom() crosses far gaps on the way down; they must not look like a reader leaving.
 		let programmatic = false;
@@ -94,6 +80,7 @@ export const PanelApp = defineComponent({
 			composer.focus({ preventScroll: true });
 		};
 		onMounted(() => {
+			siteAccess.start();
 			document.addEventListener("keydown", typeToFocus);
 			const element = scroller.value;
 			element?.addEventListener("wheel", onWheel, { passive: true });
@@ -111,8 +98,7 @@ export const PanelApp = defineComponent({
 			}
 		});
 		onBeforeUnmount(() => {
-			ext.permissions.onAdded.removeListener(refreshAccess);
-			ext.permissions.onRemoved.removeListener(refreshAccess);
+			siteAccess.stop();
 			document.removeEventListener("keydown", typeToFocus);
 			const element = scroller.value;
 			element?.removeEventListener("wheel", onWheel);
@@ -151,13 +137,6 @@ export const PanelApp = defineComponent({
 					<button class="icon-btn" id="settings-toggle" type="button" title={t("settings.title")} aria-label={t("settings.title")} ref={controller.settingsButton} onClick={() => controller.openSettings()}><Icon name="sliders" size={18} /></button>
 				</header>
 				<main class="main">
-					{!siteAccess.value && <div class="site-access notice" data-tone="warn" role="status">
-						<span class="notice-icon"><Icon name="alert" size={16} /></span>
-						<div class="notice-body"><div>{t("siteAccess.description")}</div>
-							{accessError.value && <div class="notice-detail">{t("siteAccess.error")}</div>}
-							<button class="btn" type="button" disabled={requestingAccess.value} onClick={requestAccess}>{t("siteAccess.allow")}</button>
-						</div>
-					</div>}
 					{store.reconnecting.value && <div class="banner" role="status"><span class="spinner" />{t("reconnecting")}</div>}
 					<div class="scroller" id="scroller" ref={scroller} onScroll={() => {
 						const element = scroller.value;
@@ -168,6 +147,13 @@ export const PanelApp = defineComponent({
 						}
 						document.body.toggleAttribute("data-scrolled", (scroller.value?.scrollTop ?? 0) > 2);
 					}}>
+						{!siteAccess.granted.value && <div class="site-access notice" data-tone="warn" role="status">
+							<span class="notice-icon"><Icon name="alert" size={16} /></span>
+							<div class="notice-body"><div>{t("siteAccess.description")}</div>
+								{siteAccess.error.value && <div class="notice-detail">{t("siteAccess.error")}</div>}
+								<button class="btn" type="button" disabled={siteAccess.requesting.value} onClick={() => siteAccess.request()}>{t("siteAccess.allow")}</button>
+							</div>
+						</div>}
 						<Transcript controller={controller} key={store.conversationKey.value} />
 					</div>
 					<button class="jump" type="button" hidden={!jump.value} onClick={() => toBottom(true)}><Icon name="down" size={14} />{t("jump")}</button>
