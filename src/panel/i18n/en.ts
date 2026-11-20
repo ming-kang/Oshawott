@@ -179,7 +179,7 @@ export const en = {
 	"queue.edit": "Edit queued message",
 	"queue.save": "Save",
 	"queue.cancel": "Cancel queued message",
-	"queue.cancelEdit": "Close editor",
+	"queue.cancelEdit": "Cancel",
 	"queue.continue": "Run queued",
 	"queue.unavailable": "That message has already been sent or cancelled.",
 	"queue.keepRunning": "Keep running",

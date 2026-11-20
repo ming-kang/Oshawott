@@ -79,42 +79,111 @@
 	margin-top: 1px;
 }
 
-.queue-editor {
-	grid-column: 1 / -1;
-	width: 100%;
-	min-height: 58px;
-	max-height: 160px;
-	padding: var(--space-2);
-	border: var(--border-width) solid var(--line-strong);
-	border-radius: var(--radius-s);
-	outline: 0;
-	resize: vertical;
-	background: var(--bg);
-	font: var(--font-ui);
-	line-height: var(--leading-snug);
+.queue-item[data-editing="true"] {
+	display: block;
+	padding: 0;
 }
 
-.queue-editor:focus {
-	border-color: var(--accent);
+.queue-edit-card {
+	background: var(--surface);
+}
+
+.queue-edit-card:focus-within {
+	box-shadow: inset 3px 0 var(--accent);
+}
+
+.queue-editor {
+	display: block;
+	width: 100%;
+	min-height: 80px;
+	max-height: 160px;
+	padding: var(--space-3);
+	border: 0;
+	outline: 0;
+	resize: none;
+	background: transparent;
+	font: var(--font-ui);
+	line-height: var(--leading-normal);
+}
+
+.queue-edit-card .queue-existing-attachments:not(:empty) {
+	padding: 0 var(--space-3) var(--space-2);
+}
+
+.queue-edit-card .attachment-tray {
+	padding: 0 var(--space-3) var(--space-2);
+}
+
+.queue-edit-card .queue-attachment {
+	border: var(--border-width) solid var(--line);
+	color: var(--text-2);
 }
 
 .queue-edit-bar {
-	grid-column: 1 / -1;
 	display: flex;
 	align-items: center;
-	justify-content: flex-end;
-	gap: 6px;
+	gap: var(--space-1);
+	padding: var(--space-2);
+	border-top: var(--border-width) solid var(--line);
+	background: var(--surface-2);
+}
+
+.queue-edit-bar .attachment-add {
+	width: 28px;
+	height: 28px;
+	margin-right: 0;
+}
+
+.queue-edit-delivery {
+	position: relative;
+	display: inline-flex;
+}
+
+.queue-edit-delivery > .icon {
+	position: absolute;
+	top: 50%;
+	right: var(--space-2);
+	transform: translateY(-50%);
+	color: var(--text-3);
+	pointer-events: none;
 }
 
 .queue-edit-mode {
-	height: 26px;
-	margin-right: auto;
-	padding: 0 var(--space-1);
-	border: var(--border-width) solid var(--line);
-	border-radius: var(--radius-s);
-	background: var(--surface);
+	height: 28px;
+	padding: 0 var(--space-6) 0 var(--space-2);
+	appearance: none;
+	border: 0;
+	border-radius: var(--radius-pill);
+	background: transparent;
 	color: var(--text-2);
-	font: var(--font-ui-tertiary);
+	font: var(--font-ui-secondary);
+	cursor: pointer;
+	transition: var(--transition-press);
+}
+
+@media (hover: hover) {
+	.queue-edit-mode:hover:not(:disabled) {
+		background: var(--fill-ghost-active);
+		color: var(--text);
+	}
+}
+
+.queue-edit-mode:disabled {
+	cursor: default;
+	opacity: var(--opacity-disabled);
+}
+
+.queue-edit-actions {
+	display: flex;
+	gap: var(--space-1);
+	margin-left: auto;
+}
+
+@media (forced-colors: active) {
+	.queue-edit-card:focus-within {
+		outline: var(--focus-ring-width) solid Highlight;
+		outline-offset: calc(-1 * var(--focus-ring-width));
+	}
 }
 
 
