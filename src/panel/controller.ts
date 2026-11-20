@@ -9,7 +9,7 @@ import { ComposerState } from "./composer-state.ts";
 import { engineConnector, type PanelHost } from "./connection.ts";
 import { DraftSession } from "./draft-session.ts";
 import { FilesSheet } from "./files.tsx";
-import { ModelMenu, SendModeMenu, StopConfirmMenu, ThinkingMenu } from "./menus.tsx";
+import { ModelMenu, StopConfirmMenu, ThinkingMenu } from "./menus.tsx";
 import { Overlays } from "./overlay.ts";
 import { ProviderEditorSheet } from "./provider-editor.tsx";
 import { ChatSession, type WorkspaceRef } from "./session.ts";
@@ -48,10 +48,7 @@ export class PanelController {
 		this.composer = new ComposerState(() => this.drafts.schedule());
 		this.drafts = new DraftSession(this.composer, () => this.session.id);
 		this.tabs.onChange((tab) => { this.tab.value = tab; });
-		watch([this.store.busy, this.composer.hasContent], ([busy, content]) => {
-			if (!busy || !content) this.overlays.closeIf("send-mode");
-			this.#syncStop();
-		});
+		watch([this.store.busy, this.composer.hasContent], () => this.#syncStop());
 		watch([this.store.queue, this.store.id, this.store.busy], () => this.#syncStop());
 		watch([this.store.model, this.store.thinking, this.store.providers, this.store.ready], () => {
 			if (this.overlays.current.value?.id !== "thinking") return;
@@ -220,16 +217,6 @@ export class PanelController {
 		this.overlays.open({
 			id: "thinking", kind: "popover", anchor, align: "end", component: ThinkingMenu,
 			props: { controller: this, levels },
-		});
-	}
-
-	openSendModeMenu() {
-		const anchor = this.composer.sendModeButton.value;
-		if (this.overlays.current.value?.id === "send-mode") return this.overlays.close();
-		if (!anchor) return;
-		this.overlays.open({
-			id: "send-mode", kind: "popover", anchor, align: "end", boundary: this.composer.dock.value,
-			component: SendModeMenu, props: { controller: this },
 		});
 	}
 

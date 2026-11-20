@@ -119,11 +119,6 @@ export const Composer = defineComponent({
 						<AttachmentButton picker={composer.attachments} />
 						<button class="send-btn stop-btn" id="stop" type="button" title={t("composer.stop")} aria-label={t("composer.stop")} hidden={!busy || !hasContent}
 							ref={composer.stopButton} onClick={() => controller.requestStop(composer.stopButton.value!)}><Icon name="stop" size={16} /></button>
-						<button class="send-mode-btn" id="send-mode" type="button" aria-haspopup="menu" data-mode={store.busyMode.value} hidden={!busy || !hasContent}
-							title={t("composer.delivery")} aria-label={`${t("composer.delivery")}: ${deliveryLabel.value}`}
-							ref={composer.sendModeButton} onClick={() => controller.openSendModeMenu()}>
-							<span>{deliveryLabel.value}</span><Icon name="chevron" size={11} />
-						</button>
 						<button class="send-btn" id="send" type="button" data-mode={stop.value ? "stop" : "send"}
 							disabled={store.sending.value || (!stop.value && !hasContent)} title={sendTitle}
 							aria-label={stop.value ? t("composer.stop") : busy ? deliveryLabel.value : t("composer.send")}

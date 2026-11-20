@@ -1,7 +1,7 @@
 import { shallowRef, type Component } from "vue";
 
 export type OverlayKind = "drawer" | "sheet" | "popover";
-export type OverlayId = "chats" | "files" | "settings" | "provider" | "model" | "thinking" | "send-mode" | "stop" | "chat-actions";
+export type OverlayId = "chats" | "files" | "settings" | "provider" | "model" | "thinking" | "stop" | "chat-actions";
 
 export type OverlayPlacement = {
 	id: OverlayId;

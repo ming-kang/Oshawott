@@ -12,7 +12,6 @@ export class ComposerState implements DraftSource {
 	readonly thinkingButton = shallowRef<HTMLButtonElement>();
 	readonly stopButton = shallowRef<HTMLButtonElement>();
 	readonly sendButton = shallowRef<HTMLButtonElement>();
-	readonly sendModeButton = shallowRef<HTMLButtonElement>();
 	readonly dock = shallowRef<HTMLElement>();
 	readonly attachments: AttachmentPicker;
 	readonly hasContent = computed(() => Boolean(this.text.trim() || this.attachments.items.length));

@@ -1,5 +1,5 @@
 import { computed, defineComponent, nextTick, onMounted, ref, shallowRef, watch, type PropType } from "vue";
-import type { BusyMode, ChatSummary, ModelRef, ThinkingLevel } from "../contracts/chat.ts";
+import type { ChatSummary, ModelRef, ThinkingLevel } from "../contracts/chat.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
 import { t } from "./i18n/index.ts";
 import { compactTokens, configuredProviders, sameModel } from "./models.ts";
@@ -119,44 +119,6 @@ export const ThinkingMenu = defineComponent({
 						</button>
 					))}
 				</div>
-			</div>
-		);
-	},
-});
-
-const modeLabel = (mode: BusyMode) => t(mode === "steer" ? "queue.steer" : "queue.followUp");
-export const SendModeMenu = defineComponent({
-	props: { controller: { type: Object as PropType<PanelController>, required: true } },
-	setup(props) {
-		const menu = shallowRef<HTMLElement>();
-		const modes = ["followUp", "steer"] as const;
-		onMounted(() => {
-			(menu.value?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ?? menu.value?.querySelector<HTMLButtonElement>("button"))?.focus();
-		});
-		const pick = (mode: BusyMode) => {
-			props.controller.overlays.close();
-			props.controller.composer.focus();
-			void props.controller.session.setBusyMode(mode).catch(toastError);
-		};
-		return () => (
-			<div class="popover send-mode-menu" role="menu" aria-label={t("composer.delivery")} ref={menu}
-				onKeydown={(event) => {
-					if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-					event.preventDefault();
-					const buttons = [...menu.value!.querySelectorAll<HTMLButtonElement>("button")];
-					const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
-					const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
-						: (Math.max(0, current) + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
-					buttons[next]?.focus();
-				}}>
-				{modes.map((mode) => (
-					<button class="menu-item" type="button" role="menuitemradio" aria-checked={props.controller.store.busyMode.value === mode}
-						data-mode={mode} onClick={() => pick(mode)}>
-						<span class="menu-check">{props.controller.store.busyMode.value === mode && <Icon name="check" size={14} />}</span>
-						<span class="send-mode-copy"><span class="menu-item-name">{modeLabel(mode)}</span>
-							<span class="send-mode-description">{t(mode === "steer" ? "queue.steerDescription" : "queue.followUpDescription")}</span></span>
-					</button>
-				))}
 			</div>
 		);
 	},
