@@ -1,6 +1,8 @@
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { type ConversationView, type EntryId, type EntryRecord, type LiveState, ROOT_CONVERSATION_ID, type TaskId } from "@earendil-works/pi-durable";
 import { MarkdownView } from "../markdown-dom.ts";
+import { AssistantView } from "../assistant-view.ts";
+import { ToolCard } from "../tool-card.ts";
 import { TranscriptFixture } from "./fixtures.tsx";
 import { h } from "../ui.ts";
 import { until } from "./dom.ts";
@@ -35,6 +37,67 @@ export async function testMarkdown(origin?: string) {
 	const originalSelection = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange()) : [];
 	let copied = "";
 	try {
+		const detail = new AssistantView();
+		fixture.append(detail.element);
+		let thought = "Review the page evidence.\n\n".repeat(60);
+		const updateThinking = (live = true) => detail.update(fauxAssistantMessage([fauxThinking(thought)]), live);
+		updateThinking();
+		const disclosure = detail.element.querySelector<HTMLDetailsElement>(".thinking")!;
+		disclosure.open = true;
+		const body = disclosure.querySelector<HTMLElement>(".md")!;
+		await frames();
+		step("long thinking is capped and scrolls internally", body.clientHeight <= 300 && body.clientHeight > 0 && body.scrollHeight > body.clientHeight);
+		body.scrollTop = body.scrollHeight;
+		thought += "Latest evidence.\n\n".repeat(20);
+		updateThinking();
+		step("streaming thinking follows a bottom-pinned reader", body.scrollHeight - body.scrollTop - body.clientHeight < 2);
+		body.scrollTop = 40;
+		const readingTop = body.scrollTop;
+		thought += "More evidence.\n\n".repeat(20);
+		updateThinking();
+		step("streaming thinking preserves a reader's earlier position", Math.abs(body.scrollTop - readingTop) < 2);
+		updateThinking(false);
+		step("thinking finalization retains its disclosure and scroll position", disclosure.open && Math.abs(body.scrollTop - readingTop) < 2);
+		thought = "Short thought.";
+		updateThinking(false);
+		step("short thinking does not reserve the height cap", body.clientHeight < 100);
+		thought = "";
+		updateThinking(false);
+		step("empty thinking has no disclosure", !detail.element.querySelector(".thinking"));
+		detail.dispose();
+		detail.element.remove();
+		const card = new ToolCard("example_tool", { input: "Argument\n".repeat(120) });
+		fixture.append(card.element);
+		card.element.open = true;
+		card.setResult("Result\n".repeat(120), false);
+		const toolBody = card.element.querySelector<HTMLElement>(".tool-body")!;
+		await frames();
+		step("expanded tool details are capped and scroll internally", toolBody.clientHeight <= 300 && toolBody.scrollHeight > toolBody.clientHeight);
+		const noInnerVerticalScroll = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(".tool-code, .tool-raw-pre, .tv-preview, .tv-diff")]
+			.every((node) => node.scrollHeight <= node.clientHeight + 1);
+		step("tool arguments and results have no nested vertical scrolling", noInnerVerticalScroll(toolBody));
+		const argsPre = toolBody.querySelector<HTMLElement>(".tool-code")!;
+		argsPre.scrollLeft = 40;
+		step("long tool code lines still scroll horizontally", argsPre.scrollLeft > 0);
+		toolBody.scrollTop = toolBody.scrollHeight;
+		const resultPre = toolBody.querySelector<HTMLElement>(".tool-raw-pre")!;
+		step("the tool body scroll reaches the end of the result", resultPre.getBoundingClientRect().bottom <= toolBody.getBoundingClientRect().bottom + 1);
+		card.setResult("Error detail\n".repeat(120), true);
+		step("tool errors retain the detail height cap", toolBody.clientHeight <= 300 && toolBody.scrollHeight > toolBody.clientHeight);
+		step("tool errors have no nested vertical scrolling", noInnerVerticalScroll(toolBody));
+		card.element.remove();
+		const fetchCard = new ToolCard("fetch", { url: "https://example.com" });
+		fetchCard.setResult("Downloaded", false, { kind: "fetch", http: { status: 200, bytes: 1300 }, headline: "Downloaded", preview: "Preview line\n".repeat(100) });
+		const editCard = new ToolCard("edit", { path: "notes.md", edits: [{ oldText: "Old line\n".repeat(100), newText: "New line\n".repeat(100) }] });
+		for (const [richCard, selector] of [[fetchCard, ".tv-preview"], [editCard, ".tv-diff"]] as const) {
+			fixture.append(richCard.element);
+			richCard.element.open = true;
+			await frames();
+			const richBody = richCard.element.querySelector<HTMLElement>(".tool-body")!;
+			step(`${selector} uses only the tool body's vertical scroll`, Boolean(richBody.querySelector(selector))
+				&& richBody.scrollHeight > richBody.clientHeight && noInnerVerticalScroll(richBody));
+			richCard.element.remove();
+		}
 		navigator.clipboard.writeText = async (text) => { copied = text; };
 		const source = `A stable paragraph.\n\n\`\`\`ts\nconst result = "${"otter".repeat(30)}";`;
 		const message = (text: string, thinking = "Reading the page.") => fauxAssistantMessage([fauxThinking(thinking), fauxText(text)], { timestamp: 1700000000000 });

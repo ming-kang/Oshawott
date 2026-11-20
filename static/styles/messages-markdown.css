@@ -532,6 +532,10 @@
 }
 
 .thinking > .md {
+	max-height: 280px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--line-strong) transparent;
 	margin: var(--space-1) 0 var(--space-1) 7px;
 	padding: var(--space-1) 0 var(--space-1) var(--space-4);
 	border-left: var(--border-width) solid var(--line-strong);
@@ -539,4 +543,3 @@
 	font: var(--font-ui);
 	line-height: var(--leading-normal);
 }
-
