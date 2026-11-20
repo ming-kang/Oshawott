@@ -59,7 +59,7 @@ export const MessageQueue = defineComponent({
 		};
 
 		const editor = (item: QueueItem, draft: Editing) => (
-			<>
+			<div class="queue-edit-card">
 				<textarea class="queue-editor" rows={2} aria-label={t("queue.edit")} value={draft.text} disabled={pending.value}
 					onInput={(event) => { draft.text = (event.target as HTMLTextAreaElement).value; }}
 					onKeydown={(event) => {
@@ -81,21 +81,26 @@ export const MessageQueue = defineComponent({
 				<AttachmentTray picker={draft.picker} id={`queue-attachment-tray-${item.id}`} />
 				<div class="queue-edit-bar">
 					<AttachmentButton picker={draft.picker} id={`queue-attach-${item.id}`} inputId={`queue-attachment-input-${item.id}`} disabled={pending.value} />
-					<select class="queue-edit-mode" aria-label={t("queue.delivery")} value={draft.mode} disabled={pending.value}
-						onChange={(event) => { draft.mode = (event.target as HTMLSelectElement).value as BusyMode; }}>
-						<option value="followUp">{t("queue.followUp")}</option><option value="steer">{t("queue.steer")}</option>
-					</select>
-					<button class="btn small queue-edit-cancel" type="button" disabled={pending.value} onClick={closeEditor}>{t("queue.cancelEdit")}</button>
-					<button class="btn primary small queue-save" type="button" disabled={pending.value} onClick={() => save(item)}>{t("queue.save")}</button>
+					<span class="queue-edit-delivery">
+						<select class="queue-edit-mode" aria-label={t("queue.delivery")} value={draft.mode} disabled={pending.value}
+							onChange={(event) => { draft.mode = (event.target as HTMLSelectElement).value as BusyMode; }}>
+							<option value="followUp">{t("queue.followUp")}</option><option value="steer">{t("queue.steer")}</option>
+						</select>
+						<Icon name="chevron" size={12} />
+					</span>
+					<div class="queue-edit-actions">
+						<button class="btn ghost small queue-edit-cancel" type="button" disabled={pending.value} onClick={closeEditor}>{t("queue.cancelEdit")}</button>
+						<button class="btn primary small queue-save" type="button" disabled={pending.value} onClick={() => save(item)}>{t("queue.save")}</button>
+					</div>
 				</div>
-			</>
+			</div>
 		);
 
 		const row = (item: QueueItem) => {
 			const draft = editing.value?.id === item.id ? editing.value : undefined;
 			const other: BusyMode = item.mode === "steer" ? "followUp" : "steer";
 			return (
-				<article class="queue-item" data-submission-id={item.id} data-mode={item.mode} key={item.id}>
+				<article class="queue-item" data-submission-id={item.id} data-mode={item.mode} data-editing={draft ? "true" : undefined} key={item.id}>
 					{draft ? editor(item, draft) : (
 						<>
 							<button class="queue-mode" type="button" data-action="mode" disabled={pending.value}

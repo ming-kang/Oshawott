@@ -184,7 +184,7 @@ export const zh: Record<Key, string> = {
 	"queue.edit": "编辑排队消息",
 	"queue.save": "保存",
 	"queue.cancel": "取消排队消息",
-	"queue.cancelEdit": "关闭编辑",
+	"queue.cancelEdit": "取消",
 	"queue.continue": "处理队列",
 	"queue.unavailable": "这条消息已经发送或取消。",
 	"queue.keepRunning": "继续运行",
