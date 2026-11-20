@@ -36,7 +36,8 @@ export async function using<C extends Contract, T>(
 	}
 }
 
-export function callPage(host: EngineHost, tabId: number, tool: PageToolName | "describe" | "settled" | "viewport" | "upload", args: unknown, context: Context): Promise<unknown> {
+export async function callPage(host: EngineHost, tabId: number, tool: PageToolName | "describe" | "settled" | "viewport" | "upload", args: unknown, context: Context): Promise<unknown> {
+	await using(host, Browser, {}, context, (browser) => browser.siteAccess({ tabId }, context));
 	return using(host, Page, { tabId }, context, (page) =>
 		(page[tool] as unknown as (args: unknown, context: Context) => Promise<unknown>).call(page, args, context));
 }

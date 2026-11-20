@@ -14,6 +14,9 @@ const LOAD_TIMEOUT_MS = 15_000;
 const SETTLE_WINDOW_MS = 400;
 const GROUP_TITLE = "Oshawott";
 const GROUP_COLOR = "purple";
+const SITE_ACCESS_TIMEOUT_MS = 5 * 60_000;
+const SITE_ACCESS_PROBE_MS = 1_000;
+const SITE_ACCESS_REQUIRED = "Oshawott has no access to this site. Ask the user to grant site access in the browser prompt or the browser's extension settings, then retry.";
 /** Without storage.session: one id per broker lifetime, so closed tabs are still foreign after a restart. */
 let sessionId: string | undefined;
 
@@ -112,15 +115,74 @@ async function settleTab(tabId: number): Promise<Tab> {
 	return tabOf(await ext.tabs.get(tabId));
 }
 
-export async function injectPage(tabId: number) {
-	await ext.scripting.executeScript({
-		target: { tabId },
-		func: ((id: number) => {
-			(globalThis as { __oshawottTabId?: number }).__oshawottTabId = id;
-		}) as (...args: never[]) => unknown,
-		args: [tabId],
+function missingSiteAccess(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /Missing host permission for the tab|Cannot access contents of the page|must request permission to access (?:this|the respective) host/i.test(message);
+}
+
+async function canInject(tabId: number): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			ext.scripting.executeScript({ target: { tabId }, func: () => true }).then(() => true, (error: unknown) => {
+				if (missingSiteAccess(error)) return false;
+				throw error;
+			}),
+			new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), SITE_ACCESS_PROBE_MS); }),
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+async function siteAccess(tabId: number, context: Context): Promise<void> {
+	await new Promise<void>((resolve, reject) => {
+		const signal = context.abortSignal;
+		let finished = false;
+		const finish = (error?: unknown) => {
+			if (finished) return;
+			finished = true;
+			clearTimeout(timer);
+			ext.permissions.onAdded.removeListener(check);
+			signal?.removeEventListener("abort", aborted);
+			if (error) reject(error);
+			else resolve();
+		};
+		const aborted = () => finish(new Error(SITE_ACCESS_REQUIRED));
+		const check = () => {
+			void ext.tabs.get(tabId).then(async (tab) => {
+				if (!tab.url || !/^https?:\/\//i.test(tab.url)) return true;
+				const { protocol, hostname } = new URL(tab.url);
+				const granted = await ext.permissions.contains({ origins: [`${protocol}//${hostname}/*`] });
+				return granted || canInject(tabId);
+			}).then((granted) => {
+				if (granted) finish();
+			}, finish);
+		};
+		const timer = setTimeout(aborted, SITE_ACCESS_TIMEOUT_MS);
+		ext.permissions.onAdded.addListener(check);
+		signal?.addEventListener("abort", aborted, { once: true });
+		if (signal?.aborted) aborted();
+		else check();
 	});
-	await ext.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
+}
+
+export async function injectPage(tabId: number) {
+	try {
+		await ext.scripting.executeScript({
+			target: { tabId },
+			func: ((id: number) => {
+				(globalThis as { __oshawottTabId?: number }).__oshawottTabId = id;
+			}) as (...args: never[]) => unknown,
+			args: [tabId],
+		});
+		await ext.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
+	} catch (error) {
+		if (missingSiteAccess(error)) {
+			throw new Error(SITE_ACCESS_REQUIRED, { cause: error });
+		}
+		throw error;
+	}
 }
 
 export async function armWake({ active, at }: { active: boolean; at?: number | undefined }) {
@@ -200,6 +262,10 @@ export async function startBroker(context: Context): Promise<Host<Principal>> {
 								},
 								attach: async ({ tabId }) => {
 									await injectPage(tabId);
+									return null;
+								},
+								siteAccess: async ({ tabId }, ctx) => {
+									await siteAccess(tabId, ctx);
 									return null;
 								},
 								armWake: async (wake) => {
