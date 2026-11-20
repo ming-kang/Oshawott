@@ -15,6 +15,7 @@ const SETTLE_WINDOW_MS = 400;
 const GROUP_TITLE = "Oshawott";
 const GROUP_COLOR = "purple";
 const SITE_ACCESS_TIMEOUT_MS = 5 * 60_000;
+const SITE_ACCESS_PROBE_MS = 1_000;
 const SITE_ACCESS_REQUIRED = "Oshawott has no access to this site. Ask the user to click 'Allow site access' in the Oshawott panel, then retry.";
 /** Without storage.session: one id per broker lifetime, so closed tabs are still foreign after a restart. */
 let sessionId: string | undefined;
@@ -114,6 +115,26 @@ async function settleTab(tabId: number): Promise<Tab> {
 	return tabOf(await ext.tabs.get(tabId));
 }
 
+function missingSiteAccess(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /Missing host permission for the tab|Cannot access contents of the page|must request permission to access (?:this|the respective) host/i.test(message);
+}
+
+async function canInject(tabId: number): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			ext.scripting.executeScript({ target: { tabId }, func: () => true }).then(() => true, (error: unknown) => {
+				if (missingSiteAccess(error)) return false;
+				throw error;
+			}),
+			new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), SITE_ACCESS_PROBE_MS); }),
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 async function siteAccess(tabId: number, context: Context): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
 		const signal = context.abortSignal;
@@ -131,8 +152,9 @@ async function siteAccess(tabId: number, context: Context): Promise<void> {
 		const check = () => {
 			void ext.tabs.get(tabId).then(async (tab) => {
 				if (!tab.url || !/^https?:\/\//i.test(tab.url)) return true;
-				const origin = new URL(tab.url).origin;
-				return ext.permissions.contains({ origins: [`${origin}/*`] });
+				const { protocol, hostname } = new URL(tab.url);
+				const granted = await ext.permissions.contains({ origins: [`${protocol}//${hostname}/*`] });
+				return granted || canInject(tabId);
 			}).then((granted) => {
 				if (granted) finish();
 			}, finish);
@@ -156,8 +178,7 @@ export async function injectPage(tabId: number) {
 		});
 		await ext.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (/Missing host permission for the tab|Cannot access contents of the page|must request permission to access (?:this|the respective) host/i.test(message)) {
+		if (missingSiteAccess(error)) {
 			throw new Error(SITE_ACCESS_REQUIRED, { cause: error });
 		}
 		throw error;

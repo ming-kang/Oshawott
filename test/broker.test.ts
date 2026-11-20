@@ -14,6 +14,7 @@ const listeners = new Set<ChangeListener>();
 const tabs = new Map<number, FakeTab>();
 const permissionListeners = new Set<() => void>();
 let siteGranted = true;
+let tabGranted = false;
 let checkedOrigins: string[][] = [];
 let injectionError: string | undefined;
 let injections = 0;
@@ -29,7 +30,11 @@ const fire = (tabId: number, status: string) => {
 			removeListener: (listener: () => void) => permissionListeners.delete(listener),
 		},
 	},
-	scripting: { executeScript: async () => { injections++; if (injectionError) throw new Error(injectionError); } },
+	scripting: { executeScript: async () => {
+		injections++;
+		if (injectionError) throw new Error(injectionError);
+		if (!siteGranted && !tabGranted) throw new Error("Missing host permission for the tab");
+	} },
 	tabs: {
 		get: async (tabId: number) => {
 			const tab = tabs.get(tabId);
@@ -74,10 +79,12 @@ async function client() {
 test("site access checks the tab origin once when granted and skips non-http tabs", async () => {
 	const { siteAccess, close } = await client();
 	try {
-		tabs.set(7, tab(7));
+		tabs.set(7, { ...tab(7), url: "https://example.com:8443/notes" });
 		checkedOrigins = [];
+		const before = injections;
 		await siteAccess(7);
 		assert.deepEqual(checkedOrigins, [["https://example.com/*"]]);
+		assert.equal(injections, before);
 		tabs.set(8, { ...tab(8), url: "about:blank" });
 		await siteAccess(8);
 		assert.equal(checkedOrigins.length, 1);
@@ -85,6 +92,30 @@ test("site access checks the tab origin once when granted and skips non-http tab
 		await assert.rejects(siteAccess(999), /No tab 999/);
 		assert.equal(permissionListeners.size, 0);
 	} finally { await close(); }
+});
+
+test("site access recognizes a temporary tab grant without an origin permission", async () => {
+	const { siteAccess, close } = await client();
+	try {
+		tabs.set(7, tab(7));
+		siteGranted = false;
+		tabGranted = true;
+		injections = 0;
+		await siteAccess(7, withAbortSignal(AbortSignal.timeout(1_000), context));
+		assert.equal(injections, 1);
+		assert.equal(permissionListeners.size, 0);
+	} finally { siteGranted = true; tabGranted = false; await close(); }
+});
+
+test("site access preserves unrelated probe failures and removes its listener", async () => {
+	const { siteAccess, close } = await client();
+	try {
+		tabs.set(7, tab(7));
+		siteGranted = false;
+		injectionError = "Tab was closed";
+		await assert.rejects(siteAccess(7), /Tab was closed/);
+		assert.equal(permissionListeners.size, 0);
+	} finally { siteGranted = true; injectionError = undefined; await close(); }
 });
 
 test("site access waits for a grant, then continues the same call and removes listeners", async () => {
