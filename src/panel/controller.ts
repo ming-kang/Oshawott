@@ -3,6 +3,7 @@ import type { EntryId } from "@earendil-works/pi-durable";
 import { Workspace } from "../contracts/chat.ts";
 import type { AttachmentInput } from "../lib/attachments.ts";
 import { BACKGROUND_CONTEXT } from "../lib/chord.ts";
+import { ext } from "../platform/webext.ts";
 import type { TargetTab } from "./tab.ts";
 import { ChatDrawer } from "./chats.tsx";
 import { ComposerState } from "./composer-state.ts";
@@ -39,6 +40,10 @@ export class PanelController {
 	readonly scroller = shallowRef<HTMLElement>();
 	readonly scrollToBottom = shallowRef<(smooth?: boolean) => void>();
 	#viewFrame: number | undefined;
+	#siteAccessGranted = false;
+	#refreshSiteAccess = () => ext.permissions.contains({ origins: ["<all_urls>"] }).then((granted) => {
+		this.#siteAccessGranted = granted;
+	}).catch(() => {});
 	#stop: { chat: ChatSession["chat"]; count: number } | undefined;
 
 	constructor(host: PanelHost) {
@@ -70,6 +75,9 @@ export class PanelController {
 	}
 
 	async start() {
+		ext.permissions.onAdded.addListener(this.#refreshSiteAccess);
+		ext.permissions.onRemoved.addListener(this.#refreshSiteAccess);
+		await this.#refreshSiteAccess();
 		this.tabs.start();
 		await engineConnector(this.host, (reconnecting) => { this.store.reconnecting.value = reconnecting; })();
 		await this.host.load([], context);
@@ -119,6 +127,11 @@ export class PanelController {
 	}
 
 	async send(given?: string) {
+		if (!this.#siteAccessGranted) {
+			void ext.permissions.request({ origins: ["<all_urls>"] }).then((granted) => {
+				this.#siteAccessGranted = granted;
+			}).catch(() => {});
+		}
 		if (this.session.configuring) await this.session.configuring;
 		const raw = given ?? this.composer.text;
 		const text = raw.trim();

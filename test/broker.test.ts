@@ -182,7 +182,7 @@ test("attach explains revoked site access without hiding unrelated injection fai
 			'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
 		]) {
 			injectionError = message;
-			await assert.rejects(attach(7), /Ask the user to click 'Allow site access' in the Oshawott panel, then retry/);
+			await assert.rejects(attach(7), /grant site access in the browser prompt or the browser's extension settings, then retry/);
 		}
 		injectionError = "Cannot access a chrome:// URL";
 		await assert.rejects(attach(7), /Cannot access a chrome:\/\/ URL/);

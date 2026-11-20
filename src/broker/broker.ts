@@ -16,7 +16,7 @@ const GROUP_TITLE = "Oshawott";
 const GROUP_COLOR = "purple";
 const SITE_ACCESS_TIMEOUT_MS = 5 * 60_000;
 const SITE_ACCESS_PROBE_MS = 1_000;
-const SITE_ACCESS_REQUIRED = "Oshawott has no access to this site. Ask the user to click 'Allow site access' in the Oshawott panel, then retry.";
+const SITE_ACCESS_REQUIRED = "Oshawott has no access to this site. Ask the user to grant site access in the browser prompt or the browser's extension settings, then retry.";
 /** Without storage.session: one id per broker lifetime, so closed tabs are still foreign after a restart. */
 let sessionId: string | undefined;
 

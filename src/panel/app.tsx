@@ -7,7 +7,6 @@ import { MessageQueue } from "./queue.tsx";
 import { OverlayHost } from "./overlay-host.tsx";
 import { Transcript } from "./transcript.tsx";
 import { t } from "./i18n/index.ts";
-import { SiteAccess } from "./site-access.ts";
 
 export const PanelApp = defineComponent({
 	props: { controller: { type: Object as PropType<PanelController>, required: true } },
@@ -17,7 +16,6 @@ export const PanelApp = defineComponent({
 		const scroller = controller.scroller;
 		const dock = composer.dock;
 		const jump = shallowRef(false);
-		const siteAccess = new SiteAccess();
 		let followBottom = true;
 		// A smooth toBottom() crosses far gaps on the way down; they must not look like a reader leaving.
 		let programmatic = false;
@@ -80,7 +78,6 @@ export const PanelApp = defineComponent({
 			composer.focus({ preventScroll: true });
 		};
 		onMounted(() => {
-			siteAccess.start();
 			document.addEventListener("keydown", typeToFocus);
 			const element = scroller.value;
 			element?.addEventListener("wheel", onWheel, { passive: true });
@@ -98,7 +95,6 @@ export const PanelApp = defineComponent({
 			}
 		});
 		onBeforeUnmount(() => {
-			siteAccess.stop();
 			document.removeEventListener("keydown", typeToFocus);
 			const element = scroller.value;
 			element?.removeEventListener("wheel", onWheel);
@@ -138,13 +134,6 @@ export const PanelApp = defineComponent({
 				</header>
 				<main class="main">
 					{store.reconnecting.value && <div class="banner" role="status"><span class="spinner" />{t("reconnecting")}</div>}
-					{!siteAccess.granted.value && <div class="site-access notice" data-tone="warn" role="status">
-						<span class="notice-icon"><Icon name="alert" size={16} /></span>
-						<div class="notice-body"><div>{t("siteAccess.description")}</div>
-							{siteAccess.error.value && <div class="notice-detail">{t("siteAccess.error")}</div>}
-							<button class="btn" type="button" disabled={siteAccess.requesting.value} onClick={() => siteAccess.request()}>{t("siteAccess.allow")}</button>
-						</div>
-					</div>}
 					<div class="scroller" id="scroller" ref={scroller} onScroll={() => {
 						const element = scroller.value;
 						if (element) {

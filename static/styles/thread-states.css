@@ -43,15 +43,6 @@
 	animation: rise var(--duration-slow) var(--ease);
 }
 
-.site-access.notice {
-	flex-shrink: 0;
-	margin: 8px 12px;
-}
-
-.site-access .btn {
-	margin-top: 8px;
-}
-
 .notice-icon {
 	display: flex;
 	padding-top: 2px;

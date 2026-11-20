@@ -1,7 +1,4 @@
 export const en = {
-	"siteAccess.description": "Oshawott can't read or use pages until you allow site access.",
-	"siteAccess.allow": "Allow site access",
-	"siteAccess.error": "Couldn't request access. Retry or check the extension's browser permissions.",
 	"chat.untitled": "New chat",
 	"chat.list": "Chats",
 	"chat.new": "New chat",
