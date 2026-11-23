@@ -1,4 +1,4 @@
-import { isHttpUrl } from "../platform/patterns.ts";
+import { isFileUrl, isHttpUrl } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
 export interface TargetTab {
@@ -25,7 +25,7 @@ function describe(tab: TabInfo): TargetTab {
 		title: tab.title || url,
 		url,
 		...(tab.favIconUrl && /^(https?:|data:image\/)/.test(tab.favIconUrl) ? { favIconUrl: tab.favIconUrl } : {}),
-		available: isHttpUrl(url),
+		available: isHttpUrl(url) || isFileUrl(url),
 	};
 }
 

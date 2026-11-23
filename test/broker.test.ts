@@ -18,6 +18,7 @@ let tabGranted = false;
 let checkedOrigins: string[][] = [];
 let injectionError: string | undefined;
 let injections = 0;
+let fileSchemeGranted = true;
 const fire = (tabId: number, status: string) => {
 	for (const listener of [...listeners]) listener(tabId, { status });
 };
@@ -30,9 +31,13 @@ const fire = (tabId: number, status: string) => {
 			removeListener: (listener: () => void) => permissionListeners.delete(listener),
 		},
 	},
-	scripting: { executeScript: async () => {
+	scripting: { executeScript: async ({ target }: { target: { tabId: number } }) => {
 		injections++;
 		if (injectionError) throw new Error(injectionError);
+		// file: tabs fail without the browser's local-file grant, like a missing host permission.
+		if (tabs.get(target.tabId)?.url.startsWith("file:") && !fileSchemeGranted) {
+			throw new Error("Missing host permission for the tab");
+		}
 		if (!siteGranted && !tabGranted) throw new Error("Missing host permission for the tab");
 	} },
 	tabs: {
@@ -92,6 +97,31 @@ test("site access checks the tab origin once when granted and skips non-http tab
 		await assert.rejects(siteAccess(999), /No tab 999/);
 		assert.equal(permissionListeners.size, 0);
 	} finally { await close(); }
+});
+
+test("local files are allowed when a probe injection succeeds", async () => {
+	const { siteAccess, attach, close } = await client();
+	try {
+		tabs.set(7, { ...tab(7), url: "file:///tmp/notes.html", title: "Notes" });
+		checkedOrigins = [];
+		fileSchemeGranted = false;
+		const before = injections;
+		await assert.rejects(siteAccess(7), /local file access/i);
+		await assert.rejects(siteAccess(7), /Firefox 153/);
+		assert.equal(injections, before + 2); // each call ran one real probe the browser refused
+		assert.deepEqual(checkedOrigins, []);
+		assert.equal(permissionListeners.size, 0);
+
+		fileSchemeGranted = true;
+		await siteAccess(7);
+		assert.equal(injections, before + 3);
+		assert.deepEqual(checkedOrigins, []);
+		await attach(7);
+		assert.equal(injections, before + 5);
+	} finally {
+		fileSchemeGranted = true;
+		await close();
+	}
 });
 
 test("site access recognizes a temporary tab grant without an origin permission", async () => {

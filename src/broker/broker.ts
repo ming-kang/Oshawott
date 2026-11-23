@@ -1,6 +1,7 @@
 import { Browser, type Tab } from "../contracts/browser.ts";
 import { BrokerHost, type Principal } from "../contracts/hosts.ts";
 import { type Context, createHost, defineFacet, type Host } from "../lib/chord.ts";
+import { isFileUrl } from "../platform/patterns.ts";
 import { ext, type TabInfo } from "../platform/webext.ts";
 
 export const WAKE_ALARM = "oshawott:wake";
@@ -17,6 +18,10 @@ const GROUP_COLOR = "purple";
 const SITE_ACCESS_TIMEOUT_MS = 5 * 60_000;
 const SITE_ACCESS_PROBE_MS = 1_000;
 const SITE_ACCESS_REQUIRED = "Oshawott has no access to this site. Ask the user to grant site access in the browser prompt or the browser's extension settings, then retry.";
+const LOCAL_FILE_ACCESS_REQUIRED =
+	"Oshawott cannot read this local page. Ask the user to enable local file access in the browser's extension settings " +
+	"(‘Allow access to file URLs’ in Chromium, or ‘Access local files on your computer’ in Firefox 153+), then retry. " +
+	"The file must already be open as a regular document; built-in PDF viewers are not supported.";
 /** Without storage.session: one id per broker lifetime, so closed tabs are still foreign after a restart. */
 let sessionId: string | undefined;
 
@@ -135,7 +140,20 @@ async function canInject(tabId: number): Promise<boolean> {
 	}
 }
 
+/** The grant to blame when injection failed: file access for local documents, site access otherwise. */
+async function accessRequired(tabId: number, cause: unknown): Promise<Error> {
+	const tab = await ext.tabs.get(tabId).catch(() => undefined);
+	return new Error(isFileUrl(tab?.url) ? LOCAL_FILE_ACCESS_REQUIRED : SITE_ACCESS_REQUIRED, { cause });
+}
+
 async function siteAccess(tabId: number, context: Context): Promise<void> {
+	const tab = await ext.tabs.get(tabId);
+	if (isFileUrl(tab.url)) {
+		// A probe is the ground truth: old Firefox injects file:// pages without a grant the settings API would
+		// report (it says false even when injection works); browsers that truly cannot inject get the error's steps.
+		if (!(await canInject(tabId))) throw new Error(LOCAL_FILE_ACCESS_REQUIRED);
+		return;
+	}
 	await new Promise<void>((resolve, reject) => {
 		const signal = context.abortSignal;
 		let finished = false;
@@ -143,27 +161,29 @@ async function siteAccess(tabId: number, context: Context): Promise<void> {
 			if (finished) return;
 			finished = true;
 			clearTimeout(timer);
-			ext.permissions.onAdded.removeListener(check);
+			ext.permissions.onAdded.removeListener(added);
 			signal?.removeEventListener("abort", aborted);
 			if (error) reject(error);
 			else resolve();
 		};
 		const aborted = () => finish(new Error(SITE_ACCESS_REQUIRED));
-		const check = () => {
-			void ext.tabs.get(tabId).then(async (tab) => {
-				if (!tab.url || !/^https?:\/\//i.test(tab.url)) return true;
-				const { protocol, hostname } = new URL(tab.url);
+		const check = (fetched: TabInfo | Promise<TabInfo>) => {
+			void Promise.resolve(fetched).then(async (current) => {
+				if (!current.url || !/^https?:\/\//i.test(current.url)) return true;
+				const { protocol, hostname } = new URL(current.url);
 				const granted = await ext.permissions.contains({ origins: [`${protocol}//${hostname}/*`] });
 				return granted || canInject(tabId);
 			}).then((granted) => {
 				if (granted) finish();
 			}, finish);
 		};
+		// The listener gets a permissions argument, so it asks for a fresh tab instead of reusing the first one.
+		const added = () => check(ext.tabs.get(tabId));
 		const timer = setTimeout(aborted, SITE_ACCESS_TIMEOUT_MS);
-		ext.permissions.onAdded.addListener(check);
+		ext.permissions.onAdded.addListener(added);
 		signal?.addEventListener("abort", aborted, { once: true });
 		if (signal?.aborted) aborted();
-		else check();
+		else check(tab);
 	});
 }
 
@@ -178,9 +198,7 @@ export async function injectPage(tabId: number) {
 		});
 		await ext.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
 	} catch (error) {
-		if (missingSiteAccess(error)) {
-			throw new Error(SITE_ACCESS_REQUIRED, { cause: error });
-		}
+		if (missingSiteAccess(error)) throw await accessRequired(tabId, error);
 		throw error;
 	}
 }

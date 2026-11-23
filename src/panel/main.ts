@@ -5,6 +5,7 @@ import { PanelController } from "./controller.ts";
 import { language } from "./i18n/index.ts";
 import { initializeTheme } from "./settings.tsx";
 import { testAttachmentComposer } from "./selftest/attachments.ts";
+import { testLocalFilePage } from "./selftest/local-file.ts";
 import { testMarkdown } from "./selftest/markdown.ts";
 import { testPageTools } from "./selftest/page-tools.ts";
 import { testPanel } from "./selftest/panel.ts";
@@ -22,7 +23,7 @@ void controller.start().then((held) => {
 	const panelTests = (origin?: string) => testPanel(held, origin);
 	(globalThis as { __oshawottTest?: unknown }).__oshawottTest = {
 		toolCards: testToolCards, markdown: testMarkdown, panel: panelTests,
-		attachments: testAttachmentComposer, pageTools: testPageTools,
+		attachments: testAttachmentComposer, pageTools: testPageTools, localFile: testLocalFilePage,
 	};
 	const origin = new URLSearchParams(location.search).get("selftest");
 	if (origin) void selftest(origin, panelTests);

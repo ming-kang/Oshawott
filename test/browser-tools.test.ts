@@ -149,8 +149,42 @@ test("non-http(s) tabs refuse page tools", async () => {
 	try {
 		const result = await f.call("page_click", { ref: "e1" }, 7);
 		assert.equal(result.isError, true);
-		assert.match(JSON.stringify(result.content), /only on http and https pages/);
+		assert.match(JSON.stringify(result.content), /only on http, https, and local file pages/);
 		assert.deepEqual(f.clicks, []);
+	} finally {
+		await f.close();
+	}
+});
+
+test("an already open local file supports reads only and tracks a different file as a new target", async () => {
+	const local = { tabId: 7, windowId: 1, url: "file:///tmp/one.html", title: "One", active: true };
+	const snapshot = () => ({
+		url: local.url, title: local.title, text: `Text of ${local.title}`, truncated: false,
+		textOffset: 0, totalChars: 9, elements: [], elementsTruncated: false,
+	});
+	const f = await fixture([local], {
+		page: {
+			page_snapshot: async () => snapshot(),
+			page_inspect: async () => ({ url: local.url, matched: 0, truncated: false, elements: [] }),
+		},
+	});
+	try {
+		const read = await f.call("page_snapshot", {}, 7);
+		assert.equal(read.isError, false);
+		assert.match(JSON.stringify(read.content), /Text of One/);
+		assert.equal((await f.call("page_inspect", { selector: "main" }, 7)).isError, false);
+		const action = await f.call("page_click", { ref: "e1" }, 7);
+		assert.equal(action.isError, true);
+		assert.match(JSON.stringify(action.content), /local file pages are read-only/i);
+		assert.deepEqual(f.clicks, []);
+		const navigation = await f.call("tab_navigate", { url: "file:///tmp/two.html" }, 7);
+		assert.equal(navigation.isError, true);
+		assert.match(JSON.stringify(navigation.content), /Only http and https/);
+
+		local.url = "file:///tmp/two.html";
+		local.title = "Two";
+		const moved = await f.call("page_snapshot", {});
+		assert.match(JSON.stringify(moved.content), /the target tab is now on file:\/\/\/tmp\/two\.html \(it was file:\/\/\/tmp\/one\.html\)/);
 	} finally {
 		await f.close();
 	}

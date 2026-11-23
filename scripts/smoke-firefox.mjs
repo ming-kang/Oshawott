@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 import { firefoxPath } from "./lib/browsers.mjs";
+import { writeLocalFile } from "./lib/local-file.mjs";
 import { dist, freshDir } from "./lib/paths.mjs";
 import { modelApi, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite } from "./lib/site.mjs";
 import { checklist, until } from "./lib/smoke.mjs";
@@ -27,8 +28,15 @@ const { step } = run;
 const artifacts = await freshDir("test", "firefox");
 const downloads = join(artifacts, "downloads");
 await mkdir(downloads);
+const localFile = await writeLocalFile(artifacts);
+const profile = join(artifacts, "profile");
+await mkdir(profile);
+// Pre-seed the permission represented by Firefox 153+'s "Access local files on your computer" toggle.
+await writeFile(join(profile, "extension-preferences.json"), JSON.stringify({
+	"oshawott@astralyn": { permissions: ["<all_urls>", "internal:fileSchemeAllowed"], origins: ["<all_urls>"], data_collection: [] },
+}));
 const browser = await puppeteer.launch({
-	browser: "firefox", executablePath: firefoxPath(), headless: true,
+	browser: "firefox", executablePath: firefoxPath(), headless: true, userDataDir: profile,
 	extraPrefsFirefox: {
 		"browser.download.folderList": 2,
 		"browser.download.dir": downloads,
@@ -40,6 +48,8 @@ let deadline;
 try {
 	// The extension drives itself: installed next to this tab, a dev build opens its panel in self-test mode, which
 	// runs the steps and posts them to /report (WebDriver BiDi cannot reach extension pages in Firefox).
+	const localTab = await browser.newPage();
+	await localTab.goto(localFile.url);
 	const page = await browser.newPage();
 	await page.goto(`${site.url}?oshawott-selftest`);
 	await browser.installExtension(dist("firefox"));

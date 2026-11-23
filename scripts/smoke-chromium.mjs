@@ -1,6 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launchExtension } from "./lib/browsers.mjs";
+import { writeLocalFile } from "./lib/local-file.mjs";
 import { freshDir } from "./lib/paths.mjs";
 import { modelApi, TEST_DOWNLOAD, TEST_LARGE_DOWNLOAD, testSite } from "./lib/site.mjs";
 import { checklist, until } from "./lib/smoke.mjs";
@@ -9,6 +10,7 @@ const { step, finish } = checklist();
 const artifacts = await freshDir("test", "chromium");
 const downloads = join(artifacts, "downloads");
 await mkdir(downloads);
+const localFile = await writeLocalFile(artifacts);
 const models = modelApi();
 const site = await testSite({ routes: models.routes });
 // Hosted Linux runners disable the unprivileged namespaces Chromium's sandbox needs.
@@ -18,6 +20,8 @@ try {
 	// Chromium resets a CDP client's download policy when it detaches; keep this session until the test ends.
 	downloadSession = await browser.target().createCDPSession();
 	await downloadSession.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads, eventsEnabled: true });
+	const localTab = await browser.newPage();
+	await localTab.goto(localFile.url);
 	const tab = await browser.newPage();
 	await tab.goto(site.url);
 	const panel = await browser.newPage();
@@ -49,6 +53,8 @@ try {
 		evaluateIn(offscreen, `oshawott.page(${target}, ${JSON.stringify(tool)}, ${JSON.stringify(args)})`));
 	for (const { name, ok, detail } of await panel.evaluate((origin) =>
 		globalThis.__oshawottTest.pageTools(origin, globalThis.__oshawottPageTool), site.url)) step(name, ok, detail);
+	for (const { name, ok, detail } of await panel.evaluate((origin) =>
+		globalThis.__oshawottTest.localFile(origin, globalThis.__oshawottPageTool), site.url)) step(name, ok, detail);
 
 	const run = await evaluateIn(offscreen, `oshawott.codemode("text('hi from QuickJS'); return [1, 2, 3].map((n) => n * n)").then((r) => JSON.parse(JSON.stringify(r)))`);
 	step("code mode runs in a Worker", run.ok && JSON.stringify(run.value) === "[1,4,9]", `${JSON.stringify(run.value)} ${run.output?.[0]?.text ?? ""}`);

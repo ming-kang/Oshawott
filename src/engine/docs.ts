@@ -76,7 +76,7 @@ export const FileDeletesDoc = defineDoc<{ pending: FileDelete[] }>({
 
 export type TargetState = {
 	tabId: number | null;
-	/** The origin the target was bound to; a tool call seeing another origin re-binds and notes it once. */
+	/** The HTTP origin or local document URL the target was bound to; a change re-binds and is noted once. */
 	origin?: string;
 	/** Tabs this chat opened, each with the broker session it was opened under. Absent in older documents. */
 	opened?: { tabId: number; session: string }[];

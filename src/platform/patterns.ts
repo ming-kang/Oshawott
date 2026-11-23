@@ -7,6 +7,14 @@ export function isHttpUrl(url: unknown): boolean {
 	}
 }
 
+export function isFileUrl(url: unknown): boolean {
+	try {
+		return new URL(String(url ?? "")).protocol === "file:";
+	} catch {
+		return false;
+	}
+}
+
 export function hostOf(url: unknown): string {
 	const raw = String(url ?? "");
 	return URL.canParse(raw) ? new URL(raw).host : raw;
