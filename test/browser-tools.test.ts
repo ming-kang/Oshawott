@@ -156,8 +156,9 @@ test("non-http(s) tabs refuse page tools", async () => {
 	}
 });
 
-test("an already open local file supports reads only and tracks a different file as a new target", async () => {
-	const local = { tabId: 7, windowId: 1, url: "file:///tmp/one.html", title: "One", active: true };
+test("an already open local file takes page tools but not navigation, and tracks a different file as a new target", async () => {
+	const first = `file:///tmp/${encodeURIComponent("笔记 一")}.html`;
+	const local = { tabId: 7, windowId: 1, url: first, title: "One", active: true };
 	const snapshot = () => ({
 		url: local.url, title: local.title, text: `Text of ${local.title}`, truncated: false,
 		textOffset: 0, totalChars: 9, elements: [], elementsTruncated: false,
@@ -173,10 +174,12 @@ test("an already open local file supports reads only and tracks a different file
 		assert.equal(read.isError, false);
 		assert.match(JSON.stringify(read.content), /Text of One/);
 		assert.equal((await f.call("page_inspect", { selector: "main" }, 7)).isError, false);
-		const action = await f.call("page_click", { ref: "e1" }, 7);
-		assert.equal(action.isError, true);
-		assert.match(JSON.stringify(action.content), /local file pages are read-only/i);
-		assert.deepEqual(f.clicks, []);
+		await f.workspace.setPreference({ key: "confirmActions", enabled: true }, context);
+		await until(() => f.workspace.confirmActions.value || undefined, "the preference");
+		// A local file has no host: the approval names the file instead.
+		const click = await f.call("page_click", { ref: "e1" }, 7, () => f.decide("allow", (asked) => assert.equal(asked.site, "笔记 一.html")));
+		assert.equal(click.isError, false);
+		assert.deepEqual(f.clicks, [7]);
 		const navigation = await f.call("tab_navigate", { url: "file:///tmp/two.html" }, 7);
 		assert.equal(navigation.isError, true);
 		assert.match(JSON.stringify(navigation.content), /Only http and https/);
@@ -184,7 +187,7 @@ test("an already open local file supports reads only and tracks a different file
 		local.url = "file:///tmp/two.html";
 		local.title = "Two";
 		const moved = await f.call("page_snapshot", {});
-		assert.match(JSON.stringify(moved.content), /the target tab is now on file:\/\/\/tmp\/two\.html \(it was file:\/\/\/tmp\/one\.html\)/);
+		assert.ok(JSON.stringify(moved.content).includes(`the target tab is now on file:///tmp/two.html (it was ${first})`));
 	} finally {
 		await f.close();
 	}
